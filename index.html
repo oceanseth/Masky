@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DigiMe - AI-Powered Stream Alerts</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -12,7 +15,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #000;
             color: #fff;
             overflow-x: hidden;
@@ -621,6 +624,150 @@
             font-size: 3.5rem;
             margin-bottom: 1.5rem;
             filter: drop-shadow(0 0 10px rgba(147, 51, 234, 0.5));
+        }
+
+        /* Lineart icons for features */
+        .icon-ai-avatar {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 10px rgba(147, 51, 234, 0.5));
+        }
+
+        .icon-ai-avatar::before {
+            content: '';
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            border: 3px solid currentColor;
+            border-radius: 50%;
+            top: 8px;
+            left: 22.5px;
+        }
+
+        .icon-ai-avatar::after {
+            content: '';
+            position: absolute;
+            width: 55px;
+            height: 28px;
+            border: 3px solid currentColor;
+            border-radius: 0 0 28px 28px;
+            border-top: none;
+            bottom: 8px;
+            left: 12.5px;
+        }
+
+        .icon-realtime {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 10px rgba(147, 51, 234, 0.5));
+        }
+
+        .icon-realtime::before {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 3px solid currentColor;
+            border-radius: 50%;
+            top: 10px;
+            left: 10px;
+        }
+
+        .icon-realtime::after {
+            content: '';
+            position: absolute;
+            width: 3px;
+            height: 22px;
+            background: currentColor;
+            top: 18px;
+            left: 38.5px;
+            transform-origin: bottom;
+            transform: rotate(90deg);
+        }
+
+        .icon-realtime > span {
+            position: absolute;
+            width: 3px;
+            height: 16px;
+            background: currentColor;
+            top: 24px;
+            left: 38.5px;
+            transform-origin: bottom;
+            transform: rotate(45deg);
+        }
+
+        .icon-custom-script {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 10px rgba(147, 51, 234, 0.5));
+        }
+
+        .icon-custom-script::before {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 60px;
+            border: 3px solid currentColor;
+            border-radius: 6px;
+            top: 10px;
+            left: 15px;
+        }
+
+        .icon-custom-script::after {
+            content: '';
+            position: absolute;
+            width: 35px;
+            height: 3px;
+            background: currentColor;
+            top: 28px;
+            left: 22.5px;
+        }
+
+        .icon-custom-script > span:nth-child(1) {
+            position: absolute;
+            width: 35px;
+            height: 3px;
+            background: currentColor;
+            top: 40px;
+            left: 22.5px;
+        }
+
+        .icon-custom-script > span:nth-child(2) {
+            position: absolute;
+            width: 35px;
+            height: 3px;
+            background: currentColor;
+            top: 52px;
+            left: 22.5px;
+        }
+
+        /* Pen icon */
+        .icon-custom-script > span:nth-child(3) {
+            position: absolute;
+            width: 20px;
+            height: 3px;
+            background: currentColor;
+            bottom: 12px;
+            right: 8px;
+            transform: rotate(-45deg);
+        }
+
+        .icon-custom-script > span:nth-child(3)::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 8px solid currentColor;
+            top: -8px;
+            right: -3px;
         }
 
         .feature-title {
@@ -1245,21 +1392,27 @@
 
             <div class="features" id="features">
                 <div class="feature-card">
-                    <div class="feature-icon">🎭</div>
+                    <div class="icon-ai-avatar" style="color: #c084fc;"></div>
                     <div class="feature-title">AI Avatars</div>
                     <div class="feature-desc">
                         Choose from HeyGen and Hume avatars with photorealistic voices and natural expressions that bring your alerts to life
                     </div>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
+                    <div class="icon-realtime" style="color: #c084fc;">
+                        <span></span>
+                    </div>
                     <div class="feature-title">Real-Time Events</div>
                     <div class="feature-desc">
                         Instant alerts for subscriptions, donations, and custom chat commands powered by Twitch EventSub
                     </div>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🎨</div>
+                    <div class="icon-custom-script" style="color: #c084fc;">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
                     <div class="feature-title">Custom Scripts</div>
                     <div class="feature-desc">
                         Write personalized messages and creative prompts for each alert type to match your stream's unique style
@@ -1324,19 +1477,19 @@
                 <h2 class="section-title">Connect Your Accounts</h2>
                 <div class="social-grid">
                     <div class="social-card" id="twitchCard">
-                        <div class="social-icon">🎮</div>
+                        <div class="icon-twitch" style="color: #c084fc;"></div>
                         <div class="social-name">Twitch</div>
                         <div class="social-status">Not Connected</div>
                         <button class="btn btn-primary" onclick="connectTwitch()">Connect Twitch</button>
                     </div>
                     <div class="social-card" id="heygenCard">
-                        <div class="social-icon">🎭</div>
+                        <div class="icon-avatar" style="color: #c084fc;"></div>
                         <div class="social-name">HeyGen</div>
                         <div class="social-status">Not Connected</div>
                         <button class="btn btn-primary" onclick="connectHeygen()">Connect HeyGen</button>
                     </div>
                     <div class="social-card" id="humeCard">
-                        <div class="social-icon">🎤</div>
+                        <div class="icon-voice" style="color: #c084fc;"><span></span></div>
                         <div class="social-name">Hume AI</div>
                         <div class="social-status">Not Connected</div>
                         <button class="btn btn-primary" onclick="connectHume()">Connect Hume</button>

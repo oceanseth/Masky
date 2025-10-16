@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DigiMe - AI-Powered Stream Alerts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #000;
+            color: #fff;
+            overflow-x: hidden;
+            position: relative;
+            min-height: 100vh;
+        }
+
+        /* Prevent black edges by adding overflow hidden to html */
+        html {
+            overflow-x: hidden;
+            background: #000;
+        }
+
+        /* Animated holographic background with moving gradient */
+        .holo-bg {
+            position: fixed;
+            top: -10%;
+            left: -10%;
+            width: 120%;
+            height: 120%;
+            z-index: 0;
+            background: 
+                radial-gradient(ellipse at 30% 40%, rgba(147, 51, 234, 0.3) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 60%, rgba(59, 130, 246, 0.25) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(236, 72, 153, 0.2) 0%, transparent 50%);
+            background-size: 200% 200%;
+            animation: holoShift 20s ease-in-out infinite, gradientMove 15s ease infinite;
+        }
+
+        @keyframes holoShift {
+            0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
+            33% { transform: scale(1.1) rotate(5deg); opacity: 0.8; }
+            66% { transform: scale(0.9) rotate(-5deg); opacity: 0.9; }
+        }
+
+        @keyframes gradientMove {
+            0% {
+                background-position: 0% 50%;
+            }
+            25% {
+                background-position: 100% 50%;
+            }
+            50% {
+                background-position: 100% 100%;
+            }
+            75% {
+                background-position: 0% 100%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        /* Liquid morphing shapes with color shifts */
+        .liquid-shape {
+            position: absolute;
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(59, 130, 246, 0.2), rgba(236, 72, 153, 0.15));
+            background-size: 200% 200%;
+            filter: blur(60px);
+            animation: morph 15s ease-in-out infinite, colorShift 10s ease-in-out infinite;
+        }
+
+        .liquid-1 {
+            top: 5%;
+            left: 5%;
+            width: 450px;
+            height: 450px;
+            animation-delay: 0s;
+        }
+
+        .liquid-2 {
+            top: 45%;
+            right: 5%;
+            width: 550px;
+            height: 550px;
+            animation-delay: 5s, 3s;
+        }
+
+        .liquid-3 {
+            bottom: 5%;
+            left: 25%;
+            width: 400px;
+            height: 400px;
+            animation-delay: 10s, 7s;
+        }
+
+        @keyframes morph {
+            0%, 100% {
+                border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+                transform: translate(0, 0) rotate(0deg) scale(1);
+            }
+            25% {
+                border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+                transform: translate(15px, -15px) rotate(90deg) scale(1.05);
+            }
+            50% {
+                border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+                transform: translate(-15px, 15px) rotate(180deg) scale(0.95);
+            }
+            75% {
+                border-radius: 70% 30% 40% 60% / 40% 70% 50% 60%;
+                transform: translate(15px, 15px) rotate(270deg) scale(1.05);
+            }
+        }
+
+        @keyframes colorShift {
+            0%, 100% {
+                background-position: 0% 50%;
+                opacity: 0.8;
+            }
+            33% {
+                background-position: 100% 50%;
+                opacity: 1;
+            }
+            66% {
+                background-position: 50% 100%;
+                opacity: 0.9;
+            }
+        }
+
+        /* Holographic wire frame accents */
+        .wire-frame {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border: 2px solid rgba(147, 51, 234, 0.2);
+            border-radius: 50%;
+            animation: wireRotate 20s linear infinite;
+        }
+
+        .wire-frame-1 {
+            top: -200px;
+            right: -200px;
+        }
+
+        .wire-frame-2 {
+            bottom: -300px;
+            left: -200px;
+            animation-direction: reverse;
+            animation-duration: 25s;
+        }
+
+        @keyframes wireRotate {
+            0% { transform: rotate(0deg) scale(1); opacity: 0.3; }
+            50% { transform: rotate(180deg) scale(1.1); opacity: 0.15; }
+            100% { transform: rotate(360deg) scale(1); opacity: 0.3; }
+        }
+
+        /* Flowing Particles */
+        .particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: radial-gradient(circle, rgba(147, 51, 234, 0.8), transparent);
+            border-radius: 50%;
+            animation: particleFloat 15s ease-in-out infinite;
+        }
+
+        .particle-1 {
+            top: 20%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+
+        .particle-2 {
+            top: 40%;
+            right: 15%;
+            animation-delay: 3s;
+        }
+
+        .particle-3 {
+            bottom: 30%;
+            left: 20%;
+            animation-delay: 6s;
+        }
+
+        .particle-4 {
+            top: 60%;
+            right: 25%;
+            width: 6px;
+            height: 6px;
+            animation-delay: 9s;
+        }
+
+        .particle-5 {
+            bottom: 20%;
+            right: 10%;
+            width: 10px;
+            height: 10px;
+            animation-delay: 12s;
+        }
+
+        @keyframes particleFloat {
+            0%, 100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0.3;
+            }
+            25% {
+                transform: translate(100px, -80px) scale(1.5);
+                opacity: 0.6;
+            }
+            50% {
+                transform: translate(50px, -150px) scale(0.8);
+                opacity: 0.4;
+            }
+            75% {
+                transform: translate(-50px, -100px) scale(1.2);
+                opacity: 0.5;
+            }
+        }
+
+        /* Flowing Grid Lines */
+        .grid-line {
+            position: absolute;
+            background: linear-gradient(90deg, transparent, rgba(147, 51, 234, 0.3), rgba(59, 130, 246, 0.3), transparent);
+            opacity: 0.4;
+        }
+
+        .grid-horizontal {
+            width: 100%;
+            height: 1px;
+            animation: gridFlowHorizontal 8s linear infinite;
+        }
+
+        .grid-vertical {
+            width: 1px;
+            height: 100%;
+            animation: gridFlowVertical 8s linear infinite;
+        }
+
+        .grid-h-1 { top: 15%; animation-delay: 0s; }
+        .grid-h-2 { top: 45%; animation-delay: 2s; }
+        .grid-h-3 { top: 75%; animation-delay: 4s; }
+
+        .grid-v-1 { left: 20%; animation-delay: 1s; }
+        .grid-v-2 { left: 60%; animation-delay: 3s; }
+        .grid-v-3 { right: 15%; animation-delay: 5s; }
+
+        @keyframes gridFlowHorizontal {
+            0% {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            10%, 90% {
+                opacity: 0.4;
+            }
+            100% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes gridFlowVertical {
+            0% {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+            10%, 90% {
+                opacity: 0.4;
+            }
+            100% {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+        }
+
+        /* Hexagon Pattern */
+        .hexagon {
+            position: absolute;
+            width: 100px;
+            height: 58px;
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.1), rgba(59, 130, 246, 0.1));
+            clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+            animation: hexagonPulse 6s ease-in-out infinite;
+        }
+
+        .hex-1 {
+            top: 25%;
+            right: 20%;
+            animation-delay: 0s;
+        }
+
+        .hex-2 {
+            bottom: 35%;
+            left: 15%;
+            width: 80px;
+            height: 46px;
+            animation-delay: 2s;
+        }
+
+        .hex-3 {
+            top: 55%;
+            left: 8%;
+            width: 60px;
+            height: 35px;
+            animation-delay: 4s;
+        }
+
+        @keyframes hexagonPulse {
+            0%, 100% {
+                transform: rotate(0deg) scale(1);
+                opacity: 0.3;
+            }
+            50% {
+                transform: rotate(180deg) scale(1.2);
+                opacity: 0.6;
+            }
+        }
+
+        /* Diagonal Light Beams */
+        .light-beam {
+            position: absolute;
+            width: 2px;
+            height: 300px;
+            background: linear-gradient(180deg, transparent, rgba(147, 51, 234, 0.4), rgba(59, 130, 246, 0.4), transparent);
+            transform-origin: top;
+            animation: beamSweep 10s ease-in-out infinite;
+        }
+
+        .beam-1 {
+            top: 0;
+            left: 30%;
+            animation-delay: 0s;
+        }
+
+        .beam-2 {
+            top: 0;
+            right: 35%;
+            animation-delay: 3s;
+        }
+
+        .beam-3 {
+            top: 0;
+            left: 60%;
+            animation-delay: 6s;
+        }
+
+        @keyframes beamSweep {
+            0%, 100% {
+                transform: rotate(0deg) scaleY(0.5);
+                opacity: 0.2;
+            }
+            50% {
+                transform: rotate(15deg) scaleY(1.2);
+                opacity: 0.5;
+            }
+        }
+
+        /* Data Stream Effect */
+        .data-stream {
+            position: absolute;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: rgba(147, 51, 234, 0.5);
+            white-space: nowrap;
+            animation: dataScroll 20s linear infinite;
+        }
+
+        .stream-1 {
+            top: 35%;
+            right: -100%;
+        }
+
+        .stream-2 {
+            top: 65%;
+            right: -100%;
+            animation-delay: 10s;
+        }
+
+        @keyframes dataScroll {
+            0% {
+                transform: translateX(0);
+                opacity: 0;
+            }
+            5%, 95% {
+                opacity: 0.4;
+            }
+            100% {
+                transform: translateX(-200vw);
+                opacity: 0;
+            }
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 2rem 4rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(147, 51, 234, 0.2);
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            background: linear-gradient(135deg, #fff 0%, #c084fc 50%, #60a5fa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-transform: uppercase;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 3rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.3s;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .nav-links a:hover {
+            color: #c084fc;
+        }
+
+        .btn {
+            padding: 0.9rem 2.2rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 700;
+            transition: all 0.4s;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #9333ea, #3b82f6);
+            color: white;
+            box-shadow: 0 0 30px rgba(147, 51, 234, 0.4);
+            position: relative;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 40px rgba(147, 51, 234, 0.6);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: white;
+            border: 2px solid rgba(147, 51, 234, 0.5);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(147, 51, 234, 0.15);
+            border-color: #9333ea;
+        }
+
+        /* Landing Page Hero */
+        .landing {
+            position: relative;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            z-index: 1;
+        }
+
+        .hero-content {
+            max-width: 1200px;
+            text-align: center;
+            margin-top: 60px;
+            position: relative;
+        }
+
+        /* Giant holographic text with animated gradient */
+        .hero-title {
+            font-size: 8rem;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #fff 0%, #e0c3fc 25%, #8ec5fc 50%, #fbc2eb 75%, #fff 100%);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.1;
+            text-transform: uppercase;
+            position: relative;
+            animation: titleGlow 4s ease-in-out infinite, titleGradient 8s ease infinite;
+        }
+
+        @keyframes titleGlow {
+            0%, 100% {
+                text-shadow: 0 0 40px rgba(147, 51, 234, 0.5);
+                filter: drop-shadow(0 0 20px rgba(147, 51, 234, 0.3));
+            }
+            50% {
+                text-shadow: 0 0 60px rgba(59, 130, 246, 0.6);
+                filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.4));
+            }
+        }
+
+        @keyframes titleGradient {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        .hero-subtitle {
+            font-size: 1.5rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 3.5rem;
+            line-height: 1.8;
+            letter-spacing: 0.05em;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 8rem;
+        }
+
+        /* Grid of holographic cards */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2.5rem;
+            max-width: 1300px;
+            margin-top: 6rem;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            border-radius: 30px;
+            padding: 3rem 2.5rem;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 30px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.5), rgba(59, 130, 246, 0.5));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 20px 60px rgba(147, 51, 234, 0.4);
+        }
+
+        .feature-card:hover::before {
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.8), rgba(59, 130, 246, 0.8));
+        }
+
+        .feature-icon {
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
+            filter: drop-shadow(0 0 10px rgba(147, 51, 234, 0.5));
+        }
+
+        .feature-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #c084fc, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 0.05em;
+        }
+
+        .feature-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1rem;
+            line-height: 1.7;
+        }
+
+        /* Auth Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .modal.active {
+            display: flex;
+            animation: modalFadeIn 0.3s ease;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, rgba(20, 5, 35, 0.95), rgba(15, 5, 30, 0.95));
+            border: 2px solid rgba(147, 51, 234, 0.4);
+            border-radius: 40px;
+            padding: 4rem;
+            max-width: 500px;
+            width: 90%;
+            position: relative;
+            box-shadow: 0 30px 80px rgba(147, 51, 234, 0.5);
+            backdrop-filter: blur(40px);
+            animation: modalSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes modalSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: rgba(147, 51, 234, 0.2);
+            color: #c084fc;
+            transform: rotate(90deg);
+        }
+
+        .modal-title {
+            font-size: 2.5rem;
+            font-weight: 900;
+            margin-bottom: 0.8rem;
+            background: linear-gradient(135deg, #fff, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 0.05em;
+        }
+
+        .modal-subtitle {
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 3rem;
+            font-size: 1rem;
+        }
+
+        .input-group {
+            margin-bottom: 2rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.8rem;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 1.2rem 1.5rem;
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(147, 51, 234, 0.3);
+            border-radius: 15px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .input-group input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #9333ea;
+            background: rgba(147, 51, 234, 0.1);
+            box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+        }
+
+        .modal .btn {
+            width: 100%;
+            padding: 1.2rem;
+            margin-top: 1rem;
+            font-size: 1rem;
+        }
+
+        .auth-switch {
+            text-align: center;
+            margin-top: 2rem;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.95rem;
+        }
+
+        .auth-switch a {
+            color: #c084fc;
+            text-decoration: none;
+            font-weight: 700;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .auth-switch a:hover {
+            color: #60a5fa;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+            min-height: 100vh;
+            padding-top: 120px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .dashboard.active {
+            display: block;
+        }
+
+        .dashboard-container {
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 2rem 4rem;
+        }
+
+        .dashboard-header {
+            margin-bottom: 4rem;
+            text-align: center;
+        }
+
+        .dashboard-title {
+            font-size: 3.5rem;
+            font-weight: 900;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #fff 0%, #c084fc 50%, #60a5fa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 0.05em;
+        }
+
+        .dashboard-subtitle {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.2rem;
+        }
+
+        /* Social Linking Cards */
+        .social-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2.5rem;
+            margin-bottom: 4rem;
+        }
+
+        .social-card {
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.05), rgba(59, 130, 246, 0.05));
+            border: 2px solid transparent;
+            border-radius: 30px;
+            padding: 3rem;
+            transition: all 0.5s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(20px);
+        }
+
+        .social-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 30px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.5), rgba(59, 130, 246, 0.5));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        .social-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 50px rgba(147, 51, 234, 0.4);
+        }
+
+        .social-card.connected {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(59, 130, 246, 0.1));
+        }
+
+        .social-card.connected::before {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.8), rgba(59, 130, 246, 0.8));
+        }
+
+        .social-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            filter: drop-shadow(0 0 15px rgba(147, 51, 234, 0.6));
+            font-weight: 300;
+        }
+
+        /* Simple lineart icons using CSS */
+        .icon-twitch {
+            width: 60px;
+            height: 60px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 15px rgba(147, 51, 234, 0.6));
+        }
+
+        .icon-twitch::before {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border: 3px solid currentColor;
+            border-radius: 8px;
+            top: 0;
+            left: 5px;
+        }
+
+        .icon-twitch::after {
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 20px;
+            border-right: 3px solid currentColor;
+            border-bottom: 3px solid currentColor;
+            top: 12px;
+            right: 15px;
+        }
+
+        .icon-avatar {
+            width: 60px;
+            height: 60px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 15px rgba(147, 51, 234, 0.6));
+        }
+
+        .icon-avatar::before {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 3px solid currentColor;
+            border-radius: 50%;
+            top: 5px;
+            left: 15px;
+        }
+
+        .icon-avatar::after {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 25px;
+            border: 3px solid currentColor;
+            border-radius: 0 0 25px 25px;
+            border-top: none;
+            bottom: 0;
+            left: 5px;
+        }
+
+        .icon-voice {
+            width: 60px;
+            height: 60px;
+            position: relative;
+            margin: 0 auto 1.5rem;
+            filter: drop-shadow(0 0 15px rgba(147, 51, 234, 0.6));
+        }
+
+        .icon-voice::before {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 35px;
+            border: 3px solid currentColor;
+            border-radius: 10px 10px 0 0;
+            top: 8px;
+            left: 20px;
+        }
+
+        .icon-voice::after {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 3px;
+            background: currentColor;
+            bottom: 8px;
+            left: 15px;
+        }
+
+        .icon-voice > span {
+            position: absolute;
+            width: 35px;
+            height: 20px;
+            border: 3px solid currentColor;
+            border-top: none;
+            border-radius: 0 0 20px 20px;
+            bottom: 11px;
+            left: 12.5px;
+        }
+
+        .social-name {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 0.8rem;
+            letter-spacing: 0.05em;
+        }
+
+        .social-status {
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 2rem;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .social-card.connected .social-status {
+            color: #22c55e;
+            font-weight: 700;
+        }
+
+        .social-card .btn {
+            width: 100%;
+        }
+
+        /* Alerts Section */
+        .alerts-section {
+            margin-top: 4rem;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #c084fc, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 0.05em;
+        }
+
+        .alerts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 2.5rem;
+        }
+
+        .alert-card {
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.05), rgba(59, 130, 246, 0.05));
+            border: 2px solid transparent;
+            border-radius: 25px;
+            padding: 2.5rem;
+            transition: all 0.4s;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(20px);
+        }
+
+        .alert-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 25px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.4), rgba(59, 130, 246, 0.4));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        .alert-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(147, 51, 234, 0.3);
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-type {
+            font-size: 1.3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #c084fc, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .alert-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .icon-btn {
+            background: rgba(147, 51, 234, 0.1);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 10px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .icon-btn:hover {
+            background: rgba(147, 51, 234, 0.3);
+            color: #c084fc;
+            transform: translateY(-2px);
+        }
+
+        .alert-url {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 15px;
+            padding: 1rem 1.2rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #c084fc;
+            word-break: break-all;
+            margin-top: 1.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 6rem 2rem;
+            color: rgba(255, 255, 255, 0.3);
+            grid-column: 1 / -1;
+        }
+
+        .empty-state-icon {
+            font-size: 5rem;
+            margin-bottom: 1.5rem;
+            filter: drop-shadow(0 0 20px rgba(147, 51, 234, 0.3));
+        }
+
+        .empty-state p {
+            font-size: 1.2rem;
+        }
+
+        @media (max-width: 1024px) {
+            .hero-title {
+                font-size: 5rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .alerts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 3.5rem;
+            }
+
+            nav {
+                padding: 1.5rem 2rem;
+            }
+
+            .nav-links a {
+                display: none;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .dashboard-container {
+                padding: 2rem;
+            }
+
+            .social-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="holo-bg"></div>
+    <div class="liquid-shape liquid-1"></div>
+    <div class="liquid-shape liquid-2"></div>
+    <div class="liquid-shape liquid-3"></div>
+    <div class="wire-frame wire-frame-1"></div>
+    <div class="wire-frame wire-frame-2"></div>
+
+    <!-- Floating Particles -->
+    <div class="particle particle-1"></div>
+    <div class="particle particle-2"></div>
+    <div class="particle particle-3"></div>
+    <div class="particle particle-4"></div>
+    <div class="particle particle-5"></div>
+
+    <!-- Flowing Grid Lines -->
+    <div class="grid-line grid-horizontal grid-h-1"></div>
+    <div class="grid-line grid-horizontal grid-h-2"></div>
+    <div class="grid-line grid-horizontal grid-h-3"></div>
+    <div class="grid-line grid-vertical grid-v-1"></div>
+    <div class="grid-line grid-vertical grid-v-2"></div>
+    <div class="grid-line grid-vertical grid-v-3"></div>
+
+    <!-- Hexagon Elements -->
+    <div class="hexagon hex-1"></div>
+    <div class="hexagon hex-2"></div>
+    <div class="hexagon hex-3"></div>
+
+    <!-- Light Beams -->
+    <div class="light-beam beam-1"></div>
+    <div class="light-beam beam-2"></div>
+    <div class="light-beam beam-3"></div>
+
+    <!-- Data Streams -->
+    <div class="data-stream stream-1">01001000 01100101 01111001 00100000 01110100 01101000 01100101 01110010 01100101</div>
+    <div class="data-stream stream-2">11010101 10101010 11001100 10011001 11110000 10101111 10011110 11000011</div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="logo">DIGIME</div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#docs">Docs</a>
+            <button class="btn btn-secondary" onclick="showLogin()">Sign In</button>
+            <button class="btn btn-primary" onclick="showSignup()">Start Creating</button>
+        </div>
+    </nav>
+
+    <!-- Landing Page -->
+    <section class="landing" id="landing">
+        <div class="hero-content">
+            <h1 class="hero-title">DIGIME</h1>
+            <p class="hero-subtitle">
+                Create AI-powered stream alerts with lifelike avatars. 
+                Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.
+            </p>
+            <div class="cta-buttons">
+                <button class="btn btn-primary" onclick="showSignup()">Start Creating Today</button>
+                <button class="btn btn-secondary" onclick="scrollToFeatures()">Explore Features</button>
+            </div>
+
+            <div class="features" id="features">
+                <div class="feature-card">
+                    <div class="feature-icon">🎭</div>
+                    <div class="feature-title">AI Avatars</div>
+                    <div class="feature-desc">
+                        Choose from HeyGen and Hume avatars with photorealistic voices and natural expressions that bring your alerts to life
+                    </div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-title">Real-Time Events</div>
+                    <div class="feature-desc">
+                        Instant alerts for subscriptions, donations, and custom chat commands powered by Twitch EventSub
+                    </div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <div class="feature-title">Custom Scripts</div>
+                    <div class="feature-desc">
+                        Write personalized messages and creative prompts for each alert type to match your stream's unique style
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Auth Modal -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">×</button>
+            <div id="loginForm">
+                <h2 class="modal-title">Welcome Back</h2>
+                <p class="modal-subtitle">Sign in to continue creating</p>
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" placeholder="your@email.com">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary" onclick="login()">Sign In</button>
+                <div class="auth-switch">
+                    Don't have an account? <a onclick="switchToSignup()">Sign up</a>
+                </div>
+            </div>
+            <div id="signupForm" style="display: none;">
+                <h2 class="modal-title">Start Creating</h2>
+                <p class="modal-subtitle">Create your account</p>
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="signupUsername" placeholder="username">
+                </div>
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="signupEmail" placeholder="your@email.com">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="signupPassword" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary" onclick="signup()">Create Account</button>
+                <div class="auth-switch">
+                    Already have an account? <a onclick="switchToLogin()">Sign in</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <section class="dashboard" id="dashboard">
+        <div class="dashboard-container">
+            <div class="dashboard-header">
+                <h1 class="dashboard-title">Welcome, <span id="username">Creator</span></h1>
+                <p class="dashboard-subtitle">Connect your accounts and start creating amazing alerts</p>
+            </div>
+
+            <div id="socialLinking">
+                <h2 class="section-title">Connect Your Accounts</h2>
+                <div class="social-grid">
+                    <div class="social-card" id="twitchCard">
+                        <div class="social-icon">🎮</div>
+                        <div class="social-name">Twitch</div>
+                        <div class="social-status">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectTwitch()">Connect Twitch</button>
+                    </div>
+                    <div class="social-card" id="heygenCard">
+                        <div class="social-icon">🎭</div>
+                        <div class="social-name">HeyGen</div>
+                        <div class="social-status">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectHeygen()">Connect HeyGen</button>
+                    </div>
+                    <div class="social-card" id="humeCard">
+                        <div class="social-icon">🎤</div>
+                        <div class="social-name">Hume AI</div>
+                        <div class="social-status">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectHume()">Connect Hume</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alerts-section" id="alertsSection" style="display: none;">
+                <div class="section-header">
+                    <h2 class="section-title">Your Alerts</h2>
+                    <button class="btn btn-primary" onclick="createNewAlert()">+ Create Alert</button>
+                </div>
+                <div class="alerts-grid" id="alertsGrid">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✨</div>
+                        <p>No alerts yet. Create your first alert to get started!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // State management
+        let state = {
+            isLoggedIn: false,
+            user: null,
+            connections: {
+                twitch: false,
+                heygen: false,
+                hume: false
+            },
+            alerts: []
+        };
+
+        // Modal functions
+        function showLogin() {
+            document.getElementById('authModal').classList.add('active');
+            switchToLogin();
+        }
+
+        function showSignup() {
+            document.getElementById('authModal').classList.add('active');
+            switchToSignup();
+        }
+
+        function closeModal() {
+            document.getElementById('authModal').classList.remove('active');
+        }
+
+        function switchToLogin() {
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('signupForm').style.display = 'none';
+        }
+
+        function switchToSignup() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('signupForm').style.display = 'block';
+        }
+
+        function scrollToFeatures() {
+            document.getElementById('features').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Auth functions
+        function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (email && password) {
+                state.isLoggedIn = true;
+                state.user = { email, username: email.split('@')[0] };
+                showDashboard();
+                closeModal();
+            }
+        }
+
+        function signup() {
+            const username = document.getElementById('signupUsername').value;
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            
+            if (username && email && password) {
+                state.isLoggedIn = true;
+                state.user = { email, username };
+                showDashboard();
+                closeModal();
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('landing').style.display = 'none';
+            document.getElementById('dashboard').classList.add('active');
+            document.getElementById('username').textContent = state.user.username;
+        }
+
+        // Connection functions
+        function connectTwitch() {
+            const card = document.getElementById('twitchCard');
+            const btn = card.querySelector('.btn');
+            
+            if (state.connections.twitch) {
+                state.connections.twitch = false;
+                card.classList.remove('connected');
+                card.querySelector('.social-status').textContent = 'Not Connected';
+                btn.textContent = 'Connect Twitch';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            } else {
+                state.connections.twitch = true;
+                card.classList.add('connected');
+                card.querySelector('.social-status').textContent = 'Connected ✓';
+                btn.textContent = 'Disconnect';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            }
+            
+            checkAllConnections();
+        }
+
+        function connectHeygen() {
+            const card = document.getElementById('heygenCard');
+            const btn = card.querySelector('.btn');
+            
+            if (state.connections.heygen) {
+                state.connections.heygen = false;
+                card.classList.remove('connected');
+                card.querySelector('.social-status').textContent = 'Not Connected';
+                btn.textContent = 'Connect HeyGen';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            } else {
+                state.connections.heygen = true;
+                card.classList.add('connected');
+                card.querySelector('.social-status').textContent = 'Connected ✓';
+                btn.textContent = 'Disconnect';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            }
+        }
+
+        function connectHume() {
+            const card = document.getElementById('humeCard');
+            const btn = card.querySelector('.btn');
+            
+            if (state.connections.hume) {
+                state.connections.hume = false;
+                card.classList.remove('connected');
+                card.querySelector('.social-status').textContent = 'Not Connected';
+                btn.textContent = 'Connect Hume';
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+            } else {
+                state.connections.hume = true;
+                card.classList.add('connected');
+                card.querySelector('.social-status').textContent = 'Connected ✓';
+                btn.textContent = 'Disconnect';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            }
+        }
+
+        function checkAllConnections() {
+            if (state.connections.twitch) {
+                document.getElementById('alertsSection').style.display = 'block';
+            } else {
+                document.getElementById('alertsSection').style.display = 'none';
+            }
+        }
+
+        // Alert functions
+        function createNewAlert() {
+            const alert = {
+                id: Date.now(),
+                type: 'New Subscriber',
+                url: `https://digime.io/alert/${Date.now()}`,
+                avatar: 'HeyGen Avatar',
+                script: 'Thank you for subscribing!'
+            };
+            
+            state.alerts.push(alert);
+            renderAlerts();
+        }
+
+        function renderAlerts() {
+            const grid = document.getElementById('alertsGrid');
+            
+            if (state.alerts.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✨</div>
+                        <p>No alerts yet. Create your first alert to get started!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = state.alerts.map(alert => `
+                <div class="alert-card">
+                    <div class="alert-header">
+                        <div class="alert-type">${alert.type}</div>
+                        <div class="alert-actions">
+                            <button class="icon-btn" title="Edit">✏️</button>
+                            <button class="icon-btn" title="Copy URL" onclick="copyUrl('${alert.url}')">🔗</button>
+                            <button class="icon-btn" onclick="deleteAlert(${alert.id})" title="Delete">🗑️</button>
+                        </div>
+                    </div>
+                    <div style="color: rgba(255,255,255,0.6); font-size: 1rem; margin-bottom: 0.8rem;">
+                        <strong>Avatar:</strong> ${alert.avatar}
+                    </div>
+                    <div style="color: rgba(255,255,255,0.5); font-size: 0.95rem; font-style: italic; margin-bottom: 0.5rem;">
+                        "${alert.script}"
+                    </div>
+                    <div class="alert-url">${alert.url}</div>
+                </div>
+            `).join('');
+        }
+
+        function deleteAlert(id) {
+            state.alerts = state.alerts.filter(a => a.id !== id);
+            renderAlerts();
+        }
+
+        function copyUrl(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('URL copied to clipboard!');
+            });
+        }
+
+        // Close modal on outside click
+        document.getElementById('authModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        // Initialize
+        renderAlerts();
+    </script>
+</body>
+</html>

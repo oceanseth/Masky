@@ -87,39 +87,40 @@
     </style>
 </head>
 <body>
-    <div class="holo-bg"></div>
-    <div class="liquid-shape liquid-1"></div>
-    <div class="liquid-shape liquid-2"></div>
-    <div class="liquid-shape liquid-3"></div>
-    <div class="wire-frame wire-frame-1"></div>
-    <div class="wire-frame wire-frame-2"></div>
+    <!-- Background Effects Container -->
+    <div class="background-effects">
+        <div class="holo-bg"></div>
+        <div class="liquid-shape liquid-1"></div>
+        <div class="liquid-shape liquid-2"></div>
+        <div class="liquid-shape liquid-3"></div>
+        <div class="wire-frame wire-frame-1"></div>
+        <div class="wire-frame wire-frame-2"></div>
 
-    <!-- Floating Particles -->
-    <div class="particle particle-1"></div>
-    <div class="particle particle-2"></div>
-    <div class="particle particle-3"></div>
-    <div class="particle particle-4"></div>
-    <div class="particle particle-5"></div>
+        <!-- Floating Particles -->
+        <div class="particle particle-1"></div>
+        <div class="particle particle-2"></div>
+        <div class="particle particle-3"></div>
+        <div class="particle particle-4"></div>
+        <div class="particle particle-5"></div>
 
-    <!-- Flowing Grid Lines -->
-    <div class="grid-line grid-horizontal grid-h-1"></div>
-    <div class="grid-line grid-horizontal grid-h-2"></div>
-    <div class="grid-line grid-horizontal grid-h-3"></div>
-    <div class="grid-line grid-vertical grid-v-1"></div>
-    <div class="grid-line grid-vertical grid-v-2"></div>
-    <div class="grid-line grid-vertical grid-v-3"></div>
+        <!-- Flowing Grid Lines -->
+        <div class="grid-line grid-horizontal grid-h-1"></div>
+        <div class="grid-line grid-horizontal grid-h-2"></div>
+        <div class="grid-line grid-horizontal grid-h-3"></div>
+        <div class="grid-line grid-vertical grid-v-1"></div>
+        <div class="grid-line grid-vertical grid-v-2"></div>
+        <div class="grid-line grid-vertical grid-v-3"></div>
 
-    <!-- Hexagon Elements -->
-    <div class="hexagon hex-1"></div>
-    <div class="hexagon hex-2"></div>
-    <div class="hexagon hex-3"></div>
+        <!-- Hexagon Elements -->
+        <div class="hexagon hex-1"></div>
+        <div class="hexagon hex-2"></div>
+        <div class="hexagon hex-3"></div>
 
-    <!-- Light Beams -->
-    <div class="light-beam beam-1"></div>
-    <div class="light-beam beam-2"></div>
-    <div class="light-beam beam-3"></div>
-
-    <!-- Data Streams (removed static binary sequences) -->
+        <!-- Light Beams -->
+        <div class="light-beam beam-1"></div>
+        <div class="light-beam beam-2"></div>
+        <div class="light-beam beam-3"></div>
+    </div>
 
     <!-- Navigation -->
     <nav>
@@ -128,13 +129,11 @@
             <a href="#features" data-i18n="nav.features">Features</a>
             <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
             <a href="#docs" data-i18n="nav.docs">Docs</a>
-            <select id="languageSelector" onchange="changeLanguage(this.value)" style="margin-right: 1rem; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192, 132, 252, 0.3); color: white; border-radius: 0.5rem; cursor: pointer;">
+            <select id="languageSelector" onchange="changeLanguage(this.value)" style="padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192, 132, 252, 0.3); color: white; border-radius: 0.5rem; cursor: pointer;">
                 <option value="en">🇺🇸 English</option>
                 <option value="es">🇪🇸 Español</option>
                 <option value="de">🇩🇪 Deutsch</option>
             </select>
-            <button class="btn btn-secondary" onclick="showLogin()" data-i18n="nav.signIn">Sign In</button>
-            <button class="btn btn-primary" onclick="showSignup()" data-i18n="nav.startCreating">Start Creating</button>
         </div>
     </nav>
 
@@ -147,8 +146,7 @@
                 Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.
             </p>
             <div class="cta-buttons">
-                <button class="btn btn-primary" onclick="showSignup()" data-i18n="hero.ctaPrimary">Start Creating Today</button>
-                <button class="btn btn-secondary" onclick="scrollToFeatures()" data-i18n="hero.ctaSecondary">Explore Features</button>
+                <button class="btn btn-primary cta-main" onclick="showSignup()" data-i18n="hero.ctaPrimary">Start Creating Today</button>
             </div>
 
             <div class="features" id="features">
@@ -256,7 +254,7 @@
                     <label data-i18n="auth.password">Password</label>
                     <input type="password" id="signupPassword" data-i18n-placeholder="auth.passwordPlaceholder" placeholder="••••••••">
                 </div>
-                <button class="btn btn-primary" onclick="signup()" data-i18n="auth.createAccountButton">Create Account</button>
+                <button class="btn btn-primary" onclick="signup()">Create Account</button>
                 <div class="auth-switch">
                     <span data-i18n="auth.hasAccount">Already have an account?</span> <a onclick="switchToLogin()" data-i18n="auth.signInLink">Sign in</a>
                 </div>

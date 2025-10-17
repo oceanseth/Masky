@@ -4,19 +4,37 @@
     box-sizing: border-box;
 }
 
+html {
+    background: #000;
+    height: 100%;
+    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;  /* IE and Edge */
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+html::-webkit-scrollbar {
+    display: none;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: #000;
     color: #fff;
-    overflow-x: hidden;
-    position: relative;
+    margin: 0;
+    padding: 0;
     min-height: 100vh;
+    position: relative;
+    z-index: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;  /* IE and Edge */
 }
 
-/* Prevent black edges by adding overflow hidden to html */
-html {
-    overflow-x: hidden;
-    background: #000;
+/* Hide scrollbar for Chrome, Safari and Opera */
+body::-webkit-scrollbar {
+    display: none;
 }
 
 /* Animated holographic background with moving gradient */
@@ -355,7 +373,40 @@ html {
     }
 }
 
-/* Data Stream Effect removed */
+/* Data Stream Effect */
+.data-stream {
+    position: absolute;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: rgba(147, 51, 234, 0.5);
+    white-space: nowrap;
+    animation: dataScroll 20s linear infinite;
+}
+
+.stream-1 {
+    top: 35%;
+    right: -100%;
+}
+
+.stream-2 {
+    top: 65%;
+    right: -100%;
+    animation-delay: 10s;
+}
+
+@keyframes dataScroll {
+    0% {
+        transform: translateX(0);
+        opacity: 0;
+    }
+    5%, 95% {
+        opacity: 0.4;
+    }
+    100% {
+        transform: translateX(-200vw);
+        opacity: 0;
+    }
+}
 
 @media (max-width: 1024px) {
     .hero-title {

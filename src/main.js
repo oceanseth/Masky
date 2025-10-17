@@ -5,6 +5,10 @@ import './styles/dashboard.css';
 import './styles/modal.css';
 import './styles/icons.css';
 
+// Import i18n
+import './i18n.js';
+import { updateContent, changeLanguage, t } from './localeHelper.js';
+
 import { 
   signInWithTwitch, 
   signInWithGoogle, 
@@ -58,6 +62,10 @@ window.switchToSignup = switchToSignup;
 window.scrollToFeatures = function() {
   document.getElementById('features').scrollIntoView({ behavior: 'smooth' });
 };
+
+// Make i18n functions available globally
+window.changeLanguage = changeLanguage;
+window.t = t;
 
 // Auth functions with Firebase
 window.loginWithTwitch = async function() {
@@ -138,6 +146,8 @@ function showDashboard() {
   if (state.user) {
     document.getElementById('username').textContent = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
   }
+  // Update content after showing dashboard to ensure translations are applied
+  updateContent();
 }
 
 function showLanding() {
@@ -278,8 +288,8 @@ function renderAlerts() {
   if (state.alerts.length === 0) {
     grid.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">✨</div>
-        <p>No alerts yet. Create your first alert to get started!</p>
+        <div class="empty-state-icon">${t('dashboard.emptyStateIcon')}</div>
+        <p>${t('dashboard.emptyStateText')}</p>
       </div>
     `;
     return;

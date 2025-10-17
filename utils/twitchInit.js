@@ -122,6 +122,147 @@ class TwitchInitializer {
       clientSecret: this.clientSecret
     };
   }
+
+  // Exchange authorization code for access token and create Firebase user
+  async handleOAuthCallback(event) {
+    try {
+      // Parse body - it might be base64 encoded, a string, or an object
+      let body;
+      if (typeof event.body === 'string') {
+        // Check if body is base64 encoded (API Gateway does this)
+        let bodyString = event.body;
+        if (event.isBase64Encoded) {
+          bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+        }
+        body = JSON.parse(bodyString || '{}');
+      } else {
+        body = event.body || {};
+      }
+      console.log('Parsed body:', JSON.stringify(body));
+      const { code, redirectUri } = body;
+
+      if (!code) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'Missing authorization code' })
+        };
+      }
+
+      // Initialize Twitch credentials
+      const { clientId, clientSecret } = await this.initialize();
+
+      // Exchange code for access token
+      const tokenUrl = 'https://id.twitch.tv/oauth2/token';
+      const params = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri || 'https://masky.net/auth/callback'
+      });
+
+      const url = require('url');
+      
+      const tokenResponse = await new Promise((resolve, reject) => {
+        const postData = params.toString();
+        const options = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        };
+
+        const parsedUrl = url.parse(tokenUrl);
+        options.hostname = parsedUrl.hostname;
+        options.path = parsedUrl.path;
+
+        const req = https.request(options, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              try {
+                resolve(JSON.parse(data));
+              } catch (e) {
+                reject(new Error('Failed to parse token response'));
+              }
+            } else {
+              reject(new Error(`Token exchange failed: ${data}`));
+            }
+          });
+        });
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+      });
+
+      if (!tokenResponse.access_token) {
+        throw new Error('No access token in response');
+      }
+
+      const accessToken = tokenResponse.access_token;
+
+      // Verify Twitch token and get user info
+      const twitchUser = await this.verifyToken(accessToken);
+      const uid = `twitch:${twitchUser.id}`;
+
+      // Initialize Firebase Admin
+      const firebaseInitializer = require('./firebaseInit');
+      await firebaseInitializer.initialize();
+      const admin = require('firebase-admin');
+
+      // Create or update user in Firebase
+      let userRecord;
+      try {
+        userRecord = await admin.auth().getUser(uid);
+      } catch (error) {
+        if (error.code === 'auth/user-not-found') {
+          // Create new user
+          userRecord = await admin.auth().createUser({
+            uid: uid,
+            displayName: twitchUser.display_name,
+            photoURL: twitchUser.profile_image_url,
+            email: twitchUser.email
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      // Create custom token for Firebase authentication
+      const customToken = await admin.auth().createCustomToken(uid, {
+        provider: 'twitch',
+        twitchId: twitchUser.id,
+        displayName: twitchUser.display_name,
+        profileImage: twitchUser.profile_image_url
+      });
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          firebaseToken: customToken,
+          user: {
+            uid: uid,
+            displayName: twitchUser.display_name,
+            photoURL: twitchUser.profile_image_url,
+            email: twitchUser.email,
+            twitchId: twitchUser.id
+          }
+        })
+      };
+
+    } catch (error) {
+      console.error('Twitch OAuth callback error:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ 
+          error: 'Internal server error',
+          message: error.message 
+        })
+      };
+    }
+  }
 }
 
 module.exports = new TwitchInitializer();

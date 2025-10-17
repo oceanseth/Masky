@@ -2,11 +2,18 @@
     "Version": "2012-10-17",
     "Statement": [
         {
-            "Sid": "PublicReadGetObject",
+            "Sid": "AllowCloudFrontServicePrincipal",
             "Effect": "Allow",
-            "Principal": "*",
+            "Principal": {
+                "Service": "cloudfront.amazonaws.com"
+            },
             "Action": "s3:GetObject",
-            "Resource": "arn:aws:s3:::masky.net/*"
+            "Resource": "arn:aws:s3:::masky.net/*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceArn": "arn:aws:cloudfront::218827615080:distribution/E33L46W61GEWHI"
+                }
+            }
         },
         {
             "Sid": "S3PolicyStmt-DO-NOT-MODIFY-1747895884043",

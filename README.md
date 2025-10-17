@@ -49,7 +49,30 @@ Before you begin, ensure you have the following:
 
 ## 🔧 Environment Setup
 
-### 1. AWS SSM Parameter Store
+### 1. Frontend Environment Variables
+
+Create a `.env` file in the root directory (you can copy from `.env.example`):
+
+```bash
+# Twitch OAuth Configuration
+# Get your Twitch Client ID from: https://dev.twitch.tv/console/apps
+# IMPORTANT: Set the OAuth Redirect URL in your Twitch app to: https://yourdomain.com/auth/callback
+VITE_TWITCH_CLIENT_ID=your_twitch_client_id_here
+
+# API Configuration (optional - defaults to current origin)
+# VITE_API_BASE_URL=https://yourdomain.com
+```
+
+**Setting up Twitch OAuth:**
+1. Go to [Twitch Developer Console](https://dev.twitch.tv/console/apps)
+2. Create a new application or select existing one
+3. Add OAuth Redirect URLs:
+   - For production: `https://masky.net/auth/callback`
+   - For local dev: `http://localhost:5173/auth/callback`
+4. Copy the Client ID and paste it in your `.env` file
+5. Copy the Client Secret and store it in AWS SSM (see below)
+
+### 2. AWS SSM Parameter Store
 
 Store sensitive credentials in AWS Systems Manager Parameter Store:
 
@@ -90,13 +113,13 @@ aws ssm put-parameter \
   --region us-east-1
 ```
 
-### 2. Install Dependencies
+### 3. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Configure AWS Credentials
+### 4. Configure AWS Credentials
 
 ```bash
 aws configure
@@ -190,9 +213,40 @@ masky/
 
 ## 🔌 API Endpoints
 
-### POST `/api/twitch_oauth`
+### POST `/api/twitch_oauth_callback`
 
-Authenticate users via Twitch OAuth and create Firebase custom tokens.
+Exchange Twitch authorization code for Firebase custom token (Custom OAuth flow).
+
+**Request Body:**
+```json
+{
+  "code": "twitch_authorization_code",
+  "redirectUri": "https://yourdomain.com/auth/callback"
+}
+```
+
+**Response:**
+```json
+{
+  "firebaseToken": "custom_firebase_token",
+  "user": {
+    "uid": "twitch:12345678",
+    "displayName": "StreamerName",
+    "photoURL": "https://...",
+    "email": "user@example.com",
+    "twitchId": "12345678"
+  }
+}
+```
+
+**Status Codes:**
+- `200`: Success
+- `400`: Missing authorization code
+- `500`: Server error
+
+### POST `/api/twitch_oauth` (Legacy)
+
+Authenticate users via Twitch OAuth with direct access token.
 
 **Request Body:**
 ```json
@@ -288,9 +342,14 @@ Access detailed metrics and logs in AWS CloudWatch:
    - Validate service account JSON format
    - Ensure Firebase project has Admin SDK enabled
 
-4. **Twitch OAuth failures**
-   - Verify redirect URI matches Twitch app settings
-   - Check client ID and secret are correct
+4. **Twitch OAuth failures (`auth/operation-not-allowed`)**
+   - This error means you're using the old OIDC provider approach
+   - The app now uses a **custom OAuth flow** - make sure you have:
+     - Set `VITE_TWITCH_CLIENT_ID` in your `.env` file
+     - Added the correct redirect URI in Twitch Developer Console
+     - Deployed the backend with the `/api/twitch_oauth_callback` endpoint
+   - Verify redirect URI matches Twitch app settings exactly
+   - Check client ID and secret are correct in SSM
    - Ensure scopes are properly requested
 
 ### Debug Mode

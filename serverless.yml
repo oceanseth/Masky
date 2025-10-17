@@ -35,7 +35,7 @@ provider:
             - s3:GetObject
             - s3:PutObjectAcl
             - s3:ListBucket
-          Resource: "arn:aws:s3:::www.masky.net/*"      
+          Resource: "arn:aws:s3:::masky.net/*"      
   apiGateway:
     shouldStartNameWithService: true
     apiKeys: []  # Disable API key requirement

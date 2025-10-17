@@ -1,0 +1,26 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "PublicReadGetObject",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::masky.net/*"
+        },
+        {
+            "Sid": "S3PolicyStmt-DO-NOT-MODIFY-1747895884043",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "logging.s3.amazonaws.com"
+            },
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::masky.net/*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "218827615080"
+                }
+            }
+        }
+    ]
+}

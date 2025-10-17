@@ -4,11 +4,12 @@ import {
   signInWithPopup, 
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithCustomToken,
   GoogleAuthProvider,
-  OAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
+import { config } from './config';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -27,35 +28,100 @@ const auth = getAuth(app);
 
 // Auth providers
 const googleProvider = new GoogleAuthProvider();
-const twitchProvider = new OAuthProvider('oidc.twitch');
-
-// Configure Twitch provider
-twitchProvider.addScope('user:read:email');
-twitchProvider.addScope('channel:read:subscriptions');
 
 /**
- * Sign in with Twitch
+ * Sign in with Twitch using custom OAuth flow
  */
 export async function signInWithTwitch() {
   try {
-    const result = await signInWithPopup(auth, twitchProvider);
-    const credential = OAuthProvider.credentialFromResult(result);
-    const accessToken = credential.accessToken;
+    // Generate state for CSRF protection
+    const state = generateRandomState();
+    sessionStorage.setItem('twitch_oauth_state', state);
     
-    // Send token to our API for backend processing
-    await fetch('/api/twitch_oauth', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ accessToken })
-    });
+    // Build authorization URL
+    const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
+    authUrl.searchParams.append('client_id', config.twitch.clientId);
+    authUrl.searchParams.append('redirect_uri', config.twitch.redirectUri);
+    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('scope', config.twitch.scopes.join(' '));
+    authUrl.searchParams.append('state', state);
     
-    return result.user;
+    // Redirect to Twitch for authorization
+    window.location.href = authUrl.toString();
   } catch (error) {
     console.error('Twitch sign in error:', error);
     throw error;
   }
+}
+
+/**
+ * Handle OAuth callback from Twitch
+ * This should be called on the callback page
+ */
+export async function handleTwitchCallback() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+    
+    // Check for errors
+    if (error) {
+      throw new Error(`Twitch OAuth error: ${error}`);
+    }
+    
+    if (!code) {
+      throw new Error('No authorization code received');
+    }
+    
+    // Verify state to prevent CSRF
+    const savedState = sessionStorage.getItem('twitch_oauth_state');
+    if (!savedState || savedState !== state) {
+      throw new Error('Invalid state parameter - possible CSRF attack');
+    }
+    
+    // Clear the saved state
+    sessionStorage.removeItem('twitch_oauth_state');
+    
+    // Exchange code for Firebase token via our backend
+    const response = await fetch(`${config.api.baseUrl}/api/twitch_oauth_callback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        code,
+        redirectUri: config.twitch.redirectUri 
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to authenticate with Twitch');
+    }
+    
+    const data = await response.json();
+    
+    // Sign in to Firebase with custom token
+    const userCredential = await signInWithCustomToken(auth, data.firebaseToken);
+    
+    // Clean up URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    return userCredential.user;
+  } catch (error) {
+    console.error('Twitch callback error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate random state for OAuth
+ */
+function generateRandomState() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**

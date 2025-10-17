@@ -11,7 +11,8 @@ import {
   signInWithEmail, 
   createAccountWithEmail,
   signOut,
-  onAuthChange 
+  onAuthChange,
+  handleTwitchCallback 
 } from './firebase';
 
 // State management
@@ -325,4 +326,19 @@ document.getElementById('authModal').addEventListener('click', function(e) {
 
 // Initialize
 renderAlerts();
+
+// Check if this is an OAuth callback
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('code') && urlParams.has('state')) {
+  // This is a Twitch OAuth callback
+  handleTwitchCallback().then(() => {
+    // Callback handled successfully, user will be signed in via onAuthChange
+    console.log('Successfully authenticated with Twitch');
+  }).catch((error) => {
+    console.error('Failed to handle Twitch callback:', error);
+    alert('Failed to sign in with Twitch: ' + error.message);
+    // Redirect to home on error
+    window.location.href = '/';
+  });
+}
 

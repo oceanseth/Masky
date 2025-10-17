@@ -1,0 +1,68 @@
+{
+  "nav": {
+    "features": "Funktionen",
+    "pricing": "Preise",
+    "docs": "Dokumentation",
+    "signIn": "Anmelden",
+    "startCreating": "Jetzt Erstellen"
+  },
+  "hero": {
+    "title": "MASKY",
+    "subtitle": "Erstelle KI-gestützte Stream-Benachrichtigungen mit lebensechten Avataren. Verwandle dein Twitch-Erlebnis mit dynamischen, sprachfähigen Benachrichtigungen, die dein Publikum fesseln.",
+    "ctaPrimary": "Heute Beginnen",
+    "ctaSecondary": "Funktionen Entdecken"
+  },
+  "features": {
+    "aiAvatars": {
+      "title": "KI-Avatare",
+      "description": "Wähle zwischen HeyGen- und Hume-Avataren mit fotorealistischen Stimmen und natürlichen Ausdrücken, die deine Benachrichtigungen zum Leben erwecken"
+    },
+    "realtime": {
+      "title": "Echtzeit-Events",
+      "description": "Sofortige Benachrichtigungen für Abonnements, Spenden und benutzerdefinierte Chat-Befehle, unterstützt von Twitch EventSub"
+    },
+    "customScripts": {
+      "title": "Individuelle Skripte",
+      "description": "Schreibe personalisierte Nachrichten und kreative Prompts für jeden Benachrichtigungstyp, die zum einzigartigen Stil deines Streams passen"
+    }
+  },
+  "auth": {
+    "welcomeBack": "Willkommen Zurück",
+    "signInSubtitle": "Melde dich an, um weiterzumachen",
+    "startCreatingTitle": "Jetzt Erstellen",
+    "signUpSubtitle": "Erstelle dein Konto",
+    "signInWithTwitch": "Mit Twitch anmelden",
+    "signUpWithTwitch": "Mit Twitch registrieren",
+    "signInWithGoogle": "Mit Google anmelden",
+    "signUpWithGoogle": "Mit Google registrieren",
+    "dividerText": "oder",
+    "email": "E-Mail",
+    "emailPlaceholder": "deine@email.com",
+    "password": "Passwort",
+    "passwordPlaceholder": "••••••••",
+    "signInButton": "Anmelden",
+    "createAccountButton": "Konto Erstellen",
+    "noAccount": "Noch kein Konto?",
+    "hasAccount": "Hast du bereits ein Konto?",
+    "signUpLink": "Registrieren",
+    "signInLink": "Anmelden"
+  },
+  "dashboard": {
+    "welcome": "Willkommen, {{username}}",
+    "subtitle": "Verbinde deine Konten und erstelle fantastische Benachrichtigungen",
+    "connectAccounts": "Verbinde Deine Konten",
+    "twitch": "Twitch",
+    "heygen": "HeyGen",
+    "hume": "Hume AI",
+    "notConnected": "Nicht Verbunden",
+    "connected": "Verbunden",
+    "connectTwitch": "Twitch Verbinden",
+    "connectHeygen": "HeyGen Verbinden",
+    "connectHume": "Hume Verbinden",
+    "yourAlerts": "Deine Benachrichtigungen",
+    "createAlert": "+ Benachrichtigung Erstellen",
+    "emptyStateIcon": "✨",
+    "emptyStateText": "Noch keine Benachrichtigungen. Erstelle deine erste Benachrichtigung, um loszulegen!"
+  }
+}
+

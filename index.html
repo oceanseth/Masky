@@ -49,32 +49,37 @@
     <nav>
         <div class="logo">MASKY</div>
         <div class="nav-links">
-            <a href="#features">Features</a>
-            <a href="#pricing">Pricing</a>
-            <a href="#docs">Docs</a>
-            <button class="btn btn-secondary" onclick="showLogin()">Sign In</button>
-            <button class="btn btn-primary" onclick="showSignup()">Start Creating</button>
+            <a href="#features" data-i18n="nav.features">Features</a>
+            <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
+            <a href="#docs" data-i18n="nav.docs">Docs</a>
+            <select id="languageSelector" onchange="changeLanguage(this.value)" style="margin-right: 1rem; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192, 132, 252, 0.3); color: white; border-radius: 0.5rem; cursor: pointer;">
+                <option value="en">🇺🇸 English</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="de">🇩🇪 Deutsch</option>
+            </select>
+            <button class="btn btn-secondary" onclick="showLogin()" data-i18n="nav.signIn">Sign In</button>
+            <button class="btn btn-primary" onclick="showSignup()" data-i18n="nav.startCreating">Start Creating</button>
         </div>
     </nav>
 
     <!-- Landing Page -->
     <section class="landing" id="landing">
         <div class="hero-content">
-            <h1 class="hero-title">MASKY</h1>
-            <p class="hero-subtitle">
+            <h1 class="hero-title" data-i18n="hero.title">MASKY</h1>
+            <p class="hero-subtitle" data-i18n="hero.subtitle">
                 Create AI-powered stream alerts with lifelike avatars. 
                 Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.
             </p>
             <div class="cta-buttons">
-                <button class="btn btn-primary" onclick="showSignup()">Start Creating Today</button>
-                <button class="btn btn-secondary" onclick="scrollToFeatures()">Explore Features</button>
+                <button class="btn btn-primary" onclick="showSignup()" data-i18n="hero.ctaPrimary">Start Creating Today</button>
+                <button class="btn btn-secondary" onclick="scrollToFeatures()" data-i18n="hero.ctaSecondary">Explore Features</button>
             </div>
 
             <div class="features" id="features">
                 <div class="feature-card">
                     <div class="icon-ai-avatar" style="color: #c084fc;"></div>
-                    <div class="feature-title">AI Avatars</div>
-                    <div class="feature-desc">
+                    <div class="feature-title" data-i18n="features.aiAvatars.title">AI Avatars</div>
+                    <div class="feature-desc" data-i18n="features.aiAvatars.description">
                         Choose from HeyGen and Hume avatars with photorealistic voices and natural expressions that bring your alerts to life
                     </div>
                 </div>
@@ -82,8 +87,8 @@
                     <div class="icon-realtime" style="color: #c084fc;">
                         <span></span>
                     </div>
-                    <div class="feature-title">Real-Time Events</div>
-                    <div class="feature-desc">
+                    <div class="feature-title" data-i18n="features.realtime.title">Real-Time Events</div>
+                    <div class="feature-desc" data-i18n="features.realtime.description">
                         Instant alerts for subscriptions, donations, and custom chat commands powered by Twitch EventSub
                     </div>
                 </div>
@@ -93,8 +98,8 @@
                         <span></span>
                         <span></span>
                     </div>
-                    <div class="feature-title">Custom Scripts</div>
-                    <div class="feature-desc">
+                    <div class="feature-title" data-i18n="features.customScripts.title">Custom Scripts</div>
+                    <div class="feature-desc" data-i18n="features.customScripts.description">
                         Write personalized messages and creative prompts for each alert type to match your stream's unique style
                     </div>
                 </div>
@@ -107,59 +112,59 @@
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">×</button>
             <div id="loginForm">
-                <h2 class="modal-title">Welcome Back</h2>
-                <p class="modal-subtitle">Sign in to continue creating</p>
+                <h2 class="modal-title" data-i18n="auth.welcomeBack">Welcome Back</h2>
+                <p class="modal-subtitle" data-i18n="auth.signInSubtitle">Sign in to continue creating</p>
                 
                 <div class="auth-providers">
                     <button class="provider-btn twitch" onclick="loginWithTwitch()">
-                        <span>🎮</span> Sign in with Twitch
+                        <span>🎮</span> <span data-i18n="auth.signInWithTwitch">Sign in with Twitch</span>
                     </button>
                     <button class="provider-btn google" onclick="loginWithGoogle()">
-                        <span>🔷</span> Sign in with Google
+                        <span>🔷</span> <span data-i18n="auth.signInWithGoogle">Sign in with Google</span>
                     </button>
                 </div>
 
-                <div class="divider">or</div>
+                <div class="divider" data-i18n="auth.dividerText">or</div>
 
                 <div class="input-group">
-                    <label>Email</label>
-                    <input type="email" id="loginEmail" placeholder="your@email.com">
+                    <label data-i18n="auth.email">Email</label>
+                    <input type="email" id="loginEmail" data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
                 </div>
                 <div class="input-group">
-                    <label>Password</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••">
+                    <label data-i18n="auth.password">Password</label>
+                    <input type="password" id="loginPassword" data-i18n-placeholder="auth.passwordPlaceholder" placeholder="••••••••">
                 </div>
-                <button class="btn btn-primary" onclick="login()">Sign In</button>
+                <button class="btn btn-primary" onclick="login()" data-i18n="auth.signInButton">Sign In</button>
                 <div class="auth-switch">
-                    Don't have an account? <a onclick="switchToSignup()">Sign up</a>
+                    <span data-i18n="auth.noAccount">Don't have an account?</span> <a onclick="switchToSignup()" data-i18n="auth.signUpLink">Sign up</a>
                 </div>
             </div>
             <div id="signupForm" style="display: none;">
-                <h2 class="modal-title">Start Creating</h2>
-                <p class="modal-subtitle">Create your account</p>
+                <h2 class="modal-title" data-i18n="auth.startCreatingTitle">Start Creating</h2>
+                <p class="modal-subtitle" data-i18n="auth.signUpSubtitle">Create your account</p>
                 
                 <div class="auth-providers">
                     <button class="provider-btn twitch" onclick="loginWithTwitch()">
-                        <span>🎮</span> Sign up with Twitch
+                        <span>🎮</span> <span data-i18n="auth.signUpWithTwitch">Sign up with Twitch</span>
                     </button>
                     <button class="provider-btn google" onclick="loginWithGoogle()">
-                        <span>🔷</span> Sign up with Google
+                        <span>🔷</span> <span data-i18n="auth.signUpWithGoogle">Sign up with Google</span>
                     </button>
                 </div>
 
-                <div class="divider">or</div>
+                <div class="divider" data-i18n="auth.dividerText">or</div>
 
                 <div class="input-group">
-                    <label>Email</label>
-                    <input type="email" id="signupEmail" placeholder="your@email.com">
+                    <label data-i18n="auth.email">Email</label>
+                    <input type="email" id="signupEmail" data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
                 </div>
                 <div class="input-group">
-                    <label>Password</label>
-                    <input type="password" id="signupPassword" placeholder="••••••••">
+                    <label data-i18n="auth.password">Password</label>
+                    <input type="password" id="signupPassword" data-i18n-placeholder="auth.passwordPlaceholder" placeholder="••••••••">
                 </div>
-                <button class="btn btn-primary" onclick="signup()">Create Account</button>
+                <button class="btn btn-primary" onclick="signup()" data-i18n="auth.createAccountButton">Create Account</button>
                 <div class="auth-switch">
-                    Already have an account? <a onclick="switchToLogin()">Sign in</a>
+                    <span data-i18n="auth.hasAccount">Already have an account?</span> <a onclick="switchToLogin()" data-i18n="auth.signInLink">Sign in</a>
                 </div>
             </div>
         </div>
@@ -170,42 +175,42 @@
         <div class="dashboard-container">
             <div class="dashboard-header">
                 <h1 class="dashboard-title">Welcome, <span id="username">Creator</span></h1>
-                <p class="dashboard-subtitle">Connect your accounts and start creating amazing alerts</p>
+                <p class="dashboard-subtitle" data-i18n="dashboard.subtitle">Connect your accounts and start creating amazing alerts</p>
             </div>
 
             <div id="socialLinking">
-                <h2 class="section-title">Connect Your Accounts</h2>
+                <h2 class="section-title" data-i18n="dashboard.connectAccounts">Connect Your Accounts</h2>
                 <div class="social-grid">
                     <div class="social-card" id="twitchCard">
                         <div class="icon-twitch" style="color: #c084fc;"></div>
-                        <div class="social-name">Twitch</div>
-                        <div class="social-status">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectTwitch()">Connect Twitch</button>
+                        <div class="social-name" data-i18n="dashboard.twitch">Twitch</div>
+                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectTwitch()" data-i18n="dashboard.connectTwitch">Connect Twitch</button>
                     </div>
                     <div class="social-card" id="heygenCard">
                         <div class="icon-avatar" style="color: #c084fc;"></div>
-                        <div class="social-name">HeyGen</div>
-                        <div class="social-status">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectHeygen()">Connect HeyGen</button>
+                        <div class="social-name" data-i18n="dashboard.heygen">HeyGen</div>
+                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectHeygen()" data-i18n="dashboard.connectHeygen">Connect HeyGen</button>
                     </div>
                     <div class="social-card" id="humeCard">
                         <div class="icon-voice" style="color: #c084fc;"><span></span></div>
-                        <div class="social-name">Hume AI</div>
-                        <div class="social-status">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectHume()">Connect Hume</button>
+                        <div class="social-name" data-i18n="dashboard.hume">Hume AI</div>
+                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectHume()" data-i18n="dashboard.connectHume">Connect Hume</button>
                     </div>
                 </div>
             </div>
 
             <div class="alerts-section" id="alertsSection" style="display: none;">
                 <div class="section-header">
-                    <h2 class="section-title">Your Alerts</h2>
-                    <button class="btn btn-primary" onclick="createNewAlert()">+ Create Alert</button>
+                    <h2 class="section-title" data-i18n="dashboard.yourAlerts">Your Alerts</h2>
+                    <button class="btn btn-primary" onclick="createNewAlert()" data-i18n="dashboard.createAlert">+ Create Alert</button>
                 </div>
                 <div class="alerts-grid" id="alertsGrid">
                     <div class="empty-state">
-                        <div class="empty-state-icon">✨</div>
-                        <p>No alerts yet. Create your first alert to get started!</p>
+                        <div class="empty-state-icon" data-i18n="dashboard.emptyStateIcon">✨</div>
+                        <p data-i18n="dashboard.emptyStateText">No alerts yet. Create your first alert to get started!</p>
                     </div>
                 </div>
             </div>

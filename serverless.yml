@@ -1,0 +1,56 @@
+service: masky
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'production'}
+  region: us-east-1
+  environment:
+    STAGE: ${self:provider.stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+          Resource: 
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/firebase_service_account
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/twitch_client_id
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/twitch_client_secret  
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/voicecert/${self:provider.stage}/STRIPE_SECRET_KEY
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/voicecert/${self:provider.stage}/STRIPE_WEBHOOK_SECRET
+        - Effect: Allow
+          Action:
+            - kms:Decrypt
+          Resource: 
+            - "*"
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:PutObjectAcl
+            - s3:ListBucket
+          Resource: "arn:aws:s3:::www.masky.net/*"      
+  apiGateway:
+    shouldStartNameWithService: true
+    apiKeys: []  # Disable API key requirement
+    minimumCompressionSize: 1024
+    binaryMediaTypes:
+      - '*/*'
+
+functions:
+  api:
+    handler: api/api.handler
+    events:
+      - http:
+          path: api/{proxy+}  # Wildcard path that matches api/* 
+          method: ANY        # Allows all HTTP methods
+          cors: true
+          private: false        # Ensure endpoint is public
+          authorizer: null     # Disable AWS authorizer
+          authentication: null # Disable AWS authentication

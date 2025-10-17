@@ -34,16 +34,19 @@ const state = {
 // Modal functions
 window.showLogin = function() {
   document.getElementById('authModal').classList.add('active');
+  document.body.classList.add('modal-open');
   switchToLogin();
 };
 
 window.showSignup = function() {
   document.getElementById('authModal').classList.add('active');
+  document.body.classList.add('modal-open');
   switchToSignup();
 };
 
 window.closeModal = function() {
   document.getElementById('authModal').classList.remove('active');
+  document.body.classList.remove('modal-open');
 };
 
 function switchToLogin() {

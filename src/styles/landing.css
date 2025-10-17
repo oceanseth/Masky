@@ -1,13 +1,15 @@
 /* Landing Page Hero */
 .landing {
     position: relative;
-    min-height: 100vh;
+    height: 100vh;
+    max-height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     padding: 2rem;
     z-index: 1;
+    overflow: hidden;
 }
 
 .hero-content {
@@ -15,6 +17,9 @@
     text-align: center;
     margin-top: 60px;
     position: relative;
+    height: calc(100vh - 4rem);
+    display: flex;
+    flex-direction: column;
 }
 
 /* Giant holographic text with animated gradient */
@@ -58,10 +63,10 @@
 }
 
 .hero-subtitle {
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     color: rgba(255, 255, 255, 0.7);
-    margin-bottom: 3.5rem;
-    line-height: 1.8;
+    margin-bottom: 2rem;
+    line-height: 1.6;
     letter-spacing: 0.05em;
     max-width: 800px;
     margin-left: auto;
@@ -72,7 +77,7 @@
     display: flex;
     gap: 2rem;
     justify-content: center;
-    margin-bottom: 8rem;
+    margin-bottom: 2rem;
 }
 
 /* Grid of holographic cards */
@@ -81,7 +86,9 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 2.5rem;
     max-width: 1300px;
-    margin-top: 6rem;
+    margin-top: auto;
+    margin-bottom: 2rem;
+    width: 100%;
 }
 
 .feature-card {
@@ -89,11 +96,14 @@
     border: 2px solid transparent;
     background-clip: padding-box;
     border-radius: 30px;
-    padding: 3rem 2.5rem;
+    padding: 2rem 1.5rem;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(20px);
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
 }
 
 .feature-card::before {

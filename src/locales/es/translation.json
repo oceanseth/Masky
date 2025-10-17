@@ -1,0 +1,68 @@
+{
+  "nav": {
+    "features": "Características",
+    "pricing": "Precios",
+    "docs": "Documentación",
+    "signIn": "Iniciar Sesión",
+    "startCreating": "Empezar a Crear"
+  },
+  "hero": {
+    "title": "MASKY",
+    "subtitle": "Crea alertas de streaming con IA y avatares realistas. Transforma tu experiencia de Twitch con alertas dinámicas y con voz que cautivan a tu audiencia.",
+    "ctaPrimary": "Empieza a Crear Hoy",
+    "ctaSecondary": "Explorar Características"
+  },
+  "features": {
+    "aiAvatars": {
+      "title": "Avatares IA",
+      "description": "Elige entre avatares de HeyGen y Hume con voces fotorrealistas y expresiones naturales que dan vida a tus alertas"
+    },
+    "realtime": {
+      "title": "Eventos en Tiempo Real",
+      "description": "Alertas instantáneas para suscripciones, donaciones y comandos de chat personalizados impulsados por Twitch EventSub"
+    },
+    "customScripts": {
+      "title": "Scripts Personalizados",
+      "description": "Escribe mensajes personalizados y prompts creativos para cada tipo de alerta que coincida con el estilo único de tu stream"
+    }
+  },
+  "auth": {
+    "welcomeBack": "Bienvenido de Nuevo",
+    "signInSubtitle": "Inicia sesión para continuar creando",
+    "startCreatingTitle": "Empezar a Crear",
+    "signUpSubtitle": "Crea tu cuenta",
+    "signInWithTwitch": "Iniciar sesión con Twitch",
+    "signUpWithTwitch": "Registrarse con Twitch",
+    "signInWithGoogle": "Iniciar sesión con Google",
+    "signUpWithGoogle": "Registrarse con Google",
+    "dividerText": "o",
+    "email": "Correo Electrónico",
+    "emailPlaceholder": "tu@email.com",
+    "password": "Contraseña",
+    "passwordPlaceholder": "••••••••",
+    "signInButton": "Iniciar Sesión",
+    "createAccountButton": "Crear Cuenta",
+    "noAccount": "¿No tienes una cuenta?",
+    "hasAccount": "¿Ya tienes una cuenta?",
+    "signUpLink": "Regístrate",
+    "signInLink": "Inicia sesión"
+  },
+  "dashboard": {
+    "welcome": "Bienvenido, {{username}}",
+    "subtitle": "Conecta tus cuentas y comienza a crear alertas increíbles",
+    "connectAccounts": "Conecta Tus Cuentas",
+    "twitch": "Twitch",
+    "heygen": "HeyGen",
+    "hume": "Hume AI",
+    "notConnected": "No Conectado",
+    "connected": "Conectado",
+    "connectTwitch": "Conectar Twitch",
+    "connectHeygen": "Conectar HeyGen",
+    "connectHume": "Conectar Hume",
+    "yourAlerts": "Tus Alertas",
+    "createAlert": "+ Crear Alerta",
+    "emptyStateIcon": "✨",
+    "emptyStateText": "Aún no hay alertas. ¡Crea tu primera alerta para comenzar!"
+  }
+}
+

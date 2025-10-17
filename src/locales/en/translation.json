@@ -1,0 +1,68 @@
+{
+  "nav": {
+    "features": "Features",
+    "pricing": "Pricing",
+    "docs": "Docs",
+    "signIn": "Sign In",
+    "startCreating": "Start Creating"
+  },
+  "hero": {
+    "title": "MASKY",
+    "subtitle": "Create AI-powered stream alerts with lifelike avatars. Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.",
+    "ctaPrimary": "Start Creating Today",
+    "ctaSecondary": "Explore Features"
+  },
+  "features": {
+    "aiAvatars": {
+      "title": "AI Avatars",
+      "description": "Choose from HeyGen and Hume avatars with photorealistic voices and natural expressions that bring your alerts to life"
+    },
+    "realtime": {
+      "title": "Real-Time Events",
+      "description": "Instant alerts for subscriptions, donations, and custom chat commands powered by Twitch EventSub"
+    },
+    "customScripts": {
+      "title": "Custom Scripts",
+      "description": "Write personalized messages and creative prompts for each alert type to match your stream's unique style"
+    }
+  },
+  "auth": {
+    "welcomeBack": "Welcome Back",
+    "signInSubtitle": "Sign in to continue creating",
+    "startCreatingTitle": "Start Creating",
+    "signUpSubtitle": "Create your account",
+    "signInWithTwitch": "Sign in with Twitch",
+    "signUpWithTwitch": "Sign up with Twitch",
+    "signInWithGoogle": "Sign in with Google",
+    "signUpWithGoogle": "Sign up with Google",
+    "dividerText": "or",
+    "email": "Email",
+    "emailPlaceholder": "your@email.com",
+    "password": "Password",
+    "passwordPlaceholder": "••••••••",
+    "signInButton": "Sign In",
+    "createAccountButton": "Create Account",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "signUpLink": "Sign up",
+    "signInLink": "Sign in"
+  },
+  "dashboard": {
+    "welcome": "Welcome, {{username}}",
+    "subtitle": "Connect your accounts and start creating amazing alerts",
+    "connectAccounts": "Connect Your Accounts",
+    "twitch": "Twitch",
+    "heygen": "HeyGen",
+    "hume": "Hume AI",
+    "notConnected": "Not Connected",
+    "connected": "Connected",
+    "connectTwitch": "Connect Twitch",
+    "connectHeygen": "Connect HeyGen",
+    "connectHume": "Connect Hume",
+    "yourAlerts": "Your Alerts",
+    "createAlert": "+ Create Alert",
+    "emptyStateIcon": "✨",
+    "emptyStateText": "No alerts yet. Create your first alert to get started!"
+  }
+}
+

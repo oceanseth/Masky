@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite';
+import { copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { join } from 'path';
 
 export default defineConfig({
   root: '.',
@@ -14,6 +16,29 @@ export default defineConfig({
   server: {
     port: 3000,
     open: true
-  }
+  },
+  // Copy locale files to dist after build
+  plugins: [
+    {
+      name: 'copy-locales',
+      closeBundle() {
+        const copyRecursive = (src, dest) => {
+          mkdirSync(dest, { recursive: true });
+          const entries = readdirSync(src);
+          for (const entry of entries) {
+            const srcPath = join(src, entry);
+            const destPath = join(dest, entry);
+            if (statSync(srcPath).isDirectory()) {
+              copyRecursive(srcPath, destPath);
+            } else {
+              copyFileSync(srcPath, destPath);
+            }
+          }
+        };
+        copyRecursive('src/locales', 'dist/src/locales');
+        console.log('✓ Locale files copied to dist/src/locales');
+      }
+    }
+  ]
 });
 

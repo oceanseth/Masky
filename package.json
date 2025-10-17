@@ -2,7 +2,6 @@
   "name": "minime",
   "version": "1.0.0",
   "description": "AI-powered stream alert system for Twitch streamers featuring lifelike avatars, real-time event notifications, and customizable alert scripts.",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -27,6 +26,9 @@
     "aws-sdk": "^2.1692.0",
     "firebase": "^12.4.0",
     "firebase-admin": "^13.5.0",
+    "i18next": "^25.6.0",
+    "i18next-browser-languagedetector": "^8.2.0",
+    "i18next-http-backend": "^3.0.2",
     "stripe": "^19.1.0"
   }
 }

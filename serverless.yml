@@ -41,7 +41,27 @@ provider:
     apiKeys: []  # Disable API key requirement
     minimumCompressionSize: 1024
     binaryMediaTypes:
-      - '*/*'
+      - 'image/*'
+      - 'application/pdf'
+      - 'application/octet-stream'
+
+package:
+  patterns:
+    - '!.git/**'
+    - '!.github/**'
+    - '!dist/**'
+    - '!src/**'
+    - '!iac/**'
+    - '!index.html'
+    - '!vite.config.js'
+    - '!*.md'
+    - '!*.bat'
+    - '!*.txt'
+    - '!TWITCH_OAUTH_SETUP.md'
+    - '!ENV_SETUP.txt'
+    - 'api/**'
+    - 'utils/**'
+    - 'node_modules/**'
 
 functions:
   api:

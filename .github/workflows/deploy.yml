@@ -29,7 +29,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          aws s3 sync dist/ s3://www.masky.net --delete
+          aws s3 sync dist/ s3://masky.net --delete
           
       - name: Invalidate CloudFront Cache
         env:
@@ -37,4 +37,4 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          aws cloudfront create-invalidation --distribution-id EU2CPB9MU0VI2 --paths "/*"
+          aws cloudfront create-invalidation --distribution-id E33L46W61GEWHI --paths "/*"

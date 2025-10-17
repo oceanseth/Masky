@@ -18,6 +18,14 @@
     animation: modalFadeIn 0.3s ease;
 }
 
+/* Prevent body scroll when modal is active */
+body.modal-open {
+    overflow: hidden;
+    height: 100vh;
+    position: fixed;
+    width: 100%;
+}
+
 @keyframes modalFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -30,10 +38,13 @@
     padding: 4rem;
     max-width: 500px;
     width: 90%;
+    max-height: 90vh;
     position: relative;
     box-shadow: 0 30px 80px rgba(147, 51, 234, 0.5);
     backdrop-filter: blur(40px);
     animation: modalSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 @keyframes modalSlideUp {

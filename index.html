@@ -4,6 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DigiMe - AI-Powered Stream Alerts</title>
+    <!-- App Configuration -->
+    <script>
+        const CONFIG = {
+            TWITCH: {
+                CLIENT_ID: '3mntf6t1mwo877syo6oqjcps8uxkg8',
+                REDIRECT_URI: window.location.origin + '/twitch-callback',
+                AUTH_ENDPOINT: 'https://id.twitch.tv/oauth2/authorize'
+            },
+            HEYGEN: {
+                CLIENT_ID: 'zJbN8KmQ4PxY2vW',  // Replace with your actual HeyGen client ID
+                REDIRECT_URI: window.location.origin + '/heygen-callback',
+                AUTH_ENDPOINT: 'https://api.heygen.com/v1/oauth/authorize',
+                API_ENDPOINT: 'https://api.heygen.com/v1'
+            },
+            HUME: {
+                CLIENT_ID: 'hR9TpL5NxM3kVc',  // Replace with your actual Hume client ID
+                REDIRECT_URI: window.location.origin + '/hume-callback',
+                AUTH_ENDPOINT: 'https://api.hume.ai/v1/auth/oauth/authorize',
+                API_ENDPOINT: 'https://api.hume.ai/v1'
+            }
+        };
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1588,67 +1610,99 @@
 
         // Connection functions
         function connectTwitch() {
-            const card = document.getElementById('twitchCard');
-            const btn = card.querySelector('.btn');
-            
             if (state.connections.twitch) {
-                state.connections.twitch = false;
-                card.classList.remove('connected');
-                card.querySelector('.social-status').textContent = 'Not Connected';
-                btn.textContent = 'Connect Twitch';
-                btn.classList.remove('btn-secondary');
-                btn.classList.add('btn-primary');
+                // Handle disconnect
+                if (confirm('Are you sure you want to disconnect your Twitch account?')) {
+                    state.connections.twitch = false;
+                    const card = document.getElementById('twitchCard');
+                    card.classList.remove('connected');
+                    card.querySelector('.social-status').textContent = 'Not Connected';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Connect Twitch';
+                    btn.classList.remove('btn-secondary');
+                    btn.classList.add('btn-primary');
+                    checkAllConnections();
+                }
             } else {
-                state.connections.twitch = true;
-                card.classList.add('connected');
-                card.querySelector('.social-status').textContent = 'Connected ✓';
-                btn.textContent = 'Disconnect';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-secondary');
+                // Twitch OAuth flow
+                const client_id = CONFIG.TWITCH.CLIENT_ID;
+                const redirect_uri = encodeURIComponent(CONFIG.TWITCH.REDIRECT_URI);
+                const scope = 'channel:read:subscriptions user:read:email';
+                
+                const twitchAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${client_id}&redirect_uri=${redirect_uri}&response_type=code&scope=${scope}&force_verify=true`;
+                window.location.href = twitchAuthUrl;
             }
-            
-            checkAllConnections();
         }
 
         function connectHeygen() {
-            const card = document.getElementById('heygenCard');
-            const btn = card.querySelector('.btn');
-            
             if (state.connections.heygen) {
-                state.connections.heygen = false;
-                card.classList.remove('connected');
-                card.querySelector('.social-status').textContent = 'Not Connected';
-                btn.textContent = 'Connect HeyGen';
-                btn.classList.remove('btn-secondary');
-                btn.classList.add('btn-primary');
+                // Handle disconnect
+                if (confirm('Are you sure you want to disconnect your HeyGen account?')) {
+                    // Clear HeyGen token from localStorage
+                    localStorage.removeItem('heygen_token');
+                    state.connections.heygen = false;
+                    const card = document.getElementById('heygenCard');
+                    card.classList.remove('connected');
+                    card.querySelector('.social-status').textContent = 'Not Connected';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Connect HeyGen';
+                    btn.classList.remove('btn-secondary');
+                    btn.classList.add('btn-primary');
+                }
             } else {
-                state.connections.heygen = true;
-                card.classList.add('connected');
-                card.querySelector('.social-status').textContent = 'Connected ✓';
-                btn.textContent = 'Disconnect';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-secondary');
+                // HeyGen OAuth flow
+                const client_id = CONFIG.HEYGEN.CLIENT_ID;
+                const redirect_uri = encodeURIComponent(CONFIG.HEYGEN.REDIRECT_URI);
+                const scope = 'avatars.read avatars.write models.read models.write';
+                const state = generateRandomState();
+                
+                // Store state for verification
+                localStorage.setItem('heygen_state', state);
+                
+                const heygenAuthUrl = `${CONFIG.HEYGEN.AUTH_ENDPOINT}?` + 
+                    `client_id=${client_id}&` +
+                    `redirect_uri=${redirect_uri}&` +
+                    `response_type=code&` +
+                    `scope=${scope}&` +
+                    `state=${state}`;
+                
+                window.location.href = heygenAuthUrl;
             }
         }
 
         function connectHume() {
-            const card = document.getElementById('humeCard');
-            const btn = card.querySelector('.btn');
-            
             if (state.connections.hume) {
-                state.connections.hume = false;
-                card.classList.remove('connected');
-                card.querySelector('.social-status').textContent = 'Not Connected';
-                btn.textContent = 'Connect Hume';
-                btn.classList.remove('btn-secondary');
-                btn.classList.add('btn-primary');
+                // Handle disconnect
+                if (confirm('Are you sure you want to disconnect your Hume AI account?')) {
+                    // Clear Hume token from localStorage
+                    localStorage.removeItem('hume_token');
+                    state.connections.hume = false;
+                    const card = document.getElementById('humeCard');
+                    card.classList.remove('connected');
+                    card.querySelector('.social-status').textContent = 'Not Connected';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Connect Hume';
+                    btn.classList.remove('btn-secondary');
+                    btn.classList.add('btn-primary');
+                }
             } else {
-                state.connections.hume = true;
-                card.classList.add('connected');
-                card.querySelector('.social-status').textContent = 'Connected ✓';
-                btn.textContent = 'Disconnect';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-secondary');
+                // Hume AI OAuth flow
+                const client_id = CONFIG.HUME.CLIENT_ID;
+                const redirect_uri = encodeURIComponent(CONFIG.HUME.REDIRECT_URI);
+                const scope = 'emotions.read emotions.write voices.read voices.write';
+                const state = generateRandomState();
+                
+                // Store state for verification
+                localStorage.setItem('hume_state', state);
+                
+                const humeAuthUrl = `${CONFIG.HUME.AUTH_ENDPOINT}?` + 
+                    `client_id=${client_id}&` +
+                    `redirect_uri=${redirect_uri}&` +
+                    `response_type=code&` +
+                    `scope=${scope}&` +
+                    `state=${state}`;
+                
+                window.location.href = humeAuthUrl;
             }
         }
 
@@ -1725,6 +1779,124 @@
                 closeModal();
             }
         });
+
+        // OAuth callback handling
+        function handleOAuthCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+
+            if (error) {
+                alert('Error during authentication: ' + error);
+                return;
+            }
+
+            if (code) {
+                if (window.location.pathname.includes('twitch-callback')) {
+                    handleTwitchCallback(code);
+                } else if (window.location.pathname.includes('heygen-callback')) {
+                    handleHeygenCallback(code);
+                } else if (window.location.pathname.includes('hume-callback')) {
+                    handleHumeCallback(code);
+                }
+            }
+        }
+
+        function handleTwitchCallback(code) {
+            // Exchange the code for an access token
+            fetch('/api/twitch/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.access_token) {
+                    state.connections.twitch = true;
+                    const card = document.getElementById('twitchCard');
+                    card.classList.add('connected');
+                    card.querySelector('.social-status').textContent = 'Connected ✓';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Disconnect';
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-secondary');
+                    checkAllConnections();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to connect Twitch account');
+            });
+        }
+
+        function handleHeygenCallback(code) {
+            fetch('/api/heygen/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.access_token) {
+                    state.connections.heygen = true;
+                    const card = document.getElementById('heygenCard');
+                    card.classList.add('connected');
+                    card.querySelector('.social-status').textContent = 'Connected ✓';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Disconnect';
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-secondary');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to connect HeyGen account');
+            });
+        }
+
+        function handleHumeCallback(code) {
+            fetch('/api/hume/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.access_token) {
+                    state.connections.hume = true;
+                    const card = document.getElementById('humeCard');
+                    card.classList.add('connected');
+                    card.querySelector('.social-status').textContent = 'Connected ✓';
+                    const btn = card.querySelector('.btn');
+                    btn.textContent = 'Disconnect';
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-secondary');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to connect Hume account');
+            });
+        }
+
+        // Check for OAuth callbacks on page load
+        window.addEventListener('load', function() {
+            handleOAuthCallback();
+        });
+
+        // Helper function to generate random state for OAuth
+        function generateRandomState() {
+            const array = new Uint8Array(24);
+            crypto.getRandomValues(array);
+            return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+        }
 
         // Initialize
         renderAlerts();

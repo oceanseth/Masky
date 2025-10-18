@@ -21,7 +21,7 @@ class StripeInitializer {
       // Load both secret key and webhook secret in parallel
       const [secretKeyResult, webhookSecretResult] = await Promise.all([
         this.ssm.getParameter({
-          Name: `/voicecert/prod/STRIPE_SECRET_KEY`,
+          Name: `/masky/${stage}/stripe_secret_key`,
           WithDecryption: true
         }).promise(),
         this.ssm.getParameter({

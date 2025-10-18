@@ -1,11 +1,4 @@
-// Configuration for OAuth providers and API endpoints
-
-// Determine API base URL based on environment
-const getApiBaseUrl = () => {
-  // Use API Gateway directly to bypass CloudFront (which strips Authorization header)
-  // CloudFront needs to be configured to forward Authorization header
-  return 'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production';
-};
+// Configuration for OAuth providers, API endpoints, and Stripe products
 
 export const config = {
   // Twitch OAuth Configuration
@@ -15,9 +8,10 @@ export const config = {
     scopes: ['user:read:email', 'channel:read:subscriptions']
   },
   
-  // API Configuration
+  // API Configuration  
   api: {
-    baseUrl: getApiBaseUrl()
+    // Use direct API Gateway to bypass CloudFront (which is still deploying updated config)
+    baseUrl: (window.location.host=='localhost')?'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production':'https://masky.net'
   },
   stripe: {
     // Stripe Price IDs (not Product IDs)

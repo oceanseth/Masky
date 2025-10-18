@@ -70,7 +70,7 @@ functions:
       - http:
           path: api/{proxy+}  # Wildcard path that matches api/* 
           method: ANY        # Allows all HTTP methods
-          cors: true
+          cors: false  # Disable API Gateway CORS - Lambda handles it
           private: false        # Ensure endpoint is public
           authorizer: null     # Disable AWS authorizer
           authentication: null # Disable AWS authentication

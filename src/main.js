@@ -181,6 +181,10 @@ onAuthChange((user) => {
     
     // Load and display membership status
     loadMembershipStatus();
+
+    // Hide auth-related buttons when logged in
+    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
+    authButtons.forEach(button => button.style.display = 'none');
   } else {
     state.isLoggedIn = false;
     state.user = null;
@@ -191,6 +195,10 @@ onAuthChange((user) => {
     if (membershipLink) {
       membershipLink.style.display = 'none';
     }
+
+    // Show auth-related buttons when logged out
+    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
+    authButtons.forEach(button => button.style.display = '');
   }
 });
 
@@ -282,10 +290,15 @@ async function checkTwitchConnection() {
   const user = state.user;
   if (user && user.providerData) {
     const hasTwitch = user.providerData.some(provider => 
-      provider.providerId === 'oidc.twitch'
+      provider.providerId === 'oidc.twitch' || provider.providerId === 'twitch.tv'
     );
     if (hasTwitch) {
       markTwitchConnected();
+      // Hide the entire Twitch card since user is already connected via Twitch
+      const twitchCard = document.getElementById('twitchCard');
+      if (twitchCard) {
+        twitchCard.style.display = 'none';
+      }
     }
   }
 }

@@ -8,6 +8,12 @@ const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
 
+// Stripe Price IDs - These should be created in Stripe Dashboard
+const STRIPE_PRICE_IDS = {
+    standard: process.env.STRIPE_STANDARD_PRICE_ID || 'price_standard',
+    pro: process.env.STRIPE_PRO_PRICE_ID || 'price_pro'
+};
+
 // Handle Twitch OAuth login (legacy - for direct access token)
 const handleTwitchOAuth = async (event) => {
     try {
@@ -145,10 +151,586 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Subscription status endpoint
+    if (path.includes('/subscription/status') && method === 'GET') {
+        const response = await getSubscriptionStatus(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create checkout session
+    if (path.includes('/subscription/create-checkout') && method === 'POST') {
+        const response = await createCheckoutSession(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Cancel subscription
+    if (path.includes('/subscription/cancel') && method === 'POST') {
+        const response = await cancelSubscription(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create customer portal session
+    if (path.includes('/subscription/portal') && method === 'POST') {
+        const response = await createPortalSession(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Stripe webhook
+    if (path.includes('/stripe/webhook') && method === 'POST') {
+        const response = await handleStripeWebhook(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Default response for unmatched routes
     return {
         statusCode: 404,
         headers,
         body: JSON.stringify({ error: 'Route not found' })
     };
+}
+
+/**
+ * Get subscription status for a user
+ */
+async function getSubscriptionStatus(event) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        // Verify the token
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Get user's custom claims (where we store subscription info)
+        const userRecord = await admin.auth().getUser(userId);
+        const customClaims = userRecord.customClaims || {};
+
+        // If no subscription data in custom claims, check Firestore
+        const db = admin.firestore();
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.data() || {};
+
+        const subscription = {
+            tier: customClaims.subscriptionTier || userData.subscriptionTier || 'free',
+            status: customClaims.subscriptionStatus || userData.subscriptionStatus || 'active',
+            stripeCustomerId: customClaims.stripeCustomerId || userData.stripeCustomerId,
+            stripeSubscriptionId: customClaims.stripeSubscriptionId || userData.stripeSubscriptionId,
+            currentPeriodEnd: customClaims.currentPeriodEnd || userData.currentPeriodEnd,
+            cancelAtPeriodEnd: customClaims.cancelAtPeriodEnd || userData.cancelAtPeriodEnd || false
+        };
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ subscription })
+        };
+
+    } catch (error) {
+        console.error('Error getting subscription status:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to get subscription status',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Create Stripe checkout session
+ */
+async function createCheckoutSession(event) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+        const userEmail = decodedToken.email;
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { tier, successUrl, cancelUrl } = body;
+
+        if (!tier || !['standard', 'pro'].includes(tier)) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid tier specified' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Get or create Stripe customer
+        const db = admin.firestore();
+        const userDoc = await db.collection('users').doc(userId).get();
+        let stripeCustomerId = userDoc.data()?.stripeCustomerId;
+
+        if (!stripeCustomerId) {
+            const customer = await stripe.customers.create({
+                email: userEmail,
+                metadata: {
+                    firebaseUID: userId
+                }
+            });
+            stripeCustomerId = customer.id;
+
+            // Save customer ID to Firestore
+            await db.collection('users').doc(userId).set({
+                stripeCustomerId: stripeCustomerId
+            }, { merge: true });
+        }
+
+        // Get price ID for the tier
+        const priceId = STRIPE_PRICE_IDS[tier];
+
+        // Create checkout session
+        const session = await stripe.checkout.sessions.create({
+            customer: stripeCustomerId,
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price: priceId,
+                    quantity: 1,
+                }
+            ],
+            mode: 'subscription',
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+            metadata: {
+                firebaseUID: userId,
+                tier: tier
+            }
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ url: session.url })
+        };
+
+    } catch (error) {
+        console.error('Error creating checkout session:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create checkout session',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Cancel subscription
+ */
+async function cancelSubscription(event) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Get user's subscription ID
+        const db = admin.firestore();
+        const userDoc = await db.collection('users').doc(userId).get();
+        const stripeSubscriptionId = userDoc.data()?.stripeSubscriptionId;
+
+        if (!stripeSubscriptionId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'No active subscription found' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Cancel subscription at period end
+        const subscription = await stripe.subscriptions.update(stripeSubscriptionId, {
+            cancel_at_period_end: true
+        });
+
+        // Update Firestore
+        await db.collection('users').doc(userId).update({
+            cancelAtPeriodEnd: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Update custom claims
+        await admin.auth().setCustomUserClaims(userId, {
+            ...decodedToken,
+            cancelAtPeriodEnd: true
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                message: 'Subscription canceled successfully',
+                subscription: {
+                    id: subscription.id,
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                    currentPeriodEnd: subscription.current_period_end
+                }
+            })
+        };
+
+    } catch (error) {
+        console.error('Error canceling subscription:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to cancel subscription',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Create customer portal session
+ */
+async function createPortalSession(event) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { returnUrl } = body;
+
+        // Get user's Stripe customer ID
+        const db = admin.firestore();
+        const userDoc = await db.collection('users').doc(userId).get();
+        const stripeCustomerId = userDoc.data()?.stripeCustomerId;
+
+        if (!stripeCustomerId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'No Stripe customer found' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Create portal session
+        const session = await stripe.billingPortal.sessions.create({
+            customer: stripeCustomerId,
+            return_url: returnUrl || event.headers.origin || 'https://masky.net'
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ url: session.url })
+        };
+
+    } catch (error) {
+        console.error('Error creating portal session:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create portal session',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Handle Stripe webhooks
+ */
+async function handleStripeWebhook(event) {
+    try {
+        // Initialize Stripe
+        const { stripe, webhookSecret } = await stripeInitializer.initialize();
+
+        // Get the signature from headers
+        const signature = event.headers['stripe-signature'] || event.headers['Stripe-Signature'];
+        
+        if (!signature) {
+            console.error('No Stripe signature found in headers');
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'No signature provided' })
+            };
+        }
+
+        // Get raw body
+        let rawBody = event.body;
+        if (event.isBase64Encoded) {
+            rawBody = Buffer.from(event.body, 'base64').toString('utf-8');
+        }
+
+        // Verify webhook signature
+        let stripeEvent;
+        try {
+            stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+        } catch (err) {
+            console.error('Webhook signature verification failed:', err.message);
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid signature' })
+            };
+        }
+
+        console.log('Webhook event type:', stripeEvent.type);
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Handle different event types
+        switch (stripeEvent.type) {
+            case 'checkout.session.completed': {
+                const session = stripeEvent.data.object;
+                const userId = session.metadata.firebaseUID;
+                const tier = session.metadata.tier;
+                const customerId = session.customer;
+                const subscriptionId = session.subscription;
+
+                // Update user data
+                await db.collection('users').doc(userId).set({
+                    stripeCustomerId: customerId,
+                    stripeSubscriptionId: subscriptionId,
+                    subscriptionTier: tier,
+                    subscriptionStatus: 'active',
+                    cancelAtPeriodEnd: false,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+
+                // Update custom claims
+                await admin.auth().setCustomUserClaims(userId, {
+                    subscriptionTier: tier,
+                    subscriptionStatus: 'active',
+                    stripeCustomerId: customerId,
+                    stripeSubscriptionId: subscriptionId,
+                    cancelAtPeriodEnd: false
+                });
+
+                console.log('Subscription created for user:', userId);
+                break;
+            }
+
+            case 'customer.subscription.updated': {
+                const subscription = stripeEvent.data.object;
+                const customerId = subscription.customer;
+
+                // Find user by customer ID
+                const usersSnapshot = await db.collection('users')
+                    .where('stripeCustomerId', '==', customerId)
+                    .limit(1)
+                    .get();
+
+                if (!usersSnapshot.empty) {
+                    const userDoc = usersSnapshot.docs[0];
+                    const userId = userDoc.id;
+
+                    // Determine tier from subscription items
+                    const priceId = subscription.items.data[0].price.id;
+                    let tier = 'free';
+                    if (priceId === STRIPE_PRICE_IDS.standard) tier = 'standard';
+                    if (priceId === STRIPE_PRICE_IDS.pro) tier = 'pro';
+
+                    const updateData = {
+                        subscriptionStatus: subscription.status,
+                        subscriptionTier: tier,
+                        currentPeriodEnd: subscription.current_period_end,
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+
+                    await db.collection('users').doc(userId).update(updateData);
+
+                    // Update custom claims
+                    await admin.auth().setCustomUserClaims(userId, {
+                        subscriptionTier: tier,
+                        subscriptionStatus: subscription.status,
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: subscription.id,
+                        currentPeriodEnd: subscription.current_period_end,
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end
+                    });
+
+                    console.log('Subscription updated for user:', userId);
+                }
+                break;
+            }
+
+            case 'customer.subscription.deleted': {
+                const subscription = stripeEvent.data.object;
+                const customerId = subscription.customer;
+
+                // Find user by customer ID
+                const usersSnapshot = await db.collection('users')
+                    .where('stripeCustomerId', '==', customerId)
+                    .limit(1)
+                    .get();
+
+                if (!usersSnapshot.empty) {
+                    const userDoc = usersSnapshot.docs[0];
+                    const userId = userDoc.id;
+
+                    // Downgrade to free tier
+                    await db.collection('users').doc(userId).update({
+                        subscriptionStatus: 'canceled',
+                        subscriptionTier: 'free',
+                        stripeSubscriptionId: null,
+                        cancelAtPeriodEnd: false,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // Update custom claims
+                    await admin.auth().setCustomUserClaims(userId, {
+                        subscriptionTier: 'free',
+                        subscriptionStatus: 'canceled',
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: null,
+                        cancelAtPeriodEnd: false
+                    });
+
+                    console.log('Subscription canceled for user:', userId);
+                }
+                break;
+            }
+
+            case 'invoice.payment_failed': {
+                const invoice = stripeEvent.data.object;
+                const customerId = invoice.customer;
+
+                // Find user by customer ID
+                const usersSnapshot = await db.collection('users')
+                    .where('stripeCustomerId', '==', customerId)
+                    .limit(1)
+                    .get();
+
+                if (!usersSnapshot.empty) {
+                    const userDoc = usersSnapshot.docs[0];
+                    const userId = userDoc.id;
+
+                    // Mark payment as failed
+                    await db.collection('users').doc(userId).update({
+                        subscriptionStatus: 'past_due',
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    console.log('Payment failed for user:', userId);
+                }
+                break;
+            }
+
+            default:
+                console.log('Unhandled event type:', stripeEvent.type);
+        }
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ received: true })
+        };
+
+    } catch (error) {
+        console.error('Error handling webhook:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Webhook handler failed',
+                message: error.message 
+            })
+        };
+    }
 }

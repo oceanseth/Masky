@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Membership - Masky</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/masky-favicon-32.svg">
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+    <link rel="apple-touch-icon" href="/assets/masky-favicon-32.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -441,7 +444,10 @@
 
     <!-- Navigation -->
     <nav>
-        <div class="logo" onclick="window.location.href='/'">MASKY</div>
+        <div class="logo" onclick="window.location.href='/'">
+            <img src="/assets/masky-logo-gradient.svg" alt="Masky" class="logo-icon">
+            <span class="logo-text">MASKY</span>
+        </div>
         <div class="nav-links">
             <a href="/">Dashboard</a>
             <a href="/membership.html" class="active">Membership</a>
@@ -597,6 +603,11 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Watermark -->
+    <div class="watermark">
+        <img src="/assets/masky-logo-white.svg" alt="Masky" class="logo-glow">
     </div>
 
     <script type="module" src="/src/membership.js"></script>

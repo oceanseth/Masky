@@ -1,5 +1,15 @@
 // Configuration for OAuth providers and API endpoints
 
+// Determine API base URL based on environment
+const getApiBaseUrl = () => {
+  // If running on localhost, use the deployed API URL
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production';
+  }
+  // In production, use the same origin
+  return window.location.origin;
+};
+
 export const config = {
   // Twitch OAuth Configuration
   twitch: {
@@ -10,7 +20,7 @@ export const config = {
   
   // API Configuration
   api: {
-    baseUrl: window.location.origin
+    baseUrl: getApiBaseUrl()
   }
 };
 

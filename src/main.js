@@ -16,8 +16,11 @@ import {
   createAccountWithEmail,
   signOut,
   onAuthChange,
-  handleTwitchCallback 
+  handleTwitchCallback,
+  getCurrentUser
 } from './firebase';
+
+import { config } from './config';
 
 // State management
 const state = {
@@ -167,12 +170,66 @@ onAuthChange((user) => {
     
     // Check if Twitch connection exists
     checkTwitchConnection();
+    
+    // Load and display membership status
+    loadMembershipStatus();
   } else {
     state.isLoggedIn = false;
     state.user = null;
     showLanding();
+    
+    // Hide membership link when logged out
+    const membershipLink = document.getElementById('membershipLink');
+    if (membershipLink) {
+      membershipLink.style.display = 'none';
+    }
   }
 });
+
+// Load and display membership status in navigation
+async function loadMembershipStatus() {
+  try {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    const idToken = await user.getIdToken();
+    
+    const response = await fetch(`${config.api.baseUrl}/api/subscription/status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const subscription = data.subscription;
+      
+      // Update membership badge in navigation
+      const membershipLink = document.getElementById('membershipLink');
+      const membershipBadge = document.getElementById('membershipBadge');
+      
+      if (membershipLink && membershipBadge) {
+        membershipLink.style.display = 'inline-block';
+        
+        if (subscription && subscription.tier) {
+          const tierName = subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1);
+          membershipBadge.textContent = tierName;
+        } else {
+          membershipBadge.textContent = 'Free';
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading membership status:', error);
+    // Still show the membership link even if status fetch fails
+    const membershipLink = document.getElementById('membershipLink');
+    if (membershipLink) {
+      membershipLink.style.display = 'inline-block';
+    }
+  }
+}
 
 // Connection functions
 window.connectTwitch = async function() {

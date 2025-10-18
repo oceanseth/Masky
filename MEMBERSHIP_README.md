@@ -79,16 +79,22 @@ Reusable functions for tier management:
 - `getUpgradeSuggestion(currentTier, resourceType)` - Get upgrade recommendation
 - `enforceLimit(userId, resourceType, currentCount)` - Backend enforcement with user lookup
 
-### 6. **Configuration** (`serverless.yml`)
+### 6. **Configuration**
 
-Environment variables added:
-```yaml
-STRIPE_STANDARD_PRICE_ID: ${env:STRIPE_STANDARD_PRICE_ID}
-STRIPE_PRO_PRICE_ID: ${env:STRIPE_PRO_PRICE_ID}
+#### Frontend Config (`src/config.js`)
+Stripe Price IDs are configured in the frontend config:
+```javascript
+stripe: {
+  prices: {
+    standard: 'price_1SJV5lJwtIxwToTZ1YxaxW78',
+    pro: 'price_1SJV61JwtIxwToTZmIKUYjEu'
+  }
+}
 ```
 
+#### Serverless Config (`serverless.yml`)
 IAM permissions already include:
-- SSM access for Stripe secrets
+- SSM access for Stripe secrets (secret key & webhook secret)
 - Firestore access for user data
 
 ## Tier Comparison

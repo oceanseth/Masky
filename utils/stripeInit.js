@@ -15,17 +15,17 @@ class StripeInitializer {
 
       console.log('Initializing Stripe from SSM...');
       
-      const stage = process.env.STAGE || 'prod';
+      const stage = process.env.STAGE || 'production';
       console.log(`Loading Stripe secrets from SSM for stage: ${stage}`);
       
       // Load both secret key and webhook secret in parallel
       const [secretKeyResult, webhookSecretResult] = await Promise.all([
         this.ssm.getParameter({
-          Name: `/voicecert/${stage}/STRIPE_SECRET_KEY`,
+          Name: `/voicecert/prod/STRIPE_SECRET_KEY`,
           WithDecryption: true
         }).promise(),
         this.ssm.getParameter({
-          Name: `/voicecert/${stage}/STRIPE_WEBHOOK_SECRET`,
+          Name: `/masky/${stage}/stripe_webhook_secret`,
           WithDecryption: true
         }).promise()
       ]);

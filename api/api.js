@@ -8,12 +8,6 @@ const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
 
-// Stripe Price IDs - These should be created in Stripe Dashboard
-const STRIPE_PRICE_IDS = {
-    standard: process.env.STRIPE_STANDARD_PRICE_ID || 'price_standard',
-    pro: process.env.STRIPE_PRO_PRICE_ID || 'price_pro'
-};
-
 // Handle Twitch OAuth login (legacy - for direct access token)
 const handleTwitchOAuth = async (event) => {
     try {
@@ -310,12 +304,19 @@ async function createCheckoutSession(event) {
             body = event.body || {};
         }
 
-        const { tier, successUrl, cancelUrl } = body;
+        const { tier, priceId, successUrl, cancelUrl } = body;
 
         if (!tier || !['standard', 'pro'].includes(tier)) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({ error: 'Invalid tier specified' })
+            };
+        }
+
+        if (!priceId || !priceId.startsWith('price_')) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid price ID provided' })
             };
         }
 
@@ -341,9 +342,6 @@ async function createCheckoutSession(event) {
                 stripeCustomerId: stripeCustomerId
             }, { merge: true });
         }
-
-        // Get price ID for the tier
-        const priceId = STRIPE_PRICE_IDS[tier];
 
         // Create checkout session
         const session = await stripe.checkout.sessions.create({
@@ -622,10 +620,20 @@ async function handleStripeWebhook(event) {
                     const userId = userDoc.id;
 
                     // Determine tier from subscription items
+                    // Note: You can also add metadata to products in Stripe Dashboard
                     const priceId = subscription.items.data[0].price.id;
-                    let tier = 'free';
-                    if (priceId === STRIPE_PRICE_IDS.standard) tier = 'standard';
-                    if (priceId === STRIPE_PRICE_IDS.pro) tier = 'pro';
+                    const productId = subscription.items.data[0].price.product;
+                    
+                    // Try to get tier from subscription metadata first, then fallback to product lookup
+                    let tier = subscription.metadata?.tier || 'free';
+                    
+                    // If no metadata, try to determine from product
+                    if (!subscription.metadata?.tier) {
+                        // You can add logic here to map product IDs to tiers if needed
+                        // For now, we'll keep the tier from the original subscription creation
+                        const existingData = userDoc.data();
+                        tier = existingData.subscriptionTier || 'free';
+                    }
 
                     const updateData = {
                         subscriptionStatus: subscription.status,

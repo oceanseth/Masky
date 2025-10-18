@@ -4,7 +4,7 @@
 const getApiBaseUrl = () => {
   // If running on localhost, use the deployed API URL
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production';
+    return 'https://masky.net';
   }
   // In production, use the same origin
   return window.location.origin;

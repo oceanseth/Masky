@@ -269,7 +269,7 @@
     <section class="dashboard" id="dashboard">
         <div class="dashboard-container">
             <div class="dashboard-header">
-                <h1 class="dashboard-title">Welcome, <span id="username">Creator</span></h1>
+                <h1 class="dashboard-title"><span id="welcomeMessage"></span></h1>
                 <p class="dashboard-subtitle" data-i18n="dashboard.subtitle">Connect your accounts and start creating amazing alerts</p>
             </div>
 
@@ -293,6 +293,16 @@
                         <div class="social-name" data-i18n="dashboard.hume">Hume AI</div>
                         <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
                         <button class="btn btn-primary" onclick="connectHume()" data-i18n="dashboard.connectHume">Connect Hume</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vods-section" id="vodsSection" style="display: none;">
+                <h2 class="section-title" data-i18n="dashboard.recentVods">Recent VODs</h2>
+                <div class="vods-grid" id="vodsGrid">
+                    <!-- VODs will be populated here -->
+                    <div class="vods-loading" id="vodsLoading">
+                        Loading your recent streams...
                     </div>
                 </div>
             </div>

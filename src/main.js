@@ -6,7 +6,7 @@ import './styles/modal.css';
 import './styles/icons.css';
 
 // Import i18n
-import './i18n.js';
+import i18next from './i18n.js';
 import { updateContent, changeLanguage, t } from './localeHelper.js';
 
 import { 
@@ -158,7 +158,9 @@ function showDashboard() {
   document.getElementById('landing').style.display = 'none';
   document.getElementById('dashboard').classList.add('active');
   if (state.user) {
-    document.getElementById('username').textContent = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    const username = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    // Use the translation system for the welcome message
+    document.getElementById('welcomeMessage').textContent = i18next.t('dashboard.welcome', { username });
   }
   // Update content after showing dashboard to ensure translations are applied
   updateContent();

@@ -6,7 +6,7 @@ import './styles/modal.css';
 import './styles/icons.css';
 
 // Import i18n
-import './i18n.js';
+import i18next from './i18n.js';
 import { updateContent, changeLanguage, t } from './localeHelper.js';
 
 import { 
@@ -16,8 +16,12 @@ import {
   createAccountWithEmail,
   signOut,
   onAuthChange,
-  handleTwitchCallback 
+  handleTwitchCallback,
+  getCurrentUser
 } from './firebase';
+
+import { config } from './config';
+import { fetchTwitchVods, renderVods } from './vods.js';
 
 // State management
 const state = {
@@ -28,7 +32,8 @@ const state = {
     heygen: false,
     hume: false
   },
-  alerts: []
+  alerts: [],
+  twitchAuth: null
 };
 
 // Modal functions
@@ -73,9 +78,15 @@ window.t = t;
 // Auth functions with Firebase
 window.loginWithTwitch = async function() {
   try {
-    const user = await signInWithTwitch();
-    console.log('Logged in with Twitch:', user);
+    const result = await signInWithTwitch();
+    console.log('Logged in with Twitch:', result);
     closeModal();
+    
+    // If we have Twitch authentication data, fetch VODs
+    if (result && result.accessToken && result.userId) {
+      const vods = await fetchTwitchVods(result.accessToken, result.userId);
+      renderVods(vods);
+    }
   } catch (error) {
     alert('Failed to sign in with Twitch: ' + error.message);
   }
@@ -147,7 +158,9 @@ function showDashboard() {
   document.getElementById('landing').style.display = 'none';
   document.getElementById('dashboard').classList.add('active');
   if (state.user) {
-    document.getElementById('username').textContent = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    const username = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    // Use the translation system for the welcome message
+    document.getElementById('welcomeMessage').textContent = i18next.t('dashboard.welcome', { username });
   }
   // Update content after showing dashboard to ensure translations are applied
   updateContent();
@@ -167,12 +180,74 @@ onAuthChange((user) => {
     
     // Check if Twitch connection exists
     checkTwitchConnection();
+    
+    // Load and display membership status
+    loadMembershipStatus();
+
+    // Hide auth-related buttons when logged in
+    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
+    authButtons.forEach(button => button.style.display = 'none');
   } else {
     state.isLoggedIn = false;
     state.user = null;
     showLanding();
+    
+    // Hide membership link when logged out
+    const membershipLink = document.getElementById('membershipLink');
+    if (membershipLink) {
+      membershipLink.style.display = 'none';
+    }
+
+    // Show auth-related buttons when logged out
+    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
+    authButtons.forEach(button => button.style.display = '');
   }
 });
+
+// Load and display membership status in navigation
+async function loadMembershipStatus() {
+  try {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    const idToken = await user.getIdToken();
+    
+    const response = await fetch(`${config.api.baseUrl}/api/subscription/status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const subscription = data.subscription;
+      
+      // Update membership badge in navigation
+      const membershipLink = document.getElementById('membershipLink');
+      const membershipBadge = document.getElementById('membershipBadge');
+      
+      if (membershipLink && membershipBadge) {
+        membershipLink.style.display = 'inline-block';
+        
+        if (subscription && subscription.tier) {
+          const tierName = subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1);
+          membershipBadge.textContent = tierName;
+        } else {
+          membershipBadge.textContent = 'Free';
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading membership status:', error);
+    // Still show the membership link even if status fetch fails
+    const membershipLink = document.getElementById('membershipLink');
+    if (membershipLink) {
+      membershipLink.style.display = 'inline-block';
+    }
+  }
+}
 
 // Connection functions
 window.connectTwitch = async function() {
@@ -217,10 +292,15 @@ async function checkTwitchConnection() {
   const user = state.user;
   if (user && user.providerData) {
     const hasTwitch = user.providerData.some(provider => 
-      provider.providerId === 'oidc.twitch'
+      provider.providerId === 'oidc.twitch' || provider.providerId === 'twitch.tv'
     );
     if (hasTwitch) {
       markTwitchConnected();
+      // Hide the entire Twitch card since user is already connected via Twitch
+      const twitchCard = document.getElementById('twitchCard');
+      if (twitchCard) {
+        twitchCard.style.display = 'none';
+      }
     }
   }
 }
@@ -339,6 +419,33 @@ document.getElementById('authModal').addEventListener('click', function(e) {
 
 // Initialize
 renderAlerts();
+
+// Scroll handling
+let isScrolling;
+document.addEventListener('scroll', function(e) {
+    // Clear the timeout throughout the scroll
+    window.clearTimeout(isScrolling);
+
+    // Set a timeout to run after scrolling ends
+    isScrolling = setTimeout(function() {
+        // Get current scroll position
+        const scrollPosition = window.scrollY;
+        const windowHeight = window.innerHeight;
+        
+        // If we're close to the top or features section, snap to it
+        if (scrollPosition < windowHeight / 2) {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        } else if (scrollPosition < windowHeight * 1.5) {
+            window.scrollTo({
+                top: windowHeight,
+                behavior: 'smooth'
+            });
+        }
+    }, 66); // Throttle to ~15fps
+}, false);
 
 // Check if this is an OAuth callback
 const urlParams = new URLSearchParams(window.location.search);

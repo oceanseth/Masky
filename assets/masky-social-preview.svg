@@ -1,0 +1,85 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0c29;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#302b63;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#24243e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c084fc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#9333ea;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGradient)"/>
+  
+  <!-- Background Pattern -->
+  <circle cx="200" cy="150" r="100" fill="rgba(192, 132, 252, 0.1)" opacity="0.3"/>
+  <circle cx="1000" cy="480" r="150" fill="rgba(147, 51, 234, 0.1)" opacity="0.3"/>
+  <circle cx="600" cy="100" r="80" fill="rgba(59, 130, 246, 0.1)" opacity="0.3"/>
+  
+  <!-- Main Logo (Large) -->
+  <g transform="translate(100, 150)">
+    <!-- Main mask shape - unified silhouette -->
+    <path d="M8 24C8 20 10 16 14 14C18 12 22 12 26 14C30 12 34 12 38 14C42 16 44 20 44 24V32C44 36 42 40 38 42C34 44 30 44 26 42C22 44 18 44 14 42C10 40 8 36 8 32V24Z" fill="url(#logoGradient)" filter="url(#glow)"/>
+    
+    <!-- Eye holes - almond shaped -->
+    <ellipse cx="20" cy="26" rx="5" ry="4" fill="white"/>
+    <ellipse cx="44" cy="26" rx="5" ry="4" fill="white"/>
+    
+    <!-- Nose bridge V shape -->
+    <path d="M32 20C32 18 31 16 30 15C29 14 27 14 26 15C25 16 24 18 24 20V24C24 26 25 28 26 29C27 30 29 30 30 29C31 28 32 26 32 24V20Z" fill="url(#logoGradient)"/>
+    
+    <!-- Central feather (tallest and most upright) -->
+    <path d="M32 14C32 8 33 3 35 1C37 -1 40 -1 42 1C44 3 45 8 45 14" fill="url(#logoGradient)"/>
+    
+    <!-- Left feather (curved outward) -->
+    <path d="M28 16C28 10 26 5 24 3C22 1 19 1 17 3C15 5 13 10 13 16" fill="url(#logoGradient)"/>
+    
+    <!-- Right feather (curved outward) -->
+    <path d="M36 16C36 10 38 5 40 3C42 1 45 1 47 3C49 5 51 10 51 16" fill="url(#logoGradient)"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="300" y="200" font-family="Arial, sans-serif" font-size="72" font-weight="900" fill="white">
+    MASKY
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="300" y="260" font-family="Arial, sans-serif" font-size="32" font-weight="400" fill="rgba(255, 255, 255, 0.8)">
+    AI-Powered Stream Alerts
+  </text>
+  
+  <!-- Description -->
+  <text x="300" y="320" font-family="Arial, sans-serif" font-size="24" font-weight="400" fill="rgba(255, 255, 255, 0.7)">
+    Create lifelike avatars with dynamic, voice-enabled alerts
+  </text>
+  <text x="300" y="360" font-family="Arial, sans-serif" font-size="24" font-weight="400" fill="rgba(255, 255, 255, 0.7)">
+    that captivate your Twitch audience
+  </text>
+  
+  <!-- Features -->
+  <g transform="translate(300, 420)">
+    <circle cx="10" cy="10" r="6" fill="#c084fc"/>
+    <text x="30" y="16" font-family="Arial, sans-serif" font-size="20" font-weight="500" fill="white">AI Avatars with HeyGen &amp; Hume</text>
+    
+    <circle cx="10" cy="50" r="6" fill="#c084fc"/>
+    <text x="30" y="56" font-family="Arial, sans-serif" font-size="20" font-weight="500" fill="white">Real-time Twitch EventSub Integration</text>
+    
+    <circle cx="10" cy="90" r="6" fill="#c084fc"/>
+    <text x="30" y="96" font-family="Arial, sans-serif" font-size="20" font-weight="500" fill="white">Custom Scripts &amp; Voice Options</text>
+  </g>
+  
+  <!-- URL -->
+  <text x="300" y="580" font-family="Arial, sans-serif" font-size="28" font-weight="600" fill="#c084fc">
+    masky.app
+  </text>
+</svg>

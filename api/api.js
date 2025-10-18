@@ -147,13 +147,18 @@ exports.handler = async (event, context) => {
 
     // Subscription status endpoint
     if (path.includes('/subscription/status') && method === 'GET') {
+        console.log('Subscription status request received');
         const response = await getSubscriptionStatus(event);
         return {
-            ...response,
+            statusCode: response.statusCode,
             headers: {
-                ...headers,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With',
+                'Access-Control-Max-Age': '86400',
                 'Content-Type': 'application/json'
-            }
+            },
+            body: response.body
         };
     }
 
@@ -218,12 +223,30 @@ exports.handler = async (event, context) => {
  */
 async function getSubscriptionStatus(event) {
     try {
-        // Verify Firebase token
+        console.log('Getting subscription status, headers:', JSON.stringify(event.headers));
+        
+        // Verify Firebase token - API Gateway normalizes headers to lowercase
         const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        
+        if (!authHeader) {
+            console.error('No authorization header found');
             return {
                 statusCode: 401,
-                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+                body: JSON.stringify({ 
+                    error: 'Unauthorized - No token provided',
+                    debug: 'No Authorization header found in request'
+                })
+            };
+        }
+        
+        if (!authHeader.startsWith('Bearer ')) {
+            console.error('Invalid authorization header format:', authHeader.substring(0, 20));
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ 
+                    error: 'Unauthorized - Invalid token format',
+                    debug: 'Authorization header must start with "Bearer "'
+                })
             };
         }
 

@@ -422,6 +422,57 @@ body::-webkit-scrollbar {
     }
 }
 
+/* Watermark Styles */
+.watermark {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    opacity: 0.3;
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+.watermark:hover {
+    opacity: 0.6;
+    transform: scale(1.1);
+}
+
+.watermark img {
+    width: 40px;
+    height: 40px;
+    filter: drop-shadow(0 0 10px rgba(192, 132, 252, 0.5));
+}
+
+.watermark-large {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.1;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.watermark-large img {
+    width: 200px;
+    height: 200px;
+    filter: blur(2px);
+}
+
+/* Logo variations for different contexts */
+.logo-dark {
+    filter: brightness(0.8) contrast(1.2);
+}
+
+.logo-light {
+    filter: brightness(1.2) contrast(0.8);
+}
+
+.logo-glow {
+    filter: drop-shadow(0 0 20px rgba(192, 132, 252, 0.6));
+}
+
 @media (max-width: 768px) {
     .hero-title {
         font-size: 3.5rem;
@@ -446,6 +497,16 @@ body::-webkit-scrollbar {
 
     .social-grid {
         grid-template-columns: 1fr;
+    }
+
+    .watermark {
+        bottom: 10px;
+        right: 10px;
+    }
+
+    .watermark img {
+        width: 30px;
+        height: 30px;
     }
 }
 

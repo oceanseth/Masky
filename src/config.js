@@ -2,12 +2,9 @@
 
 // Determine API base URL based on environment
 const getApiBaseUrl = () => {
-  // If running on localhost, use the deployed API URL
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'https://masky.net';
-  }
-  // In production, use the same origin
-  return window.location.origin;
+  // Use API Gateway directly to bypass CloudFront (which strips Authorization header)
+  // CloudFront needs to be configured to forward Authorization header
+  return 'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production';
 };
 
 export const config = {

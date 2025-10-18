@@ -17,7 +17,7 @@ provider:
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/firebase_service_account
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/twitch_client_id
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/twitch_client_secret  
-            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/voicecert/${self:provider.stage}/STRIPE_SECRET_KEY
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/stripe_secret_key
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/stripe_webhook_secret
         - Effect: Allow
           Action:

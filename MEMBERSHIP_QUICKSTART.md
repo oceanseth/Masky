@@ -79,21 +79,23 @@ Use this checklist to quickly set up your Stripe subscription system. For detail
   }
   ```
 
-### 4. Environment Variables (2 minutes)
+### 4. Update Config File (2 minutes)
 
-- [ ] **Update serverless.yml** (or set environment variables)
-  ```yaml
-  environment:
-    STRIPE_STANDARD_PRICE_ID: 'price_YOUR_STANDARD_ID'
-    STRIPE_PRO_PRICE_ID: 'price_YOUR_PRO_ID'
+- [ ] **Update src/config.js with your Stripe Price IDs**
+  ```javascript
+  stripe: {
+    prices: {
+      standard: 'price_YOUR_STANDARD_ID', // Replace with your actual Standard price ID
+      pro: 'price_YOUR_PRO_ID'           // Replace with your actual Pro price ID
+    }
+  }
   ```
-
-  OR
-
-  ```bash
-  export STRIPE_STANDARD_PRICE_ID=price_YOUR_STANDARD_ID
-  export STRIPE_PRO_PRICE_ID=price_YOUR_PRO_ID
-  ```
+  
+  **How to get your Price IDs:**
+  1. Go to Stripe Dashboard → Products
+  2. Click on your Standard product
+  3. Copy the Price ID (starts with `price_`)
+  4. Repeat for Pro product
 
 ### 5. Deployment (5 minutes)
 

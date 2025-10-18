@@ -152,11 +152,18 @@ function updatePricingGridButtons(currentTier) {
 /**
  * Subscribe to a plan
  */
-window.subscribeToPlan = async function(tier, priceId) {
+window.subscribeToPlan = async function(tier) {
     try {
         const user = getCurrentUser();
         if (!user) {
             showMessage('Please sign in to subscribe', 'error');
+            return;
+        }
+
+        // Get price ID from config
+        const priceId = config.stripe.prices[tier];
+        if (!priceId) {
+            showMessage('Invalid plan selected', 'error');
             return;
         }
 

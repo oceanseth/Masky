@@ -104,27 +104,36 @@ aws ssm put-parameter \
   --overwrite
 ```
 
-## Step 4: Configure Environment Variables
+## Step 4: Configure Price IDs in Config File
 
-### 4.1 Create .env file (for local development)
-```env
-STRIPE_STANDARD_PRICE_ID=price_1234567890abcdef
-STRIPE_PRO_PRICE_ID=price_0987654321fedcba
+### 4.1 Update src/config.js
+Open `src/config.js` and update the Stripe price IDs:
+
+```javascript
+export const config = {
+  // ... other config
+  stripe: {
+    prices: {
+      standard: 'price_1234567890abcdef', // Your Standard plan price ID
+      pro: 'price_0987654321fedcba'      // Your Pro plan price ID
+    },
+    products: {
+      standard: 'prod_YOUR_STANDARD_ID',
+      pro: 'prod_YOUR_PRO_ID'
+    }
+  }
+};
 ```
 
-### 4.2 Set Environment Variables in Deployment
-For production deployment, set these in your CI/CD or deployment environment:
-```bash
-export STRIPE_STANDARD_PRICE_ID=price_1234567890abcdef
-export STRIPE_PRO_PRICE_ID=price_0987654321fedcba
-```
+**Important:** Make sure you use the **Price IDs** (starting with `price_`), not Product IDs.
 
-Or update `serverless.yml` directly:
-```yaml
-environment:
-  STRIPE_STANDARD_PRICE_ID: 'price_1234567890abcdef'
-  STRIPE_PRO_PRICE_ID: 'price_0987654321fedcba'
-```
+### 4.2 How to Find Your Price IDs
+1. Go to Stripe Dashboard (https://dashboard.stripe.com)
+2. Navigate to **Products**
+3. Click on your **Standard** product
+4. You'll see the price listed - click on it or look for the ID starting with `price_`
+5. Copy the Price ID
+6. Repeat for your **Pro** product
 
 ## Step 5: Enable Firestore
 

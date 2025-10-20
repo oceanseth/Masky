@@ -1,4 +1,5 @@
 service: masky
+frameworkVersion: '3'
 
 provider:
   name: aws

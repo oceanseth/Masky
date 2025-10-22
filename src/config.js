@@ -5,7 +5,7 @@ export const config = {
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
     redirectUri: window.location.origin + '/',
-    scopes: ['user:read:email', 'channel:read:subscriptions']
+    scopes: ['user:read:email', 'channel:manage:videos', 'user:read:broadcast']
   },
   
   // API Configuration  

@@ -1,0 +1,576 @@
+/* Voice Cloner Styles */
+.voice-upload-section {
+    margin: 20px 0;
+    padding: 20px;
+    background: var(--bg-secondary, #1a1a1a);
+    border-radius: 12px;
+    border: 1px solid var(--border-color, #333);
+}
+
+.voice-cloner h3 {
+    color: var(--text-primary, #ffffff);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.voice-cloner p {
+    color: var(--text-secondary, #bbbbbb);
+    margin-bottom: 20px;
+}
+
+/* Upload Area */
+.upload-methods {
+    margin-bottom: 20px;
+}
+
+.method-tabs {
+    display: flex;
+    margin-bottom: 15px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-color, #444);
+}
+
+.method-tab {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--bg-tertiary, #0f0f0f);
+    color: var(--text-secondary, #bbbbbb);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.method-tab.active {
+    background: var(--accent-color, #9146ff);
+    color: white;
+}
+
+.method-tab:hover:not(.active) {
+    background: rgba(145, 70, 255, 0.1);
+    color: var(--text-primary, #ffffff);
+}
+
+.upload-area {
+    border: 2px dashed var(--border-color, #444);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-area:hover,
+.upload-area.drag-over {
+    border-color: var(--accent-color, #9146ff);
+    background: rgba(145, 70, 255, 0.1);
+}
+
+/* Recording Area */
+.record-area {
+    border: 2px solid var(--border-color, #444);
+    border-radius: 8px;
+    padding: 30px 20px;
+    text-align: center;
+    background: var(--bg-tertiary, #0f0f0f);
+}
+
+.record-controls {
+    margin-bottom: 20px;
+}
+
+.record-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 15px 25px;
+    border: 2px solid var(--accent-color, #9146ff);
+    border-radius: 25px;
+    background: transparent;
+    color: var(--accent-color, #9146ff);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.record-btn:hover {
+    background: var(--accent-color, #9146ff);
+    color: white;
+    transform: scale(1.05);
+}
+
+.record-btn.stop {
+    border-color: #ef4444;
+    color: #ef4444;
+    animation: pulse-red 1.5s infinite;
+}
+
+.record-btn.stop:hover {
+    background: #ef4444;
+    color: white;
+}
+
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.record-icon {
+    font-size: 18px;
+}
+
+/* Recording Status */
+.recording-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.recording-dot {
+    width: 12px;
+    height: 12px;
+    background: #ef4444;
+    border-radius: 50%;
+    animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.recording-time {
+    font-size: 18px;
+    font-weight: 600;
+    color: #ef4444;
+    font-family: 'Courier New', monospace;
+}
+
+.recording-tips {
+    font-size: 13px;
+    color: var(--text-secondary, #bbbbbb);
+    text-align: center;
+}
+
+/* Recorded Samples */
+.recorded-samples {
+    margin-top: 20px;
+}
+
+.recorded-sample {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    margin-bottom: 8px;
+    background: var(--bg-secondary, #1a1a1a);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.recorded-sample:hover {
+    border-color: var(--accent-color, #9146ff);
+    background: rgba(145, 70, 255, 0.05);
+}
+
+.sample-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sample-name {
+    font-weight: 500;
+    color: var(--text-primary, #ffffff);
+}
+
+.sample-duration {
+    font-size: 12px;
+    color: var(--text-secondary, #bbbbbb);
+}
+
+.sample-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.play-btn,
+.delete-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.play-btn {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+}
+
+.play-btn:hover {
+    background: #22c55e;
+    color: white;
+}
+
+.delete-btn {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.delete-btn:hover {
+    background: #ef4444;
+    color: white;
+}
+
+.upload-label {
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.upload-icon {
+    font-size: 48px;
+    opacity: 0.7;
+}
+
+.upload-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary, #ffffff);
+}
+
+.upload-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary, #bbbbbb);
+}
+
+/* Selected Files */
+.selected-files {
+    background: var(--bg-tertiary, #0f0f0f);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.selected-files h4 {
+    color: var(--text-primary, #ffffff);
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.selected-file {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.selected-file:last-child {
+    border-bottom: none;
+}
+
+.file-name {
+    color: var(--text-primary, #ffffff);
+    font-weight: 500;
+}
+
+.file-size {
+    color: var(--text-secondary, #bbbbbb);
+    font-size: 12px;
+}
+
+/* Upload Tips */
+.upload-tips {
+    background: var(--bg-tertiary, #0f0f0f);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.upload-tips h4 {
+    color: var(--text-primary, #ffffff);
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.upload-tips ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.upload-tips li {
+    color: var(--text-secondary, #bbbbbb);
+    font-size: 13px;
+    margin-bottom: 5px;
+}
+
+/* Buttons */
+.btn-primary {
+    background: var(--accent-color, #9146ff);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-right: 10px;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--accent-color-hover, #7c3aed);
+    transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+    background: #666;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--accent-color, #9146ff);
+    border: 2px solid var(--accent-color, #9146ff);
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-right: 10px;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--accent-color, #9146ff);
+    color: white;
+}
+
+.btn-secondary:disabled {
+    border-color: #666;
+    color: #666;
+    cursor: not-allowed;
+}
+
+/* Progress Bar */
+.progress-container {
+    margin: 20px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-tertiary, #333);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-color, #9146ff), #7c3aed);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.progress-text {
+    color: var(--text-secondary, #bbbbbb);
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Voice Preview */
+.voice-preview {
+    background: var(--bg-tertiary, #0f0f0f);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.voice-preview h4 {
+    color: var(--text-primary, #ffffff);
+    margin-bottom: 15px;
+}
+
+.test-voice-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+#test-text {
+    width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 6px;
+    background: var(--bg-secondary, #1a1a1a);
+    color: var(--text-primary, #ffffff);
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+}
+
+#test-text:focus {
+    outline: none;
+    border-color: var(--accent-color, #9146ff);
+}
+
+#test-text::placeholder {
+    color: var(--text-secondary, #888);
+}
+
+.test-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Voice Status */
+.voice-status {
+    margin-top: 15px;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 20px;
+}
+
+.voice-status.success {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.voice-status.error {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.voice-status.info {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Voice Feature Buttons */
+.voice-chat-btn,
+.voice-narrate-btn {
+    background: var(--accent-color, #9146ff);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin: 5px;
+}
+
+.voice-chat-btn:hover,
+.voice-narrate-btn:hover {
+    background: var(--accent-color-hover, #7c3aed);
+    transform: scale(1.05);
+}
+
+.voice-narrate-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    padding: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .voice-upload-section {
+        margin: 15px 0;
+        padding: 15px;
+    }
+
+    .upload-area {
+        padding: 30px 15px;
+    }
+
+    .upload-icon {
+        font-size: 36px;
+    }
+
+    .upload-text {
+        font-size: 16px;
+    }
+
+    .test-controls {
+        flex-direction: column;
+    }
+
+    .btn-primary,
+    .btn-secondary {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 10px;
+    }
+}
+
+/* Animation for drag and drop */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.upload-area.drag-over {
+    animation: pulse 1s infinite;
+}
+
+/* Loading animation for buttons */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.btn-primary:disabled::before,
+.btn-secondary:disabled::before {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    margin-right: 8px;
+    animation: spin 1s linear infinite;
+}

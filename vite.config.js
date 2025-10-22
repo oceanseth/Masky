@@ -15,6 +15,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    strictPort: true, // Force port 3000, don't try other ports
     open: true
   },
   // Copy locale files to dist after build

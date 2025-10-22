@@ -4,6 +4,8 @@ import './styles/landing.css';
 import './styles/dashboard.css';
 import './styles/modal.css';
 import './styles/icons.css';
+import './styles/vods.css';
+import './styles/voiceCloner.css';
 
 // Import i18n
 import i18next from './i18n.js';
@@ -21,10 +23,10 @@ import {
 } from './firebase';
 
 import { config } from './config';
-import { fetchTwitchVods, renderVods } from './vods.js';
+import { fetchTwitchVods, renderVods, showAndLoadVods } from './vods.js';
 
 // State management
-const state = {
+window.state = {
   isLoggedIn: false,
   user: null,
   connections: {
@@ -82,10 +84,22 @@ window.loginWithTwitch = async function() {
     console.log('Logged in with Twitch:', result);
     closeModal();
     
-    // If we have Twitch authentication data, fetch VODs
+    // If we have Twitch authentication data, show and load VODs
     if (result && result.accessToken && result.userId) {
-      const vods = await fetchTwitchVods(result.accessToken, result.userId);
-      renderVods(vods);
+      state.connections.twitch = true;
+      const card = document.getElementById('twitchCard');
+      if (card) {
+        card.classList.add('connected');
+        card.querySelector('.social-status').textContent = 'Connected ✓';
+        const btn = card.querySelector('.btn');
+        if (btn) {
+          btn.textContent = 'Disconnect';
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-secondary');
+        }
+      }
+      
+      await showAndLoadVods(result.accessToken, result.userId);
     }
   } catch (error) {
     alert('Failed to sign in with Twitch: ' + error.message);
@@ -173,18 +187,23 @@ function showLanding() {
 
 // Listen for auth state changes
 onAuthChange((user) => {
-  if (user) {
-    state.isLoggedIn = true;
-    state.user = user;
-    showDashboard();
-    
-    // Check if Twitch connection exists
-    checkTwitchConnection();
-    
-    // Load and display membership status
-    loadMembershipStatus();
-
-    // Hide auth-related buttons when logged in
+    if (user) {
+        state.isLoggedIn = true;
+        state.user = user;
+        showDashboard();
+        
+        // Check if Twitch connection exists
+        checkTwitchConnection();
+        
+        // Show VODs section (will display connection message if needed)
+        const vodsSection = document.getElementById('vodsSection');
+        if (vodsSection) {
+            vodsSection.style.display = 'block';
+            vodsSection.classList.add('active');
+        }
+        
+        // Load and display membership status
+        loadMembershipStatus();    // Hide auth-related buttons when logged in
     const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
     authButtons.forEach(button => button.style.display = 'none');
   } else {
@@ -251,27 +270,30 @@ async function loadMembershipStatus() {
 
 // Connection functions
 window.connectTwitch = async function() {
-  if (state.connections.twitch) {
-    // Handle disconnect
-    if (confirm('Are you sure you want to disconnect your Twitch account?')) {
-      state.connections.twitch = false;
+  try {
+    const result = await signInWithTwitch();
+    console.log('Connected with Twitch:', result);
+    
+    // If we have Twitch authentication data, show and load VODs
+    if (result && result.accessToken && result.userId) {
+      state.connections.twitch = true;
       const card = document.getElementById('twitchCard');
-      card.classList.remove('connected');
-      card.querySelector('.social-status').textContent = 'Not Connected';
-      const btn = card.querySelector('.btn');
-      btn.textContent = 'Connect Twitch';
-      btn.classList.remove('btn-secondary');
-      btn.classList.add('btn-primary');
-      checkAllConnections();
+      if (card) {
+        card.classList.add('connected');
+        card.querySelector('.social-status').textContent = 'Connected ✓';
+        const btn = card.querySelector('.btn');
+        if (btn) {
+          btn.textContent = 'Disconnect';
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-secondary');
+        }
+      }
+      
+      await showAndLoadVods(result.accessToken, result.userId);
     }
-  } else {
-    // Use Firebase Twitch login
-    try {
-      await loginWithTwitch();
-      markTwitchConnected();
-    } catch (error) {
-      alert('Failed to connect Twitch: ' + error.message);
-    }
+  } catch (error) {
+    console.error('Failed to connect Twitch:', error);
+    alert('Failed to connect Twitch: ' + error.message);
   }
 };
 
@@ -291,12 +313,23 @@ async function checkTwitchConnection() {
   // Check if user has Twitch provider linked
   const user = state.user;
   if (user && user.providerData) {
+    // Check if the user's initial login was through Twitch
+    const initialProvider = user.providerData[0];
+    const isInitialTwitch = initialProvider && 
+      (initialProvider.providerId === 'oidc.twitch' || initialProvider.providerId === 'twitch.tv');
+
+    // Check if Twitch is connected (either as initial or secondary provider)
     const hasTwitch = user.providerData.some(provider => 
       provider.providerId === 'oidc.twitch' || provider.providerId === 'twitch.tv'
     );
+
     if (hasTwitch) {
       markTwitchConnected();
-      // Hide the entire Twitch card since user is already connected via Twitch
+    }
+
+    // Only hide the Twitch card if user initially logged in with Twitch
+    if (isInitialTwitch) {
+      // Hide the entire Twitch card since user logged in via Twitch
       const twitchCard = document.getElementById('twitchCard');
       if (twitchCard) {
         twitchCard.style.display = 'none';
@@ -461,4 +494,22 @@ if (urlParams.has('code') && urlParams.has('state')) {
     window.location.href = '/';
   });
 }
+
+// Initialize Voice Cloner when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  // Import and initialize voice cloner
+  import('./voiceCloner.js').then(module => {
+    if (window.InstantVoiceCloner) {
+      window.voiceCloner = new window.InstantVoiceCloner().init();
+      console.log('Voice cloner initialized');
+      
+      // Load any saved voice
+      setTimeout(() => {
+        window.voiceCloner.loadSavedVoice();
+      }, 1000);
+    }
+  }).catch(error => {
+    console.log('Voice cloner not available:', error);
+  });
+});
 

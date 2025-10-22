@@ -73,7 +73,7 @@ export const config = {
   twitch: {
     clientId: import.meta.env.VITE_TWITCH_CLIENT_ID || 'YOUR_TWITCH_CLIENT_ID',
     redirectUri: window.location.origin + '/auth/callback',
-    scopes: ['user:read:email', 'channel:read:subscriptions']
+    scopes: ['user:read:email', 'channel:manage:videos', 'user:read:broadcast']
   },
   api: {
     baseUrl: import.meta.env.VITE_API_BASE_URL || window.location.origin

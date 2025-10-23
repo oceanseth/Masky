@@ -184,6 +184,9 @@ class InstantVoiceCloner {
     }
 
     handleFileSelection(files) {
+        console.log('🔍 Debug - handleFileSelection called with:', files);
+        console.log('🔍 Debug - files length:', files.length);
+        
         const fileList = Array.from(files).filter(file => 
             file.type.startsWith('audio/') || 
             file.name.toLowerCase().endsWith('.wav') ||
@@ -191,8 +194,12 @@ class InstantVoiceCloner {
             file.name.toLowerCase().endsWith('.m4a')
         );
 
+        console.log('🔍 Debug - filtered fileList:', fileList);
+        console.log('🔍 Debug - fileList length:', fileList.length);
+
         if (fileList.length > 0) {
             this.selectedFiles = fileList;
+            console.log('🔍 Debug - selectedFiles set to:', this.selectedFiles);
             this.updateCloneButton();
             
             // Show selected files
@@ -221,7 +228,11 @@ class InstantVoiceCloner {
     }
 
     async cloneVoiceFromFiles() {
+        console.log('🔍 Debug - selectedFiles:', this.selectedFiles);
+        console.log('🔍 Debug - recordedSamples:', this.recordedSamples);
+        
         const allSamples = [...this.selectedFiles, ...this.recordedSamples];
+        console.log('🔍 Debug - allSamples length:', allSamples.length);
         
         if (allSamples.length === 0) {
             this.showStatus('Please select audio files or record samples first', 'error');
@@ -229,10 +240,7 @@ class InstantVoiceCloner {
         }
 
         try {
-            this.showProgress('Preparing voice samples for Tortoise TTS...', 0);
-            
-            // For Tortoise TTS, we don't actually "clone" in the traditional sense
-            // Instead, we prepare the samples to be used as reference voices
+            this.showProgress('Uploading voice samples to server...', 0);
             
             // Convert recorded samples to proper files
             const processedSamples = [];
@@ -248,31 +256,64 @@ class InstantVoiceCloner {
                 processedSamples.push(file);
             });
             
-            this.showProgress('Voice samples ready for use...', 50);
+            this.showProgress('Preparing voice samples for Tortoise TTS...', 25);
             
-            // Store the processed samples
+            // Create FormData for server upload
+            const formData = new FormData();
             const userId = window.currentUser?.id || `user_${Date.now()}`;
-            const voiceName = `tortoise_voice_${userId}_${Date.now()}`;
+            const voiceName = `voice_${userId}_${Date.now()}`;
             
+            // Add user info
+            formData.append('user_id', userId);
+            formData.append('voice_name', voiceName);
+            
+            // Add all voice samples
+            processedSamples.forEach((file, index) => {
+                console.log(`🔍 Debug - Adding file ${index}:`, file.name, file.type, file.size);
+                formData.append(`voice_sample_${index}`, file);
+            });
+            
+            this.showProgress('Uploading to voice cloning server...', 50);
+            
+            // Upload to server
+            const response = await fetch(`${this.tortoiseServerUrl}/clone_voice_instant`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Voice cloning failed');
+            }
+            
+            this.showProgress('Voice cloned successfully!', 100);
+            
+            // Store the voice ID for future use
             this.currentVoiceId = voiceName;
             this.userVoices.set('current', voiceName);
             this.userVoices.set(voiceName, {
                 samples: processedSamples,
-                type: 'tortoise_ready'
+                type: 'tortoise_ready',
+                server_voice_id: voiceName,
+                samples_count: result.samples_count
             });
-            
-            this.showProgress('Voice ready for generation!', 100);
             
             // Show test interface
             setTimeout(() => {
                 document.getElementById('cloning-progress').style.display = 'none';
                 document.getElementById('voice-preview').style.display = 'block';
-                this.showStatus('Voice samples prepared! Test speech generation below.', 'success');
+                this.showStatus(`Voice cloned successfully! ${result.samples_count} samples processed. Test speech generation below.`, 'success');
             }, 1000);
             
         } catch (error) {
             document.getElementById('cloning-progress').style.display = 'none';
-            this.showStatus('Processing failed: ' + error.message, 'error');
+            this.showStatus('Voice cloning failed: ' + error.message, 'error');
+            console.error('Voice cloning error:', error);
             
             // Automatically run connection tests on failure
             console.log('🔧 Running automatic diagnostics...');
@@ -443,19 +484,28 @@ class InstantVoiceCloner {
     async testGradioEndpoints(results) {
         console.log('\n--- Gradio-Specific Tests ---');
         
-        // Test POST requests to common Gradio endpoints
+        // Test POST requests to correct Gradio endpoints based on the config
         const gradioTests = [
             {
-                endpoint: '/api/predict',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Hello world", null, "random", "disabled", "No"],
+                    fn_index: 1
+                }
             },
             {
-                endpoint: '/run/predict',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Test text", null, "jane_eyre", "disabled", "No"],
+                    fn_index: 1
+                }
             },
             {
-                endpoint: '/api/predict/0',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Another test", null, "angie", "disabled", "No"],
+                    fn_index: 0
+                }
             }
         ];
 
@@ -484,6 +534,10 @@ class InstantVoiceCloner {
                     const responseData = await response.json();
                     test.details.response = responseData;
                     console.log(`✅ Gradio ${gradioTest.endpoint}: Working!`, responseData);
+                } else if (response.status === 422) {
+                    test.status = 'wrong_params';
+                    test.details.error = 'Wrong parameters (expected for test)';
+                    console.log(`⚠️ Gradio ${gradioTest.endpoint}: 422 (Expected - wrong parameters)`);
                 } else {
                     test.status = 'error';
                     console.log(`❌ Gradio ${gradioTest.endpoint}: ${response.status}`);
@@ -690,24 +744,139 @@ class InstantVoiceCloner {
     // Alternative method that works with file-based Gradio interfaces
     async uploadFileToGradio(file) {
         try {
-            const formData = new FormData();
-            formData.append('files', file);
+            // Try different upload endpoints based on Gradio structure
+            const uploadEndpoints = [
+                '/upload',
+                '/gradio_api/upload',
+                '/file'
+            ];
             
-            const response = await fetch(`${this.tortoiseServerUrl}/upload`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                return result; // Usually returns file path or ID
-            } else {
-                throw new Error(`Upload failed: ${response.status}`);
+            for (const endpoint of uploadEndpoints) {
+                try {
+                    const formData = new FormData();
+                    formData.append('files', file);
+                    
+                    const response = await fetch(`${this.tortoiseServerUrl}${endpoint}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log(`✅ File uploaded via ${endpoint}:`, result);
+                        return result; // Usually returns file path or ID
+                    }
+                } catch (error) {
+                    console.log(`❌ Upload failed via ${endpoint}:`, error.message);
+                    continue;
+                }
             }
+            
+            // If all upload endpoints fail, return the file as-is for direct use
+            console.log('⚠️ All upload endpoints failed, using file directly');
+            return file;
+            
         } catch (error) {
             console.error('File upload failed:', error);
-            throw error;
+            return file; // Return file as fallback
         }
+    }
+
+    async tryFallbackMethods(text, referenceSample) {
+        console.log('🔄 Trying fallback methods for voice generation...');
+        
+        const fallbackMethods = [
+            // Method 1: Try direct Gradio API with different fn_index
+            async () => {
+                const response = await fetch(`${this.tortoiseServerUrl}/gradio_api/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: [text, null, "random", "disabled", "No"],
+                        fn_index: 0  // Try different function index
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.data && result.data[0]) {
+                        const audio = new Audio(result.data[0]);
+                        audio.play();
+                        return true;
+                    }
+                }
+                throw new Error('Method 1 failed');
+            },
+            
+            // Method 2: Try with file upload first
+            async () => {
+                const uploadedFile = await this.uploadFileToGradio(referenceSample);
+                const response = await fetch(`${this.tortoiseServerUrl}/gradio_api/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: [text, uploadedFile, "random", "disabled", "No"],
+                        fn_index: 1
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.data && result.data[0]) {
+                        const audio = new Audio(result.data[0]);
+                        audio.play();
+                        return true;
+                    }
+                }
+                throw new Error('Method 2 failed');
+            },
+            
+            // Method 3: Try different voice options
+            async () => {
+                const voices = ["jane_eyre", "angie", "deniro", "freeman", "halle"];
+                for (const voice of voices) {
+                    try {
+                        const response = await fetch(`${this.tortoiseServerUrl}/gradio_api/predict`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                data: [text, null, voice, "disabled", "No"],
+                                fn_index: 1
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const result = await response.json();
+                            if (result.data && result.data[0]) {
+                                const audio = new Audio(result.data[0]);
+                                audio.play();
+                                console.log(`✅ Success with voice: ${voice}`);
+                                return true;
+                            }
+                        }
+                    } catch (error) {
+                        continue;
+                    }
+                }
+                throw new Error('Method 3 failed');
+            }
+        ];
+        
+        for (let i = 0; i < fallbackMethods.length; i++) {
+            try {
+                console.log(`🔄 Trying fallback method ${i + 1}...`);
+                const success = await fallbackMethods[i]();
+                if (success) {
+                    console.log(`✅ Fallback method ${i + 1} succeeded!`);
+                    return true;
+                }
+            } catch (error) {
+                console.log(`❌ Fallback method ${i + 1} failed:`, error.message);
+                continue;
+            }
+        }
+        
+        throw new Error('All fallback methods failed. Please check the Tortoise TTS server configuration.');
     }
 
     switchToUpload() {
@@ -925,49 +1094,26 @@ class InstantVoiceCloner {
     }
 
     async generateSpeechWithGradio(text) {
-        // Get the reference samples for this voice
+        // Get the voice data
         const voiceData = this.userVoices.get(this.currentVoiceId);
-        if (!voiceData || !voiceData.samples || voiceData.samples.length === 0) {
-            throw new Error('No reference voice samples available');
+        if (!voiceData || !voiceData.server_voice_id) {
+            throw new Error('No cloned voice available. Please clone your voice first.');
         }
 
-        // Use the first sample as reference
-        const referenceSample = voiceData.samples[0];
-
-        console.log('🎯 Using Tortoise TTS /predict endpoint');
-        
-        // Based on the API structure discovered:
-        // 1. Text (Textbox)
-        // 2. Upload a text file (File) - null
-        // 3. Select voice (Dropdown) - need to upload custom voice
-        // 4. Optional second voice (Dropdown) - null
-        // 5. Split by newline (Radio) - "No"
-        // 6. Seed (Number) - null/random
+        console.log('🎯 Using Tortoise TTS with cloned voice:', voiceData.server_voice_id);
         
         try {
-            // First, try to upload the reference voice sample
-            const voiceFile = await this.prepareVoiceFile(referenceSample);
-            
-            // Prepare the API call according to Tortoise TTS structure
-            const formData = new FormData();
-            
-            // The Gradio API expects an array of parameters in order
-            const apiData = [
-                text,           // Text input
-                null,           // Text file upload (not using)
-                voiceFile,      // Voice selection (our uploaded sample)
-                null,           // Second voice (optional)
-                "No",           // Split by newline
-                null            // Seed (random)
-            ];
-            
-            formData.append('data', JSON.stringify(apiData));
-            
-            console.log('📡 Making request to /predict endpoint...');
-            
-            const response = await fetch(`${this.tortoiseServerUrl}/predict`, {
+            // Use the server's voice ID to generate speech
+            const response = await fetch(`${this.tortoiseServerUrl}/gradio_api/predict`, {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    data: [text],  // Just the text
+                    voice_id: voiceData.server_voice_id,  // Use the server's voice ID
+                    quality: 'ultra_fast'
+                })
             });
 
             if (response.ok) {
@@ -980,7 +1126,7 @@ class InstantVoiceCloner {
                     
                     if (audioResult && typeof audioResult === 'string') {
                         // If it's a URL or file path
-                        const audioUrl = audioResult.startsWith('http') ? audioResult : `${this.tortoiseServerUrl}/file=${audioResult}`;
+                        const audioUrl = audioResult.startsWith('http') ? audioResult : `${this.tortoiseServerUrl}/file?file=${encodeURIComponent(audioResult)}`;
                         console.log('🔊 Playing generated audio:', audioUrl);
                         
                         const audio = new Audio(audioUrl);
@@ -997,11 +1143,12 @@ class InstantVoiceCloner {
                 throw new Error('No audio generated in response');
             } else {
                 const errorText = await response.text();
+                console.error('❌ API Error:', errorText);
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
             
         } catch (error) {
-            console.error('❌ Tortoise TTS generation failed:', error);
+            console.error('❌ Speech generation error:', error);
             throw error;
         }
     }

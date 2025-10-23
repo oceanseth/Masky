@@ -453,32 +453,6 @@ document.getElementById('authModal').addEventListener('click', function(e) {
 // Initialize
 renderAlerts();
 
-// Scroll handling
-let isScrolling;
-document.addEventListener('scroll', function(e) {
-    // Clear the timeout throughout the scroll
-    window.clearTimeout(isScrolling);
-
-    // Set a timeout to run after scrolling ends
-    isScrolling = setTimeout(function() {
-        // Get current scroll position
-        const scrollPosition = window.scrollY;
-        const windowHeight = window.innerHeight;
-        
-        // If we're close to the top or features section, snap to it
-        if (scrollPosition < windowHeight / 2) {
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
-        } else if (scrollPosition < windowHeight * 1.5) {
-            window.scrollTo({
-                top: windowHeight,
-                behavior: 'smooth'
-            });
-        }
-    }, 66); // Throttle to ~15fps
-}, false);
 
 // Check if this is an OAuth callback
 const urlParams = new URLSearchParams(window.location.search);

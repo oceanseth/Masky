@@ -4,6 +4,7 @@ package-lock.json
 
 # Python virtual environment
 venv/
+tortoise_env/
 __pycache__/
 *.pyc
 *.pyo

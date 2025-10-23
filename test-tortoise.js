@@ -188,20 +188,25 @@ class TortoiseTester {
         
         const gradioTests = [
             {
-                endpoint: '/api/predict',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Hello world", null, "random", "disabled", "No"],
+                    fn_index: 1
+                }
             },
             {
-                endpoint: '/run/predict',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Test text", null, "jane_eyre", "disabled", "No"],
+                    fn_index: 1
+                }
             },
             {
-                endpoint: '/api/predict/0',
-                data: { data: ["test"] }
-            },
-            {
-                endpoint: '/api/predict/1',
-                data: { data: ["test"] }
+                endpoint: '/gradio_api/predict',
+                data: { 
+                    data: ["Another test", null, "angie", "disabled", "No"],
+                    fn_index: 0
+                }
             }
         ];
 
@@ -258,7 +263,7 @@ class TortoiseTester {
         }
 
         if (workingApis.length > 0) {
-            console.log('\n🎯 Potential API endpoints found:');
+            console.log('\n🎯 Working Gradio API endpoints found:');
             workingApis.forEach(api => console.log(`   ${api}`));
         }
     }

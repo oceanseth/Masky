@@ -1,15 +1,17 @@
 import { defineConfig } from 'vite';
-import { copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { copyFileSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 export default defineConfig({
   root: '.',
+  publicDir: 'public',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: './index.html'
+        main: './index.html',
+        membership: './membership.html'
       }
     }
   },
@@ -37,7 +39,7 @@ export default defineConfig({
           }
         };
         copyRecursive('src/locales', 'dist/src/locales');
-        console.log('✓ Locale files copied to dist/src/locales');
+        console.log('✓ Locale files copied to dist/src/locales');        
       }
     }
   ]

@@ -11,7 +11,7 @@ export const config = {
   // API Configuration  
   api: {
     // Use direct API Gateway to bypass CloudFront (which is still deploying updated config)
-    baseUrl: (window.location.host=='localhost:3000')?'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production':'https://masky.net'
+    baseUrl: (window.location.host.includes('localhost'))?'https://b4feblbni7.execute-api.us-east-1.amazonaws.com/production':'https://masky.net'
   },
   stripe: {
     // Stripe Price IDs (not Product IDs)

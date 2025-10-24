@@ -207,47 +207,6 @@ window.subscribeToPlan = async function(tier) {
     }
 };
 
-/**
- * Cancel subscription
- */
-window.cancelSubscription = async function() {
-    if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.')) {
-        return;
-    }
-
-    try {
-        const user = getCurrentUser();
-        if (!user) {
-            throw new Error('User not authenticated');
-        }
-
-        // Get ID token
-        const idToken = await user.getIdToken();
-
-        // Cancel subscription
-        const response = await fetch(`${config.api.baseUrl}/api/subscription/cancel`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${idToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to cancel subscription');
-        }
-
-        showMessage('Subscription canceled successfully. You will retain access until the end of your billing period.', 'success');
-        
-        // Reload subscription status
-        await loadSubscriptionStatus();
-
-    } catch (error) {
-        console.error('Error canceling subscription:', error);
-        showMessage(error.message || 'Failed to cancel subscription', 'error');
-    }
-};
 
 /**
  * Open Stripe Customer Portal

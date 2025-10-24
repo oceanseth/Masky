@@ -267,7 +267,7 @@ async function getSubscriptionStatus(event) {
         const userDoc = await db.collection('users').doc(userId).get();
         const userData = userDoc.data() || {};
 
-        const subscription = {
+        let subscription = {
             tier: customClaims.subscriptionTier || userData.subscriptionTier || 'free',
             status: customClaims.subscriptionStatus || userData.subscriptionStatus || 'active',
             stripeCustomerId: customClaims.stripeCustomerId || userData.stripeCustomerId,
@@ -275,6 +275,39 @@ async function getSubscriptionStatus(event) {
             currentPeriodEnd: customClaims.currentPeriodEnd || userData.currentPeriodEnd,
             cancelAtPeriodEnd: customClaims.cancelAtPeriodEnd || userData.cancelAtPeriodEnd || false
         };
+
+        // If we have a Stripe subscription ID but no billing date, fetch it from Stripe
+        if (subscription.stripeSubscriptionId && !subscription.currentPeriodEnd) {
+            try {
+                const stripe = new StripeInit();
+                await stripe.init();
+                const stripeSubscription = await stripe.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+                
+                subscription.currentPeriodEnd = stripeSubscription.current_period_end;
+                subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
+                subscription.status = stripeSubscription.status;
+
+                // Update the data in Firebase for future requests
+                await db.collection('users').doc(userId).update({
+                    currentPeriodEnd: stripeSubscription.current_period_end,
+                    cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+                    subscriptionStatus: stripeSubscription.status
+                });
+
+                // Update custom claims
+                await admin.auth().setCustomUserClaims(userId, {
+                    ...customClaims,
+                    currentPeriodEnd: stripeSubscription.current_period_end,
+                    cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+                    subscriptionStatus: stripeSubscription.status
+                });
+
+                console.log('Updated subscription data from Stripe for user:', userId);
+            } catch (error) {
+                console.error('Error fetching subscription from Stripe:', error);
+                // Continue with existing data if Stripe fetch fails
+            }
+        }
 
         return {
             statusCode: 200,
@@ -605,13 +638,19 @@ async function handleStripeWebhook(event) {
                 const customerId = session.customer;
                 const subscriptionId = session.subscription;
 
+                // Get the subscription details from Stripe to get current_period_end
+                const stripe = new StripeInit();
+                await stripe.init();
+                const subscription = await stripe.stripe.subscriptions.retrieve(subscriptionId);
+
                 // Update user data
                 await db.collection('users').doc(userId).set({
                     stripeCustomerId: customerId,
                     stripeSubscriptionId: subscriptionId,
                     subscriptionTier: tier,
                     subscriptionStatus: 'active',
-                    cancelAtPeriodEnd: false,
+                    currentPeriodEnd: subscription.current_period_end,
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
 
@@ -621,7 +660,8 @@ async function handleStripeWebhook(event) {
                     subscriptionStatus: 'active',
                     stripeCustomerId: customerId,
                     stripeSubscriptionId: subscriptionId,
-                    cancelAtPeriodEnd: false
+                    currentPeriodEnd: subscription.current_period_end,
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end
                 });
 
                 console.log('Subscription created for user:', userId);

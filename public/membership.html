@@ -98,6 +98,7 @@
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(192, 132, 252, 0.2);
             z-index: 1000;
+            min-height: 60px;
         }
 
         .logo {
@@ -369,9 +370,11 @@
         /* Loading State */
         .loading {
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             min-height: 400px;
+            gap: 1rem;
         }
 
         .spinner {
@@ -381,6 +384,13 @@
             width: 50px;
             height: 50px;
             animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1rem;
+            font-weight: 500;
+            margin: 0;
         }
 
         @keyframes spin {
@@ -452,7 +462,7 @@
             }
 
             .membership-container {
-                padding: 100px 1.5rem 2rem;
+                padding: 120px 1.5rem 2rem;
             }
 
             .page-title {
@@ -472,6 +482,21 @@
             .subscription-actions {
                 flex-direction: column;
                 width: 100%;
+            }
+        }
+
+        /* Extra small mobile devices */
+        @media (max-width: 480px) {
+            .membership-container {
+                padding: 130px 1rem 2rem;
+            }
+            
+            .page-title {
+                font-size: 1.75rem;
+            }
+            
+            .page-subtitle {
+                font-size: 1rem;
             }
         }
     </style>
@@ -508,6 +533,7 @@
         <!-- Loading State -->
         <div id="loadingState" class="loading">
             <div class="spinner"></div>
+            <p class="loading-text">Loading Subscription Details</p>
         </div>
 
         <!-- Current Subscription -->

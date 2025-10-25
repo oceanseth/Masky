@@ -123,3 +123,215 @@ nav {
     border-color: #9333ea;
 }
 
+/* Mobile Navigation Styles */
+/* Mobile Menu Styles */
+.mobile-menu-btn {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 30px;
+    height: 30px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    position: relative;
+    z-index: 1001;
+}
+
+.hamburger-line {
+    width: 20px;
+    height: 2px;
+    background: #fff;
+    margin: 2px 0;
+    transition: all 0.3s ease;
+    border-radius: 1px;
+}
+
+.mobile-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.5rem;
+    min-width: 120px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-menu.show {
+    display: block;
+}
+
+.mobile-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.6rem;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+    text-align: left;
+}
+
+.mobile-menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-menu-item.mobile-signout {
+    color: #ef4444;
+}
+
+.mobile-menu-item.mobile-signout:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Always show hamburger menu */
+.mobile-menu-btn {
+    display: flex;
+}
+
+/* Hide auth buttons in nav-links - they're now in the dropdown */
+.nav-links #navSignIn,
+.nav-links #navSignUp,
+.nav-links #navHelp,
+.nav-links #navSignOut {
+    display: none !important;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    nav {
+        padding: 0.8rem 1rem;
+        position: relative;
+    }
+    
+    .nav-links {
+        gap: 0.8rem;
+    }
+    
+    .nav-links a {
+        display: none; /* Hide nav links on mobile */
+    }
+}
+
+@media (max-width: 480px) {
+    nav {
+        padding: 0.6rem 0.8rem;
+    }
+    
+    .logo {
+        font-size: 1.2rem;
+    }
+    
+    .nav-links {
+        gap: 0.6rem;
+    }
+    
+    .nav-links .btn {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.7rem;
+    }
+}
+
+@media (max-width: 375px) {
+    nav {
+        padding: 0.5rem 0.6rem;
+    }
+    
+    .logo {
+        font-size: 1.1rem;
+    }
+    
+    .nav-links {
+        gap: 0.4rem;
+    }
+    
+    .nav-links .btn {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 480px) {
+    nav {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .logo-text {
+        font-size: 1rem;
+    }
+
+    .nav-links {
+        gap: 0.25rem;
+    }
+
+    .nav-links a {
+        display: none; /* Hide all navigation links on small mobile */
+    }
+
+    .btn {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.7rem;
+        border-radius: 15px;
+    }
+
+    /* Make help button even smaller */
+    .help-btn {
+        padding: 0.3rem 0.6rem;
+    }
+
+    .help-btn .icon {
+        font-size: 0.7rem;
+    }
+
+    /* Adjust button text for very small screens */
+    #navSignIn, #navSignUp {
+        padding: 0.4rem 0.6rem;
+    }
+
+    #navSignOut {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 375px) {
+    .logo-text {
+        font-size: 0.9rem;
+    }
+
+    .nav-links {
+        gap: 0.2rem;
+    }
+
+    .btn {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.65rem;
+    }
+
+    .help-btn {
+        padding: 0.25rem 0.5rem;
+    }
+
+    .help-btn .icon {
+        font-size: 0.6rem;
+    }
+
+    /* Ultra-compact for very small screens */
+    #navSignOut {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.6rem;
+    }
+}
+

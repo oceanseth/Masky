@@ -15,7 +15,7 @@
   "features": {
     "aiAvatars": {
       "title": "KI-Avatare",
-      "description": "Wähle zwischen HeyGen- und Hume-Avataren mit fotorealistischen Stimmen und natürlichen Ausdrücken, die deine Benachrichtigungen zum Leben erwecken"
+      "description": "Erstelle lebensechte KI-Avatare mit fotorealistischen Stimmen und natürlichen Ausdrücken, die deine Benachrichtigungen zum Leben erwecken"
     },
     "realtime": {
       "title": "Echtzeit-Events",
@@ -50,15 +50,11 @@
   "dashboard": {
     "welcome": "Willkommen, {{username}}",
     "subtitle": "Verbinde deine Konten und erstelle fantastische Benachrichtigungen",
-    "connectAccounts": "Verbinde Deine Konten",
+    "connectAccounts": "Konten Verbinden",
     "twitch": "Twitch",
-    "heygen": "HeyGen",
-    "hume": "Hume AI",
     "notConnected": "Nicht Verbunden",
     "connected": "Verbunden",
     "connectTwitch": "Twitch Verbinden",
-    "connectHeygen": "HeyGen Verbinden",
-    "connectHume": "Hume Verbinden",
     "yourAlerts": "Deine Benachrichtigungen",
     "createAlert": "+ Benachrichtigung Erstellen",
     "emptyStateIcon": "✨",

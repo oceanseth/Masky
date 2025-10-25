@@ -20,7 +20,102 @@
 
 .dashboard-header {
     margin-bottom: 4rem;
-    text-align: center;
+}
+
+.dashboard-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 2rem;
+}
+
+.dashboard-header-content > div:first-child {
+    text-align: left;
+    flex: 1;
+}
+
+.dashboard-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.help-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.2s ease;
+}
+
+.help-btn:hover {
+    background: rgba(101, 163, 255, 0.2);
+    border-color: rgba(101, 163, 255, 0.4);
+    transform: translateY(-1px);
+}
+
+.help-btn .icon {
+    font-size: 1rem;
+}
+
+#signOutBtn {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    transition: all 0.2s ease;
+}
+
+#signOutBtn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+    .dashboard-header-content {
+        flex-direction: column;
+        text-align: center;
+        gap: 1.5rem;
+    }
+    
+    .dashboard-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    /* Mobile styles for social linking section */
+    .social-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .social-card {
+        padding: 1.5rem;
+        border-radius: 15px;
+    }
+    
+    .social-card::before {
+        border-radius: 15px;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+    }
+    
+    .dashboard-title {
+        font-size: 2.5rem;
+    }
+    
+    .dashboard-subtitle {
+        font-size: 1rem;
+    }
 }
 
 .dashboard-title {
@@ -42,16 +137,16 @@
 /* Social Linking Cards */
 .social-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 2.5rem;
-    margin-bottom: 4rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
 }
 
 .social-card {
     background: linear-gradient(135deg, rgba(147, 51, 234, 0.05), rgba(59, 130, 246, 0.05));
     border: 2px solid transparent;
-    border-radius: 30px;
-    padding: 3rem;
+    border-radius: 20px;
+    padding: 2rem;
     transition: all 0.5s;
     display: flex;
     flex-direction: column;
@@ -66,7 +161,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 30px;
+    border-radius: 20px;
     padding: 2px;
     background: linear-gradient(135deg, rgba(147, 51, 234, 0.5), rgba(59, 130, 246, 0.5));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -108,7 +203,12 @@
 }
 
 .social-card .btn {
-    width: 100%;
+    width: auto;
+    min-width: 140px;
+    max-width: 200px;
+    padding: 0.7rem 1.5rem;
+    font-size: 0.9rem;
+    align-self: center;
 }
 
 /* VODs Section */
@@ -226,7 +326,7 @@
 }
 
 .section-title {
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     font-weight: 900;
     background: linear-gradient(135deg, #c084fc, #60a5fa);
     -webkit-background-clip: text;
@@ -337,6 +437,31 @@
 
 .empty-state p {
     font-size: 1.2rem;
+}
+
+/* Additional mobile breakpoint for very small screens */
+@media (max-width: 480px) {
+    .social-card {
+        padding: 1rem;
+        border-radius: 12px;
+    }
+    
+    .social-card::before {
+        border-radius: 12px;
+    }
+    
+    .section-title {
+        font-size: 1.3rem;
+    }
+    
+    .dashboard-title {
+        font-size: 2rem;
+    }
+    
+    .social-grid {
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
 }
 
 

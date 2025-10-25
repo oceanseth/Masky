@@ -6,6 +6,7 @@ import './styles/modal.css';
 import './styles/icons.css';
 import './styles/vods.css';
 import './styles/voiceCloner.css';
+import './styles/quickstart.css';
 
 // Import i18n
 import i18next from './i18n.js';
@@ -24,15 +25,19 @@ import {
 
 import { config } from './config';
 import { fetchTwitchVods, renderVods, showAndLoadVods } from './vods.js';
+import { onboardingManager } from './onboarding.js';
+import { quickStartGuide } from './quickStart.js';
+import { welcomeNotification } from './welcomeNotification.js';
+
+// Make onboarding manager globally available
+window.onboardingManager = onboardingManager;
 
 // State management
 window.state = {
   isLoggedIn: false,
   user: null,
   connections: {
-    twitch: false,
-    heygen: false,
-    hume: false
+    twitch: false
   },
   alerts: [],
   twitchAuth: null
@@ -168,13 +173,52 @@ window.logout = async function() {
   }
 };
 
+// Alias for signOut to match navigation button
+window.signOut = window.logout;
+
+// Mobile menu functions
+window.toggleMobileMenu = function() {
+  const mobileMenu = document.getElementById('mobileMenu');
+  if (mobileMenu) {
+    mobileMenu.classList.toggle('show');
+  }
+};
+
+window.closeMobileMenu = function() {
+  const mobileMenu = document.getElementById('mobileMenu');
+  if (mobileMenu) {
+    mobileMenu.classList.remove('show');
+  }
+};
+
+// Membership function
+window.showMembership = function() {
+  // Navigate to membership page
+  window.location.href = '/membership.html';
+};
+
+// Close mobile menu when clicking outside
+document.addEventListener('click', function(event) {
+  const mobileMenu = document.getElementById('mobileMenu');
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  
+  if (mobileMenu && mobileMenuBtn && 
+      !mobileMenu.contains(event.target) && 
+      !mobileMenuBtn.contains(event.target)) {
+    mobileMenu.classList.remove('show');
+  }
+});
+
 function showDashboard() {
   document.getElementById('landing').style.display = 'none';
   document.getElementById('dashboard').classList.add('active');
   if (state.user) {
     const username = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
-    // Use the translation system for the welcome message
-    document.getElementById('welcomeMessage').textContent = i18next.t('dashboard.welcome', { username });
+    // Update the username span in the dashboard title
+    const usernameElement = document.getElementById('username');
+    if (usernameElement) {
+      usernameElement.textContent = username;
+    }
   }
   // Update content after showing dashboard to ensure translations are applied
   updateContent();
@@ -203,9 +247,61 @@ onAuthChange((user) => {
         }
         
         // Load and display membership status
-        loadMembershipStatus();    // Hide auth-related buttons when logged in
-    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
-    authButtons.forEach(button => button.style.display = 'none');
+        loadMembershipStatus();
+        
+        // Show welcome popup for brand new users
+        onboardingManager.showWelcomePopup(user);
+        
+        // Show friendly welcome notification 
+        welcomeNotification.showWelcomeForNewUser(user);
+        
+        // Check if new user needs full onboarding (but don't force it)
+        onboardingManager.checkAndShowOnboarding(user);
+        
+        // Show quick start guide for users who completed onboarding or existing users (but less prominently)
+        setTimeout(() => {
+            if (!onboardingManager.shouldShowOnboarding(user)) {
+                // Only show quick start if user has been around for more than an hour
+                if (user && user.metadata && user.metadata.creationTime) {
+                    const signupTime = new Date(user.metadata.creationTime);
+                    const now = new Date();
+                    const hoursAgo = (now - signupTime) / (1000 * 60 * 60);
+                    
+                    if (hoursAgo > 1) {
+                        quickStartGuide.show();
+                    }
+                } else {
+                    quickStartGuide.show();
+                }
+            }
+        }, 3000);
+        
+        // Update navigation buttons for logged in state
+        const navSignIn = document.getElementById('navSignIn');
+        const navSignUp = document.getElementById('navSignUp');
+        const navHelp = document.getElementById('navHelp');
+        const navSignOut = document.getElementById('navSignOut');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const mobileHelp = document.getElementById('mobileHelp');
+        const mobileSignOut = document.getElementById('mobileSignOut');
+        const mobileMembership = document.getElementById('mobileMembership');
+        const mobileSignInBtn = document.getElementById('mobileSignInBtn');
+        const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
+        
+        if (navSignIn) navSignIn.style.display = 'none';
+        if (navSignUp) navSignUp.style.display = 'none';
+        if (navHelp) navHelp.style.display = 'none';
+        if (navSignOut) navSignOut.style.display = 'none';
+        
+        // Show mobile menu and logged-in mobile buttons
+        if (mobileMenuBtn) mobileMenuBtn.style.display = 'flex';
+        if (mobileHelp) mobileHelp.style.display = 'flex';
+        if (mobileSignOut) mobileSignOut.style.display = 'flex';
+        if (mobileMembership) mobileMembership.style.display = 'flex';
+        
+        // Hide logged-out mobile buttons
+        if (mobileSignInBtn) mobileSignInBtn.style.display = 'none';
+        if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'none';
   } else {
     state.isLoggedIn = false;
     state.user = null;
@@ -217,9 +313,35 @@ onAuthChange((user) => {
       membershipLink.style.display = 'none';
     }
 
-    // Show auth-related buttons when logged out
-    const authButtons = document.querySelectorAll('[onclick^="showLogin"], [onclick^="showSignup"]');
-    authButtons.forEach(button => button.style.display = '');
+    // Update navigation buttons for logged out state
+    const navSignIn = document.getElementById('navSignIn');
+    const navSignUp = document.getElementById('navSignUp');
+    const navHelp = document.getElementById('navHelp');
+    const navSignOut = document.getElementById('navSignOut');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileHelp = document.getElementById('mobileHelp');
+    const mobileSignOut = document.getElementById('mobileSignOut');
+    const mobileMembership = document.getElementById('mobileMembership');
+    const mobileSignInBtn = document.getElementById('mobileSignInBtn');
+    const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
+    
+    if (navSignIn) navSignIn.style.display = 'none';
+    if (navSignUp) navSignUp.style.display = 'none';
+    if (navHelp) navHelp.style.display = 'none';
+    if (navSignOut) navSignOut.style.display = 'none';
+    
+    // Always show mobile menu button
+    if (mobileMenuBtn) mobileMenuBtn.style.display = 'flex';
+    
+    // Show logged-out mobile buttons
+    if (mobileSignInBtn) mobileSignInBtn.style.display = 'flex';
+    if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'flex';
+    
+    // Hide logged-in mobile buttons
+    if (mobileHelp) mobileHelp.style.display = 'none';
+    if (mobileSignOut) mobileSignOut.style.display = 'none';
+    if (mobileMembership) mobileMembership.style.display = 'none';
+    closeMobileMenu();
   }
 });
 
@@ -290,6 +412,9 @@ window.connectTwitch = async function() {
       }
       
       await showAndLoadVods(result.accessToken, result.userId);
+      
+      // Show success notification
+      welcomeNotification.showContextualTip('connected-twitch');
     }
   } catch (error) {
     console.error('Failed to connect Twitch:', error);
@@ -327,54 +452,16 @@ async function checkTwitchConnection() {
       markTwitchConnected();
     }
 
-    // Only hide the Twitch card if user initially logged in with Twitch
+    // Hide the entire social linking section if user initially logged in with Twitch
     if (isInitialTwitch) {
-      // Hide the entire Twitch card since user logged in via Twitch
-      const twitchCard = document.getElementById('twitchCard');
-      if (twitchCard) {
-        twitchCard.style.display = 'none';
+      // Hide the entire social linking section since user logged in via Twitch
+      const socialLinking = document.getElementById('socialLinking');
+      if (socialLinking) {
+        socialLinking.style.display = 'none';
       }
     }
   }
 }
-
-window.connectHeygen = function() {
-  if (state.connections.heygen) {
-    // Handle disconnect
-    if (confirm('Are you sure you want to disconnect your HeyGen account?')) {
-      localStorage.removeItem('heygen_token');
-      state.connections.heygen = false;
-      const card = document.getElementById('heygenCard');
-      card.classList.remove('connected');
-      card.querySelector('.social-status').textContent = 'Not Connected';
-      const btn = card.querySelector('.btn');
-      btn.textContent = 'Connect HeyGen';
-      btn.classList.remove('btn-secondary');
-      btn.classList.add('btn-primary');
-    }
-  } else {
-    alert('HeyGen integration coming soon!');
-  }
-};
-
-window.connectHume = function() {
-  if (state.connections.hume) {
-    // Handle disconnect
-    if (confirm('Are you sure you want to disconnect your Hume AI account?')) {
-      localStorage.removeItem('hume_token');
-      state.connections.hume = false;
-      const card = document.getElementById('humeCard');
-      card.classList.remove('connected');
-      card.querySelector('.social-status').textContent = 'Not Connected';
-      const btn = card.querySelector('.btn');
-      btn.textContent = 'Connect Hume';
-      btn.classList.remove('btn-secondary');
-      btn.classList.add('btn-primary');
-    }
-  } else {
-    alert('Hume AI integration coming soon!');
-  }
-};
 
 function checkAllConnections() {
   if (state.connections.twitch) {
@@ -390,7 +477,7 @@ window.createNewAlert = function() {
     id: Date.now(),
     type: 'New Subscriber',
     url: `https://masky.io/alert/${Date.now()}`,
-    avatar: 'HeyGen Avatar',
+    avatar: 'AI Avatar',
     script: 'Thank you for subscribing!'
   };
   

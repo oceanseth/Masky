@@ -4,46 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Masky - AI-Powered Stream Alerts</title>
-    
-    <!-- SEO Meta Tags -->
-    <meta name="description" content="Create AI-powered stream alerts with lifelike avatars. Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.">
-    <meta name="keywords" content="Twitch alerts, AI avatars, stream alerts, HeyGen, Hume AI, streaming tools, content creation">
-    <meta name="author" content="Masky">
-    <meta name="robots" content="index, follow">
-    
-    <!-- Open Graph Meta Tags -->
-    <meta property="og:title" content="Masky - AI-Powered Stream Alerts">
-    <meta property="og:description" content="Create AI-powered stream alerts with lifelike avatars. Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.">
-    <meta property="og:image" content="/assets/masky-social-preview.svg">
-    <meta property="og:image:alt" content="Masky - AI-Powered Stream Alerts">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
-    <meta property="og:url" content="https://masky.app">
-    <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Masky">
-    <meta property="og:locale" content="en_US">
-    
-    <!-- Twitter Card Meta Tags -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Masky - AI-Powered Stream Alerts">
-    <meta name="twitter:description" content="Create AI-powered stream alerts with lifelike avatars. Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.">
-    <meta name="twitter:image" content="/assets/masky-social-preview.svg">
-    <meta name="twitter:image:alt" content="Masky - AI-Powered Stream Alerts">
-    <meta name="twitter:site" content="@maskyapp">
-    <meta name="twitter:creator" content="@maskyapp">
-    
-    <!-- Additional Meta Tags -->
-    <meta name="theme-color" content="#9333ea">
-    <meta name="msapplication-TileColor" content="#9333ea">
-    <meta name="apple-mobile-web-app-title" content="Masky">
-    <meta name="application-name" content="Masky">
-    <link rel="icon" type="image/svg+xml" href="/assets/masky-favicon-32.svg">
-    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
-    <link rel="apple-touch-icon" href="/assets/masky-favicon-32.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Viewport constraints to prevent horizontal overflow */
+        html, body {
+            max-width: 100vw;
+            overflow-x: hidden;
+            box-sizing: border-box;
+        }
+        
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         /* Auth provider buttons styles */
         .auth-providers {
             display: flex;
@@ -123,88 +98,116 @@
     </style>
 </head>
 <body>
-    <!-- Background Effects Container -->
-    <div class="background-effects">
-        <div class="holo-bg"></div>
-        <div class="liquid-shape liquid-1"></div>
-        <div class="liquid-shape liquid-2"></div>
-        <div class="liquid-shape liquid-3"></div>
-        <div class="wire-frame wire-frame-1"></div>
-        <div class="wire-frame wire-frame-2"></div>
+    <div class="holo-bg"></div>
+    <div class="liquid-shape liquid-1"></div>
+    <div class="liquid-shape liquid-2"></div>
+    <div class="liquid-shape liquid-3"></div>
+    <div class="wire-frame wire-frame-1"></div>
+    <div class="wire-frame wire-frame-2"></div>
 
-        <!-- Floating Particles -->
-        <div class="particle particle-1"></div>
-        <div class="particle particle-2"></div>
-        <div class="particle particle-3"></div>
-        <div class="particle particle-4"></div>
-        <div class="particle particle-5"></div>
+    <!-- Floating Particles -->
+    <div class="particle particle-1"></div>
+    <div class="particle particle-2"></div>
+    <div class="particle particle-3"></div>
+    <div class="particle particle-4"></div>
+    <div class="particle particle-5"></div>
 
-        <!-- Flowing Grid Lines -->
-        <div class="grid-line grid-horizontal grid-h-1"></div>
-        <div class="grid-line grid-horizontal grid-h-2"></div>
-        <div class="grid-line grid-horizontal grid-h-3"></div>
-        <div class="grid-line grid-vertical grid-v-1"></div>
-        <div class="grid-line grid-vertical grid-v-2"></div>
-        <div class="grid-line grid-vertical grid-v-3"></div>
+    <!-- Flowing Grid Lines -->
+    <div class="grid-line grid-horizontal grid-h-1"></div>
+    <div class="grid-line grid-horizontal grid-h-2"></div>
+    <div class="grid-line grid-horizontal grid-h-3"></div>
+    <div class="grid-line grid-vertical grid-v-1"></div>
+    <div class="grid-line grid-vertical grid-v-2"></div>
+    <div class="grid-line grid-vertical grid-v-3"></div>
 
-        <!-- Hexagon Elements -->
-        <div class="hexagon hex-1"></div>
-        <div class="hexagon hex-2"></div>
-        <div class="hexagon hex-3"></div>
+    <!-- Hexagon Elements -->
+    <div class="hexagon hex-1"></div>
+    <div class="hexagon hex-2"></div>
+    <div class="hexagon hex-3"></div>
 
-        <!-- Light Beams -->
-        <div class="light-beam beam-1"></div>
-        <div class="light-beam beam-2"></div>
-        <div class="light-beam beam-3"></div>
-    </div>
+    <!-- Light Beams -->
+    <div class="light-beam beam-1"></div>
+    <div class="light-beam beam-2"></div>
+    <div class="light-beam beam-3"></div>
+
+    <!-- Data Streams (removed static binary sequences) -->
 
     <!-- Navigation -->
     <nav>
-        <div class="logo">
-            <img src="/assets/masky-logo-gradient.svg" alt="Masky" class="logo-icon">
-            <span class="logo-text">MASKY</span>
-        </div>
+        <div class="logo">MASKY</div>
         <div class="nav-links">
-            <a href="#features" data-i18n="nav.features">Features</a>
-            <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
-            <a href="#docs" data-i18n="nav.docs">Docs</a>
-            <a href="/membership.html" id="membershipLink" style="display: none; background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%); padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600;">
-                <span id="membershipBadge">Free</span> Membership
-            </a>
-            <select id="languageSelector" onchange="changeLanguage(this.value)" style="padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192, 132, 252, 0.3); color: white; border-radius: 0.5rem; cursor: pointer;">
-                <option value="en">🇺🇸 English</option>
-                <option value="es">🇪🇸 Español</option>
-                <option value="de">🇩🇪 Deutsch</option>
-            </select>
+            <!-- Auth buttons for logged out state -->
+            <button class="btn btn-secondary" id="navSignIn" onclick="showLogin()" style="display: none;">Sign In</button>
+            <button class="btn btn-primary" id="navSignUp" onclick="showSignup()" style="display: none;">Start Creating</button>
+            <!-- Logged in buttons -->
+            <button class="btn btn-secondary help-btn" id="navHelp" onclick="onboardingManager.restartOnboarding()" title="Show Tutorial" style="display: none;">
+                <span class="icon">❓</span>
+                Help
+            </button>
+            <button class="btn btn-danger" id="navSignOut" onclick="signOut()" style="display: none;">
+                Sign Out
+            </button>
+        </div>
+        <!-- Menu Button (always visible) -->
+        <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()">
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+        </button>
+        <!-- Menu Dropdown -->
+        <div class="mobile-menu" id="mobileMenu">
+            <!-- Auth options for logged out users -->
+            <button class="mobile-menu-item" id="mobileSignInBtn" onclick="showLogin(); closeMobileMenu()" style="display: none;">
+                <span class="icon">🔑</span>
+                Sign In
+            </button>
+            <button class="mobile-menu-item" id="mobileSignUpBtn" onclick="showSignup(); closeMobileMenu()" style="display: none;">
+                <span class="icon">✨</span>
+                Start Creating
+            </button>
+            <!-- Logged in user options -->
+            <button class="mobile-menu-item" id="mobileHelp" onclick="onboardingManager.restartOnboarding(); closeMobileMenu()" title="Show Tutorial" style="display: none;">
+                <span class="icon">?</span>
+                Help
+            </button>
+            <button class="mobile-menu-item" id="mobileMembership" onclick="showMembership(); closeMobileMenu()" style="display: none;">
+                <span class="icon">⬟</span>
+                Membership
+            </button>
+            <button class="mobile-menu-item mobile-signout" id="mobileSignOut" onclick="signOut(); closeMobileMenu()" style="display: none;">
+                <span class="icon">⤴</span>
+                Sign Out
+            </button>
         </div>
     </nav>
 
     <!-- Landing Page -->
     <section class="landing" id="landing">
         <div class="hero-content">
-            <h1 class="hero-title" data-i18n="hero.title">MASKY</h1>
-            <p class="hero-subtitle" data-i18n="hero.subtitle">
+            <h1 class="hero-title">MASKY</h1>
+            <p class="hero-subtitle">
                 Create AI-powered stream alerts with lifelike avatars. 
                 Transform your Twitch experience with dynamic, voice-enabled alerts that captivate your audience.
             </p>
             <div class="cta-buttons">
-                <button class="btn btn-primary cta-main" onclick="showSignup()" data-i18n="hero.ctaPrimary">Start Creating Today</button>
+                <button class="btn btn-primary" onclick="showSignup()">Start Creating Today</button>
+                <button class="btn btn-secondary" onclick="scrollToFeatures()">Explore Features</button>
             </div>
 
             <div class="features" id="features">
                 <div class="feature-card">
                     <div class="icon-ai-avatar" style="color: #c084fc;"></div>
-                    <div class="feature-title" data-i18n="features.aiAvatars.title">AI Avatars</div>
-                    <div class="feature-desc" data-i18n="features.aiAvatars.description">
-                        Choose from HeyGen and Hume avatars with photorealistic voices and natural expressions that bring your alerts to life
+                    <div class="feature-title">AI Avatars</div>
+                    <div class="feature-desc">
+                        Create lifelike AI avatars with photorealistic voices and natural expressions that bring your alerts to life
                     </div>
                 </div>
                 <div class="feature-card">
                     <div class="icon-realtime" style="color: #c084fc;">
                         <span></span>
                     </div>
-                    <div class="feature-title" data-i18n="features.realtime.title">Real-Time Events</div>
-                    <div class="feature-desc" data-i18n="features.realtime.description">
+                    <div class="feature-title">Real-Time Events</div>
+                    <div class="feature-desc">
                         Instant alerts for subscriptions, donations, and custom chat commands powered by Twitch EventSub
                     </div>
                 </div>
@@ -214,8 +217,8 @@
                         <span></span>
                         <span></span>
                     </div>
-                    <div class="feature-title" data-i18n="features.customScripts.title">Custom Scripts</div>
-                    <div class="feature-desc" data-i18n="features.customScripts.description">
+                    <div class="feature-title">Custom Scripts</div>
+                    <div class="feature-desc">
                         Write personalized messages and creative prompts for each alert type to match your stream's unique style
                     </div>
                 </div>
@@ -228,52 +231,43 @@
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">×</button>
             <div id="loginForm">
-                <h2 class="modal-title" data-i18n="auth.welcomeBack">Welcome Back</h2>
-                <p class="modal-subtitle" data-i18n="auth.signInSubtitle">Sign in to continue creating</p>
+                <h2 class="modal-title">Welcome Back</h2>
+                <p class="modal-subtitle">Sign in to continue creating</p>
                 
                 <div class="auth-providers">
                     <button class="provider-btn twitch" onclick="loginWithTwitch()">
-                        <svg class="icon" viewBox="0 0 24 24" fill="white">
-                            <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
-                        </svg>
-                        <span data-i18n="auth.signInWithTwitch">Sign in with Twitch</span>
+                        <span>🎮</span> Sign in with Twitch
                     </button>
                     <button class="provider-btn google" onclick="loginWithGoogle()">
-                        <svg class="icon" viewBox="0 0 24 24">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                        </svg>
-                        <span data-i18n="auth.signInWithGoogle">Sign in with Google</span>
+                        <span>🔷</span> Sign in with Google
                     </button>
                 </div>
 
-                <div class="divider" data-i18n="auth.dividerText">or</div>
+                <div class="divider">or</div>
 
                 <div class="input-group">
-                    <label data-i18n="auth.email">Email</label>
-                    <input type="email" id="loginEmail" data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" placeholder="your@email.com">
                 </div>
                 <div class="input-group">
-                    <label data-i18n="auth.password">Password</label>
-                    <input type="password" id="loginPassword" data-i18n-placeholder="auth.passwordPlaceholder" placeholder="••••••••">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••">
                 </div>
-                <button class="btn btn-primary" onclick="login()" data-i18n="auth.signInButton">Sign In</button>
+                <button class="btn btn-primary" onclick="login()">Sign In</button>
                 <div class="auth-switch">
-                    <span data-i18n="auth.noAccount">Don't have an account?</span> <a onclick="switchToSignup()" data-i18n="auth.signUpLink">Sign up</a>
+                    Don't have an account? <a onclick="switchToSignup()">Sign up</a>
                 </div>
             </div>
             <div id="signupForm" style="display: none;">
-                <h2 class="modal-title" data-i18n="auth.startCreatingTitle">Start Creating</h2>
-                <p class="modal-subtitle" data-i18n="auth.signUpSubtitle">Create your account</p>
+                <h2 class="modal-title">Start Creating</h2>
+                <p class="modal-subtitle">Create your account</p>
                 
                 <div class="auth-providers">
                     <button class="provider-btn twitch" onclick="loginWithTwitch()">
                         <svg class="icon" viewBox="0 0 24 24" fill="white">
                             <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
                         </svg>
-                        <span data-i18n="auth.signUpWithTwitch">Sign up with Twitch</span>
+                        Sign up with Twitch
                     </button>
                     <button class="provider-btn google" onclick="loginWithGoogle()">
                         <svg class="icon" viewBox="0 0 24 24">
@@ -282,23 +276,23 @@
                             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                         </svg>
-                        <span data-i18n="auth.signUpWithGoogle">Sign up with Google</span>
+                        Sign up with Google
                     </button>
                 </div>
 
-                <div class="divider" data-i18n="auth.dividerText">or</div>
+                <div class="divider">or</div>
 
                 <div class="input-group">
-                    <label data-i18n="auth.email">Email</label>
-                    <input type="email" id="signupEmail" data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
+                    <label>Email</label>
+                    <input type="email" id="signupEmail" placeholder="your@email.com">
                 </div>
                 <div class="input-group">
-                    <label data-i18n="auth.password">Password</label>
-                    <input type="password" id="signupPassword" data-i18n-placeholder="auth.passwordPlaceholder" placeholder="••••••••">
+                    <label>Password</label>
+                    <input type="password" id="signupPassword" placeholder="••••••••">
                 </div>
                 <button class="btn btn-primary" onclick="signup()">Create Account</button>
                 <div class="auth-switch">
-                    <span data-i18n="auth.hasAccount">Already have an account?</span> <a onclick="switchToLogin()" data-i18n="auth.signInLink">Sign in</a>
+                    Already have an account? <a onclick="switchToLogin()">Sign in</a>
                 </div>
             </div>
         </div>
@@ -307,45 +301,26 @@
     <!-- Dashboard -->
     <section class="dashboard" id="dashboard">
         <div class="dashboard-container">
-            <div class="dashboard-header">
-                <h1 class="dashboard-title"><span id="welcomeMessage"></span></h1>
-                <p class="dashboard-subtitle" data-i18n="dashboard.subtitle">Connect your accounts and start creating amazing alerts</p>
-                
-                <!-- VODs Section -->
-                <div id="vodsSection" style="display: none;">
-                    <h2 class="section-title" data-i18n="dashboard.recentStreams">Recent Streams</h2>
-                    <div class="vods-container">
-                        <div id="vodsGrid" class="vods-grid"></div>
-                    </div>
-                </div>
+    <div class="dashboard-header">
+        <div class="dashboard-header-content">
+            <div>
+                <h1 class="dashboard-title">Welcome, <span id="username">Creator</span></h1>
+                <p class="dashboard-subtitle">Connect your accounts and start creating amazing alerts</p>
             </div>
-
-            <div id="socialLinking">
-                <h2 class="section-title" data-i18n="dashboard.connectAccounts">Connect Your Accounts</h2>
+        </div>
+    </div>            <div id="socialLinking">
+                <h2 class="section-title">Connect Your Twitch Account</h2>
                 <div class="social-grid">
                     <div class="social-card" id="twitchCard">
                         <div class="icon-twitch" style="color: #c084fc;"></div>
-                        <div class="social-name" data-i18n="dashboard.twitch">Twitch</div>
-                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectTwitch()" data-i18n="dashboard.connectTwitch">Connect Twitch</button>
-                    </div>
-                    <div class="social-card" id="heygenCard">
-                        <div class="icon-avatar" style="color: #c084fc;"></div>
-                        <div class="social-name" data-i18n="dashboard.heygen">HeyGen</div>
-                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectHeygen()" data-i18n="dashboard.connectHeygen">Connect HeyGen</button>
-                    </div>
-                    <div class="social-card" id="humeCard">
-                        <div class="icon-voice" style="color: #c084fc;"><span></span></div>
-                        <div class="social-name" data-i18n="dashboard.hume">Hume AI</div>
-                        <div class="social-status" data-i18n="dashboard.notConnected">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectHume()" data-i18n="dashboard.connectHume">Connect Hume</button>
+                        <div class="social-name">Twitch</div>
+                        <div class="social-status">Not Connected</div>
+                        <button class="btn btn-primary" onclick="connectTwitch()">Connect Twitch</button>
                     </div>
                 </div>
             </div>
 
             <div class="vods-section" id="vodsSection" style="display: none;">
-                <h2 class="section-title" data-i18n="dashboard.recentVods">Recent VODs</h2>
                 <div class="vods-grid" id="vodsGrid">
                     <!-- VODs will be populated here -->
                     <div class="vods-loading" id="vodsLoading">
@@ -356,23 +331,18 @@
 
             <div class="alerts-section" id="alertsSection" style="display: none;">
                 <div class="section-header">
-                    <h2 class="section-title" data-i18n="dashboard.yourAlerts">Your Alerts</h2>
-                    <button class="btn btn-primary" onclick="createNewAlert()" data-i18n="dashboard.createAlert">+ Create Alert</button>
+                    <h2 class="section-title">Your Alerts</h2>
+                    <button class="btn btn-primary" onclick="createNewAlert()">+ Create Alert</button>
                 </div>
                 <div class="alerts-grid" id="alertsGrid">
                     <div class="empty-state">
-                        <div class="empty-state-icon" data-i18n="dashboard.emptyStateIcon">✨</div>
-                        <p data-i18n="dashboard.emptyStateText">No alerts yet. Create your first alert to get started!</p>
+                        <div class="empty-state-icon">✨</div>
+                        <p>No alerts yet. Create your first alert to get started!</p>
                     </div>
                 </div>
             </div>
         </div>
     </section>
-
-    <!-- Watermark -->
-    <div class="watermark">
-        <img src="/assets/masky-logo-white.svg" alt="Masky" class="logo-glow">
-    </div>
 
     <script type="module" src="/src/main.js"></script>
 </body>

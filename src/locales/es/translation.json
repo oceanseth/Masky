@@ -15,7 +15,7 @@
   "features": {
     "aiAvatars": {
       "title": "Avatares IA",
-      "description": "Elige entre avatares de HeyGen y Hume con voces fotorrealistas y expresiones naturales que dan vida a tus alertas"
+      "description": "Crea avatares de IA realistas con voces fotorrealistas y expresiones naturales que dan vida a tus alertas"
     },
     "realtime": {
       "title": "Eventos en Tiempo Real",
@@ -52,13 +52,9 @@
     "subtitle": "Conecta tus cuentas y comienza a crear alertas increíbles",
     "connectAccounts": "Conecta Tus Cuentas",
     "twitch": "Twitch",
-    "heygen": "HeyGen",
-    "hume": "Hume AI",
     "notConnected": "No Conectado",
     "connected": "Conectado",
     "connectTwitch": "Conectar Twitch",
-    "connectHeygen": "Conectar HeyGen",
-    "connectHume": "Conectar Hume",
     "yourAlerts": "Tus Alertas",
     "createAlert": "+ Crear Alerta",
     "emptyStateIcon": "✨",

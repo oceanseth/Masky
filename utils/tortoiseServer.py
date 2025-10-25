@@ -6,7 +6,8 @@ Integrates with the real Tortoise TTS implementation for actual voice cloning
 
 import sys
 import os
-sys.path.insert(0, r'C:\Users\PC\Documents\tortoise-tts')
+# Remove Windows-specific path insertion
+# sys.path.insert(0, r'C:\Users\PC\Documents\tortoise-tts')
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS

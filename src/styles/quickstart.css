@@ -1,0 +1,266 @@
+/* Quick Start Guide Styles */
+.quick-start-guide {
+    background: linear-gradient(135deg, rgba(101, 163, 255, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border: 1px solid rgba(101, 163, 255, 0.2);
+    border-radius: 20px;
+    padding: 2rem;
+    margin-bottom: 3rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.quick-start-guide::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #65a3ff 0%, #8b5cf6 50%, #65a3ff 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0%, 100% { background-position: 200% 0; }
+    50% { background-position: -200% 0; }
+}
+
+.quick-start-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.quick-start-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.quick-start-title .icon {
+    font-size: 1.8rem;
+    background: linear-gradient(45deg, #65a3ff, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.dismiss-guide {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.dismiss-guide:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.quick-start-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.quick-start-step {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.quick-start-step:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(101, 163, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.quick-start-step.completed {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.quick-start-step.completed::before {
+    content: '✓';
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 24px;
+    height: 24px;
+    background: #10b981;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(45deg, #65a3ff, #8b5cf6);
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    align-self: flex-start;
+}
+
+.step-title {
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    text-align: left;
+    width: 100%;
+}
+
+.step-description {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    flex-grow: 1;
+    text-align: left;
+}
+
+.step-action {
+    padding: 0.5rem 1rem;
+    background: rgba(101, 163, 255, 0.2);
+    border: 1px solid rgba(101, 163, 255, 0.3);
+    border-radius: 6px;
+    color: #65a3ff;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: inline-block;
+    align-self: flex-start;
+    margin-top: auto;
+}
+
+.step-action:hover {
+    background: rgba(101, 163, 255, 0.3);
+    border-color: rgba(101, 163, 255, 0.5);
+    color: white;
+    transform: translateY(-1px);
+}
+
+.step-action.primary {
+    background: linear-gradient(45deg, #65a3ff, #8b5cf6);
+    border-color: transparent;
+    color: white;
+}
+
+.step-action.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(101, 163, 255, 0.3);
+}
+
+.progress-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #65a3ff, #8b5cf6);
+    transition: width 0.3s ease;
+    border-radius: 3px;
+}
+
+.progress-text {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.quick-start-cta {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.quick-start-cta h4 {
+    color: #fff;
+    margin-bottom: 0.5rem;
+}
+
+.quick-start-cta p {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .quick-start-guide {
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .quick-start-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .quick-start-steps {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .quick-start-step {
+        padding: 1.25rem;
+    }
+    
+    .cta-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+}

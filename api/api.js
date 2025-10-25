@@ -210,6 +210,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Debug endpoint to test Stripe connection
+    if (path.includes('/debug/stripe') && method === 'GET') {
+        const response = await debugStripeConnection(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Default response for unmatched routes
     return {
         statusCode: 404,
@@ -267,7 +279,7 @@ async function getSubscriptionStatus(event) {
         const userDoc = await db.collection('users').doc(userId).get();
         const userData = userDoc.data() || {};
 
-        const subscription = {
+        let subscription = {
             tier: customClaims.subscriptionTier || userData.subscriptionTier || 'free',
             status: customClaims.subscriptionStatus || userData.subscriptionStatus || 'active',
             stripeCustomerId: customClaims.stripeCustomerId || userData.stripeCustomerId,
@@ -276,6 +288,118 @@ async function getSubscriptionStatus(event) {
             cancelAtPeriodEnd: customClaims.cancelAtPeriodEnd || userData.cancelAtPeriodEnd || false
         };
 
+        console.log('Initial subscription data from Firebase:', JSON.stringify(subscription, null, 2));
+        console.log('Custom claims:', JSON.stringify(customClaims, null, 2));
+        console.log('User data from Firestore:', JSON.stringify(userData, null, 2));
+
+        // If we have a Stripe subscription ID, fetch latest data from Stripe to ensure accuracy
+        if (subscription.stripeSubscriptionId) {
+            try {
+                console.log('Fetching subscription details from Stripe for ID:', subscription.stripeSubscriptionId);
+                const { stripe } = await stripeInitializer.initialize();
+                
+                // Retrieve subscription with expanded data to get all billing information
+                const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, {
+                    expand: ['latest_invoice', 'customer', 'default_payment_method']
+                });
+                
+                console.log('Full Stripe subscription object:', JSON.stringify(stripeSubscription, null, 2));
+                console.log('Stripe subscription keys:', Object.keys(stripeSubscription));
+                console.log('current_period_end:', stripeSubscription.current_period_end);
+                console.log('current_period_start:', stripeSubscription.current_period_start);
+                console.log('cancel_at_period_end:', stripeSubscription.cancel_at_period_end);
+                console.log('status:', stripeSubscription.status);
+                
+                // Handle current_period_end - it might be undefined for some subscriptions
+                let currentPeriodEnd = stripeSubscription.current_period_end;
+                
+                // If current_period_end is undefined, try to get it from the latest invoice
+                if (!currentPeriodEnd && stripeSubscription.latest_invoice) {
+                    console.log('current_period_end is undefined, checking latest invoice');
+                    const invoice = stripeSubscription.latest_invoice;
+                    if (invoice.lines && invoice.lines.data && invoice.lines.data.length > 0) {
+                        const lineItem = invoice.lines.data[0];
+                        if (lineItem.period && lineItem.period.end) {
+                            currentPeriodEnd = lineItem.period.end;
+                            console.log('Found period end from invoice:', currentPeriodEnd);
+                        }
+                    }
+                }
+                
+                // If still no period end, calculate it from start date + interval
+                if (!currentPeriodEnd && stripeSubscription.current_period_start && stripeSubscription.plan) {
+                    console.log('Calculating period end from start date and plan interval');
+                    const startTime = stripeSubscription.current_period_start;
+                    const interval = stripeSubscription.plan.interval;
+                    const intervalCount = stripeSubscription.plan.interval_count || 1;
+                    
+                    // Use a more accurate calculation
+                    const startDate = new Date(startTime * 1000);
+                    let periodEnd;
+                    
+                    if (interval === 'month') {
+                        const endDate = new Date(startDate);
+                        endDate.setMonth(endDate.getMonth() + intervalCount);
+                        periodEnd = Math.floor(endDate.getTime() / 1000);
+                    } else if (interval === 'year') {
+                        const endDate = new Date(startDate);
+                        endDate.setFullYear(endDate.getFullYear() + intervalCount);
+                        periodEnd = Math.floor(endDate.getTime() / 1000);
+                    } else if (interval === 'week') {
+                        periodEnd = startTime + (intervalCount * 7 * 24 * 60 * 60);
+                    } else if (interval === 'day') {
+                        periodEnd = startTime + (intervalCount * 24 * 60 * 60);
+                    } else {
+                        // Fallback to approximate calculation
+                        periodEnd = startTime + (intervalCount * 30 * 24 * 60 * 60);
+                    }
+                    
+                    currentPeriodEnd = periodEnd;
+                    console.log('Calculated period end:', currentPeriodEnd, 'from start:', startTime, 'interval:', interval, 'count:', intervalCount);
+                }
+                
+                subscription.currentPeriodEnd = currentPeriodEnd;
+                subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
+                subscription.status = stripeSubscription.status;
+                
+                console.log('Final currentPeriodEnd value:', subscription.currentPeriodEnd);
+
+                // Update the data in Firebase for future requests (only if we have valid data)
+                const updateData = {
+                    cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+                    subscriptionStatus: stripeSubscription.status
+                };
+                
+                // Only add currentPeriodEnd if we have a valid value
+                if (currentPeriodEnd) {
+                    updateData.currentPeriodEnd = currentPeriodEnd;
+                }
+                
+                await db.collection('users').doc(userId).update(updateData);
+
+                // Update custom claims (only if we have valid data)
+                const claimsUpdate = {
+                    ...customClaims,
+                    cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+                    subscriptionStatus: stripeSubscription.status
+                };
+                
+                // Only add currentPeriodEnd if we have a valid value
+                if (currentPeriodEnd) {
+                    claimsUpdate.currentPeriodEnd = currentPeriodEnd;
+                }
+                
+                await admin.auth().setCustomUserClaims(userId, claimsUpdate);
+
+                console.log('Updated subscription data from Stripe for user:', userId);
+            } catch (error) {
+                console.error('Error fetching subscription from Stripe:', error);
+                // Continue with existing data if Stripe fetch fails
+            }
+        }
+
+        console.log('Returning subscription data:', JSON.stringify(subscription, null, 2));
+        
         return {
             statusCode: 200,
             body: JSON.stringify({ subscription })
@@ -605,13 +729,18 @@ async function handleStripeWebhook(event) {
                 const customerId = session.customer;
                 const subscriptionId = session.subscription;
 
+                // Get the subscription details from Stripe to get current_period_end
+                const { stripe } = await stripeInitializer.initialize();
+                const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
                 // Update user data
                 await db.collection('users').doc(userId).set({
                     stripeCustomerId: customerId,
                     stripeSubscriptionId: subscriptionId,
                     subscriptionTier: tier,
                     subscriptionStatus: 'active',
-                    cancelAtPeriodEnd: false,
+                    currentPeriodEnd: subscription.current_period_end,
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
 
@@ -621,7 +750,8 @@ async function handleStripeWebhook(event) {
                     subscriptionStatus: 'active',
                     stripeCustomerId: customerId,
                     stripeSubscriptionId: subscriptionId,
-                    cancelAtPeriodEnd: false
+                    currentPeriodEnd: subscription.current_period_end,
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end
                 });
 
                 console.log('Subscription created for user:', userId);
@@ -761,6 +891,56 @@ async function handleStripeWebhook(event) {
             body: JSON.stringify({ 
                 error: 'Webhook handler failed',
                 message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Debug function to test Stripe connection and list subscriptions
+ */
+async function debugStripeConnection(event) {
+    try {
+        console.log('Debug: Testing Stripe connection');
+        
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+        
+        // List recent subscriptions to see what's available
+        const subscriptions = await stripe.subscriptions.list({
+            limit: 10,
+            expand: ['data.latest_invoice', 'data.customer']
+        });
+        
+        console.log('Debug: Found subscriptions:', subscriptions.data.length);
+        
+        const debugInfo = {
+            stripeConnected: true,
+            subscriptionCount: subscriptions.data.length,
+            subscriptions: subscriptions.data.map(sub => ({
+                id: sub.id,
+                status: sub.status,
+                current_period_end: sub.current_period_end,
+                current_period_start: sub.current_period_start,
+                cancel_at_period_end: sub.cancel_at_period_end,
+                customer: sub.customer,
+                created: sub.created
+            }))
+        };
+        
+        return {
+            statusCode: 200,
+            body: JSON.stringify(debugInfo)
+        };
+        
+    } catch (error) {
+        console.error('Debug: Stripe connection error:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Stripe connection failed',
+                message: error.message,
+                stripeConnected: false
             })
         };
     }

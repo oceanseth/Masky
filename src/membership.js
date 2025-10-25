@@ -49,7 +49,9 @@ async function loadSubscriptionStatus() {
         }
 
         const data = await response.json();
+        console.log('API Response:', JSON.stringify(data, null, 2));
         currentSubscription = data.subscription;
+        console.log('Current subscription object:', JSON.stringify(currentSubscription, null, 2));
 
         // Hide loading
         loadingState.style.display = 'none';
@@ -98,8 +100,13 @@ function updateSubscriptionUI(subscription) {
         }
 
         // Update billing date
+        console.log('Updating billing date - currentPeriodEnd:', subscription.currentPeriodEnd);
+        console.log('Type of currentPeriodEnd:', typeof subscription.currentPeriodEnd);
+        
         if (subscription.currentPeriodEnd) {
+            console.log('Converting timestamp:', subscription.currentPeriodEnd, 'to date');
             const date = new Date(subscription.currentPeriodEnd * 1000);
+            console.log('Converted date:', date);
             nextBilling.textContent = date.toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
@@ -111,6 +118,8 @@ function updateSubscriptionUI(subscription) {
             } else {
                 subscriptionDetails.innerHTML = `Next billing date: <span id="nextBilling">${nextBilling.textContent}</span>`;
             }
+        } else {
+            console.log('No currentPeriodEnd found in subscription object');
         }
 
         updatePricingGridButtons(subscription.tier);
@@ -134,17 +143,15 @@ function updatePricingGridButtons(currentTier) {
             button.disabled = true;
             button.onclick = null;
         } else if (tierNames.indexOf(tierName) < tierNames.indexOf(currentTier)) {
-            // Lower tier - allow downgrade
-            button.textContent = 'Downgrade';
-            button.className = 'btn btn-secondary';
-            button.disabled = false;
-            button.onclick = () => openCustomerPortal();
+            // Lower tier - hide downgrade button (users can manage in portal)
+            button.style.display = 'none';
         } else {
-            // Higher tier - allow upgrade
+            // Higher tier - use customer portal for upgrades
             const tierLabel = tierName.charAt(0).toUpperCase() + tierName.slice(1);
             button.textContent = `Upgrade to ${tierLabel}`;
             button.className = 'btn btn-primary';
             button.disabled = false;
+            button.onclick = () => openCustomerPortal();
         }
     });
 }
@@ -207,47 +214,6 @@ window.subscribeToPlan = async function(tier) {
     }
 };
 
-/**
- * Cancel subscription
- */
-window.cancelSubscription = async function() {
-    if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.')) {
-        return;
-    }
-
-    try {
-        const user = getCurrentUser();
-        if (!user) {
-            throw new Error('User not authenticated');
-        }
-
-        // Get ID token
-        const idToken = await user.getIdToken();
-
-        // Cancel subscription
-        const response = await fetch(`${config.api.baseUrl}/api/subscription/cancel`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${idToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to cancel subscription');
-        }
-
-        showMessage('Subscription canceled successfully. You will retain access until the end of your billing period.', 'success');
-        
-        // Reload subscription status
-        await loadSubscriptionStatus();
-
-    } catch (error) {
-        console.error('Error canceling subscription:', error);
-        showMessage(error.message || 'Failed to cancel subscription', 'error');
-    }
-};
 
 /**
  * Open Stripe Customer Portal
@@ -259,7 +225,7 @@ window.openCustomerPortal = async function() {
             throw new Error('User not authenticated');
         }
 
-        showMessage('Redirecting to billing portal...', 'success');
+        showMessage('Redirecting to billing portal where you can upgrade, downgrade, or manage your subscription...', 'success');
 
         // Get ID token
         const idToken = await user.getIdToken();

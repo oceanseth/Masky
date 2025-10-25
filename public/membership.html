@@ -43,6 +43,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/styles/navigation.css">
     <style>
         * {
             margin: 0;
@@ -84,52 +85,7 @@
             50% { transform: translate(-5%, -5%); }
         }
 
-        /* Navigation */
-        nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.875rem 2rem;
-            background: rgba(15, 12, 41, 0.8);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(192, 132, 252, 0.2);
-            z-index: 1000;
-            min-height: 60px;
-        }
-
-        .logo {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.25rem;
-            font-weight: 900;
-            background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            cursor: pointer;
-        }
-
-        .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-        }        .nav-links a {
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            transition: color 0.3s ease;
-            font-weight: 500;
-        }
-
-        .nav-links a:hover {
-            color: #c084fc;
-        }
-
-        .nav-links .active {
-            color: #c084fc;
-        }
+        /* Navigation styles are now in /src/styles/navigation.css */
 
         /* Main Content */
         .membership-container {
@@ -507,18 +463,8 @@
         <div class="holo-bg"></div>
     </div>
 
-    <!-- Navigation -->
-    <nav>
-        <div class="logo" onclick="window.location.href='/'">
-            <img src="/assets/masky-logo-gradient.svg" alt="Masky" class="logo-icon">
-            <span class="logo-text">MASKY</span>
-        </div>
-        <div class="nav-links">
-            <a href="/">Dashboard</a>
-            <a href="/membership.html" class="active">Membership</a>
-            <a href="#" onclick="handleSignOut()">Sign Out</a>
-        </div>
-    </nav>
+    <!-- Header will be inserted here by header.js -->
+    <div id="header-container"></div>
 
     <!-- Main Content -->
     <div class="membership-container">
@@ -675,6 +621,27 @@
         <img src="/assets/masky-logo-white.svg" alt="Masky" class="logo-glow">
     </div>
 
+    <script type="module">
+        import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
+        import { auth, onAuthChange } from '/src/firebase.js';
+        import { onboardingManager } from '/src/onboarding.js';
+        
+        // Make onboarding manager globally available
+        window.onboardingManager = onboardingManager;
+        
+        // Render the header
+        renderHeader('#header-container', {
+            currentPage: 'membership',
+            showMembershipLink: true
+        });
+        
+        // Navigation links no longer show active states
+        
+        // Update header based on auth state
+        onAuthChange((user) => {
+            updateHeaderAuthState(user);
+        });
+    </script>
     <script type="module" src="/src/membership.js"></script>
 </body>
 </html>

@@ -176,38 +176,13 @@ window.logout = async function() {
 // Alias for signOut to match navigation button
 window.signOut = window.logout;
 
-// Mobile menu functions
-window.toggleMobileMenu = function() {
-  const mobileMenu = document.getElementById('mobileMenu');
-  if (mobileMenu) {
-    mobileMenu.classList.toggle('show');
-  }
-};
-
-window.closeMobileMenu = function() {
-  const mobileMenu = document.getElementById('mobileMenu');
-  if (mobileMenu) {
-    mobileMenu.classList.remove('show');
-  }
-};
+// Mobile menu functions are now handled by header.js
 
 // Membership function
 window.showMembership = function() {
   // Navigate to membership page
   window.location.href = '/membership.html';
 };
-
-// Close mobile menu when clicking outside
-document.addEventListener('click', function(event) {
-  const mobileMenu = document.getElementById('mobileMenu');
-  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-  
-  if (mobileMenu && mobileMenuBtn && 
-      !mobileMenu.contains(event.target) && 
-      !mobileMenuBtn.contains(event.target)) {
-    mobileMenu.classList.remove('show');
-  }
-});
 
 function showDashboard() {
   document.getElementById('landing').style.display = 'none';
@@ -276,72 +251,13 @@ onAuthChange((user) => {
             }
         }, 3000);
         
-        // Update navigation buttons for logged in state
-        const navSignIn = document.getElementById('navSignIn');
-        const navSignUp = document.getElementById('navSignUp');
-        const navHelp = document.getElementById('navHelp');
-        const navSignOut = document.getElementById('navSignOut');
-        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-        const mobileHelp = document.getElementById('mobileHelp');
-        const mobileSignOut = document.getElementById('mobileSignOut');
-        const mobileMembership = document.getElementById('mobileMembership');
-        const mobileSignInBtn = document.getElementById('mobileSignInBtn');
-        const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
-        
-        if (navSignIn) navSignIn.style.display = 'none';
-        if (navSignUp) navSignUp.style.display = 'none';
-        if (navHelp) navHelp.style.display = 'none';
-        if (navSignOut) navSignOut.style.display = 'none';
-        
-        // Show mobile menu and logged-in mobile buttons
-        if (mobileMenuBtn) mobileMenuBtn.style.display = 'flex';
-        if (mobileHelp) mobileHelp.style.display = 'flex';
-        if (mobileSignOut) mobileSignOut.style.display = 'flex';
-        if (mobileMembership) mobileMembership.style.display = 'flex';
-        
-        // Hide logged-out mobile buttons
-        if (mobileSignInBtn) mobileSignInBtn.style.display = 'none';
-        if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'none';
+        // Navigation state is now handled by header.js
   } else {
     state.isLoggedIn = false;
     state.user = null;
     showLanding();
     
-    // Hide membership link when logged out
-    const membershipLink = document.getElementById('membershipLink');
-    if (membershipLink) {
-      membershipLink.style.display = 'none';
-    }
-
-    // Update navigation buttons for logged out state
-    const navSignIn = document.getElementById('navSignIn');
-    const navSignUp = document.getElementById('navSignUp');
-    const navHelp = document.getElementById('navHelp');
-    const navSignOut = document.getElementById('navSignOut');
-    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-    const mobileHelp = document.getElementById('mobileHelp');
-    const mobileSignOut = document.getElementById('mobileSignOut');
-    const mobileMembership = document.getElementById('mobileMembership');
-    const mobileSignInBtn = document.getElementById('mobileSignInBtn');
-    const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
-    
-    if (navSignIn) navSignIn.style.display = 'none';
-    if (navSignUp) navSignUp.style.display = 'none';
-    if (navHelp) navHelp.style.display = 'none';
-    if (navSignOut) navSignOut.style.display = 'none';
-    
-    // Always show mobile menu button
-    if (mobileMenuBtn) mobileMenuBtn.style.display = 'flex';
-    
-    // Show logged-out mobile buttons
-    if (mobileSignInBtn) mobileSignInBtn.style.display = 'flex';
-    if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'flex';
-    
-    // Hide logged-in mobile buttons
-    if (mobileHelp) mobileHelp.style.display = 'none';
-    if (mobileSignOut) mobileSignOut.style.display = 'none';
-    if (mobileMembership) mobileMembership.style.display = 'none';
-    closeMobileMenu();
+    // Navigation state is now handled by header.js
   }
 });
 

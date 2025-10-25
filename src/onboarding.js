@@ -1093,11 +1093,9 @@ class OnboardingManager {
   }
 
   skipOnboarding() {
-    if (confirm('Are you sure you want to skip the tutorial? You can always restart it from the help menu.')) {
-      this.onboardingData.skipped = true;
-      this.saveOnboardingState();
-      this.closeOnboarding();
-    }
+    this.onboardingData.skipped = true;
+    this.saveOnboardingState();
+    this.closeOnboarding();
   }
 
   closeOnboarding() {

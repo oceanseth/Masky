@@ -98,6 +98,7 @@
     </style>
 </head>
 <body>
+    <div class="background-effects">
     <div class="holo-bg"></div>
     <div class="liquid-shape liquid-1"></div>
     <div class="liquid-shape liquid-2"></div>
@@ -129,57 +130,11 @@
     <div class="light-beam beam-1"></div>
     <div class="light-beam beam-2"></div>
     <div class="light-beam beam-3"></div>
-
+</div>
     <!-- Data Streams (removed static binary sequences) -->
 
-    <!-- Navigation -->
-    <nav>
-        <div class="logo">MASKY</div>
-        <div class="nav-links">
-            <!-- Auth buttons for logged out state -->
-            <button class="btn btn-secondary" id="navSignIn" onclick="showLogin()" style="display: none;">Sign In</button>
-            <button class="btn btn-primary" id="navSignUp" onclick="showSignup()" style="display: none;">Start Creating</button>
-            <!-- Logged in buttons -->
-            <button class="btn btn-secondary help-btn" id="navHelp" onclick="onboardingManager.restartOnboarding()" title="Show Tutorial" style="display: none;">
-                <span class="icon">❓</span>
-                Help
-            </button>
-            <button class="btn btn-danger" id="navSignOut" onclick="signOut()" style="display: none;">
-                Sign Out
-            </button>
-        </div>
-        <!-- Menu Button (always visible) -->
-        <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()">
-            <span class="hamburger-line"></span>
-            <span class="hamburger-line"></span>
-            <span class="hamburger-line"></span>
-        </button>
-        <!-- Menu Dropdown -->
-        <div class="mobile-menu" id="mobileMenu">
-            <!-- Auth options for logged out users -->
-            <button class="mobile-menu-item" id="mobileSignInBtn" onclick="showLogin(); closeMobileMenu()" style="display: none;">
-                <span class="icon">🔑</span>
-                Sign In
-            </button>
-            <button class="mobile-menu-item" id="mobileSignUpBtn" onclick="showSignup(); closeMobileMenu()" style="display: none;">
-                <span class="icon">✨</span>
-                Start Creating
-            </button>
-            <!-- Logged in user options -->
-            <button class="mobile-menu-item" id="mobileHelp" onclick="onboardingManager.restartOnboarding(); closeMobileMenu()" title="Show Tutorial" style="display: none;">
-                <span class="icon">?</span>
-                Help
-            </button>
-            <button class="mobile-menu-item" id="mobileMembership" onclick="showMembership(); closeMobileMenu()" style="display: none;">
-                <span class="icon">⬟</span>
-                Membership
-            </button>
-            <button class="mobile-menu-item mobile-signout" id="mobileSignOut" onclick="signOut(); closeMobileMenu()" style="display: none;">
-                <span class="icon">⤴</span>
-                Sign Out
-            </button>
-        </div>
-    </nav>
+    <!-- Header will be inserted here by header.js -->
+    <div id="header-container"></div>
 
     <!-- Landing Page -->
     <section class="landing" id="landing">
@@ -344,6 +299,23 @@
         </div>
     </section>
 
+    <script type="module">
+        import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
+        import { auth, onAuthChange } from '/src/firebase.js';
+        
+        // Render the header
+        renderHeader('#header-container', {
+            currentPage: 'dashboard',
+            showMembershipLink: true
+        });
+        
+        // Navigation links no longer show active states
+        
+        // Update header based on auth state
+        onAuthChange((user) => {
+            updateHeaderAuthState(user);
+        });
+    </script>
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>

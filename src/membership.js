@@ -49,7 +49,9 @@ async function loadSubscriptionStatus() {
         }
 
         const data = await response.json();
+        console.log('API Response:', JSON.stringify(data, null, 2));
         currentSubscription = data.subscription;
+        console.log('Current subscription object:', JSON.stringify(currentSubscription, null, 2));
 
         // Hide loading
         loadingState.style.display = 'none';
@@ -98,8 +100,13 @@ function updateSubscriptionUI(subscription) {
         }
 
         // Update billing date
+        console.log('Updating billing date - currentPeriodEnd:', subscription.currentPeriodEnd);
+        console.log('Type of currentPeriodEnd:', typeof subscription.currentPeriodEnd);
+        
         if (subscription.currentPeriodEnd) {
+            console.log('Converting timestamp:', subscription.currentPeriodEnd, 'to date');
             const date = new Date(subscription.currentPeriodEnd * 1000);
+            console.log('Converted date:', date);
             nextBilling.textContent = date.toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
@@ -111,6 +118,8 @@ function updateSubscriptionUI(subscription) {
             } else {
                 subscriptionDetails.innerHTML = `Next billing date: <span id="nextBilling">${nextBilling.textContent}</span>`;
             }
+        } else {
+            console.log('No currentPeriodEnd found in subscription object');
         }
 
         updatePricingGridButtons(subscription.tier);

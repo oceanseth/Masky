@@ -143,17 +143,15 @@ function updatePricingGridButtons(currentTier) {
             button.disabled = true;
             button.onclick = null;
         } else if (tierNames.indexOf(tierName) < tierNames.indexOf(currentTier)) {
-            // Lower tier - allow downgrade
-            button.textContent = 'Downgrade';
-            button.className = 'btn btn-secondary';
-            button.disabled = false;
-            button.onclick = () => openCustomerPortal();
+            // Lower tier - hide downgrade button (users can manage in portal)
+            button.style.display = 'none';
         } else {
-            // Higher tier - allow upgrade
+            // Higher tier - use customer portal for upgrades
             const tierLabel = tierName.charAt(0).toUpperCase() + tierName.slice(1);
             button.textContent = `Upgrade to ${tierLabel}`;
             button.className = 'btn btn-primary';
             button.disabled = false;
+            button.onclick = () => openCustomerPortal();
         }
     });
 }
@@ -227,7 +225,7 @@ window.openCustomerPortal = async function() {
             throw new Error('User not authenticated');
         }
 
-        showMessage('Redirecting to billing portal...', 'success');
+        showMessage('Redirecting to billing portal where you can upgrade, downgrade, or manage your subscription...', 'success');
 
         // Get ID token
         const idToken = await user.getIdToken();

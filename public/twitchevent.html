@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Event Overlay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: transparent;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Transparent background for OBS */
+        .transparent-bg {
+            background: transparent !important;
+            pointer-events: none;
+        }
+
+        /* Alert overlay container */
+        .alert-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* Follow alert message */
+        .follow-alert {
+            background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%);
+            color: white;
+            padding: 2rem 3rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(147, 51, 234, 0.5);
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            animation: fadeIn 5s ease-in, fadeOut 5s ease-out 5s;
+            opacity: 0;
+            white-space: nowrap;
+            font-family: 'Orbitron', sans-serif;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
+
+        /* Loading state */
+        .loading {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(192, 132, 252, 0.6);
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-left: 8px;
+            border: 2px solid rgba(192, 132, 252, 0.6);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Error state */
+        .error {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: #ef4444;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            max-width: 400px;
+        }
+
+        /* Success state */
+        .connected {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: #22c55e;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .connected::before {
+            content: '✓ ';
+            margin-right: 4px;
+        }
+    </style>
+</head>
+<body class="transparent-bg">
+    <!-- Alert Overlay Container -->
+    <div class="alert-overlay" id="alertOverlay"></div>
+
+    <!-- Status Indicator -->
+    <div class="loading" id="statusIndicator">Waiting for events...</div>
+
+    <script>
+        // Test function accessible from console
+        window.testAlert = function(name = 'TestUser') {
+            // This will be set by the module after it loads
+            if (window.showTestAlert) {
+                window.showTestAlert(name);
+            } else {
+                console.error('showTestAlert not available yet. Wait for page to load.');
+            }
+        };
+    </script>
+
+    <script type="module">
+        import { auth, db, collection, query, where, getDocs, onSnapshot } from '/src/firebase.js';
+        import { onAuthChange } from '/src/firebase.js';
+        import '/src/config.js';
+
+        // Initialize authentication and event listeners
+        let unsubscribeProjects = null;
+        let unsubscribeEvents = null;
+        let currentUserId = null;
+
+        // Check authentication state
+        onAuthChange(async (user) => {
+            const statusIndicator = document.getElementById('statusIndicator');
+            
+            if (user) {
+                currentUserId = user.uid;
+                statusIndicator.textContent = 'Connecting...';
+                statusIndicator.className = 'loading';
+                
+                try {
+                    await loadUserProjects();
+                    statusIndicator.textContent = 'Connected - Waiting for events';
+                    statusIndicator.className = 'connected';
+                } catch (error) {
+                    console.error('Error loading projects:', error);
+                    statusIndicator.textContent = 'Error: ' + error.message;
+                    statusIndicator.className = 'error';
+                }
+            } else {
+                currentUserId = null;
+                statusIndicator.textContent = 'Not authenticated - Please sign in';
+                statusIndicator.className = 'error';
+                
+                // Clean up listeners
+                if (unsubscribeProjects) unsubscribeProjects();
+                if (unsubscribeEvents) unsubscribeEvents();
+            }
+        });
+
+        // Load user's active projects from Firestore
+        async function loadUserProjects() {
+            if (!currentUserId) return;
+
+            try {
+                // Query active Twitch projects
+                const projectsRef = collection(db, 'projects');
+                const q = query(
+                    projectsRef,
+                    where('userId', '==', currentUserId),
+                    where('platform', '==', 'twitch'),
+                    where('isActive', '==', true)
+                );
+
+                const snapshot = await getDocs(q);
+                
+                if (snapshot.empty) {
+                    console.log('No active projects found');
+                    return;
+                }
+
+                // Get event types to listen for
+                const eventTypes = [...new Set(snapshot.docs.map(doc => doc.data().eventType))];
+                console.log('Active projects found:', snapshot.size);
+                console.log('Event types to monitor:', eventTypes);
+
+                // Set up listeners for each event type
+                for (const eventType of eventTypes) {
+                    setupEventListener(eventType);
+                }
+
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                throw error;
+            }
+        }
+
+        // Set up real-time listener for specific event type
+        function setupEventListener(eventType) {
+            const eventsRef = collection(db, 'users', currentUserId, 'events', `twitch_${eventType}`, 'alerts');
+            
+            // Query only events after current timestamp
+            const now = new Date();
+            const q = query(eventsRef, where('timestamp', '>', now));
+            
+            unsubscribeEvents = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const alertData = change.doc.data();
+                        console.log('New alert received:', alertData);
+                        
+                        // Display the alert
+                        showAlert(alertData);
+                    }
+                });
+            }, (error) => {
+                console.error('Error listening to events:', error);
+            });
+        }
+
+        // Display alert on screen
+        function showAlert(alertData) {
+            const { eventType, eventData } = alertData;
+            
+            let message = '';
+            
+            // Handle different event types
+            switch (eventType) {
+                case 'channel.follow':
+                    const followerName = eventData.user_name || 'Someone';
+                    message = `${followerName} just followed!`;
+                    break;
+                
+                default:
+                    const userName = eventData.user_name || eventData.from_broadcaster_user_name || 'Someone';
+                    message = `${userName} just triggered ${eventType}!`;
+                    break;
+            }
+
+            // Create alert element
+            const alertOverlay = document.getElementById('alertOverlay');
+            const alertElement = document.createElement('div');
+            alertElement.className = 'follow-alert';
+            alertElement.textContent = message;
+            
+            // Clear any existing alerts
+            alertOverlay.innerHTML = '';
+            alertOverlay.appendChild(alertElement);
+            
+            // Remove alert after animation completes (5s fade in + 5s visible + 5s fade out = 15s total)
+            setTimeout(() => {
+                alertElement.style.transition = 'opacity 0.3s ease-out';
+                alertElement.style.opacity = '0';
+                
+                // Remove from DOM after transition
+                setTimeout(() => {
+                    if (alertElement.parentNode) {
+                        alertElement.parentNode.removeChild(alertElement);
+                    }
+                }, 300);
+            }, 15000);
+        }
+
+        // Expose functions to window for console access
+        window.showTestAlert = function(name = 'TestUser') {
+            console.log('Testing alert with name:', name);
+            const testData = {
+                eventType: 'channel.follow',
+                eventData: {
+                    user_name: name,
+                    user_id: '123456',
+                    broadcaster_user_id: '11867613'
+                }
+            };
+            showAlert(testData);
+        };
+
+        console.log('Twitch Event Overlay initialized');
+        console.log('Call testAlert("YourName") in the console to test an alert');
+    </script>
+</body>
+</html>

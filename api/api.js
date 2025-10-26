@@ -234,6 +234,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Twitch webhook endpoint
+    if (path.includes('/twitch-webhook') && method === 'POST') {
+        const response = await twitchInitializer.handleWebhook(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Default response for unmatched routes
     return {
         statusCode: 404,

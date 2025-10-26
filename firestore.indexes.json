@@ -13,6 +13,50 @@
           "mode": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "eventType",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "provider",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "twitchSubscription.id",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "mode": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "projects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "platform",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "eventType",
+          "mode": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "mode": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

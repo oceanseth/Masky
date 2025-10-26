@@ -385,23 +385,34 @@ class TwitchInitializer {
         const admin = require('firebase-admin');
         const db = admin.firestore();
 
-        // Find the user who owns this subscription
-        const subscriptionKey = `twitch_${subscription.type}`;
-        const subscriptionsSnapshot = await db.collectionGroup('subscriptions')
-          .where('provider', '==', 'twitch')
-          .where('eventType', '==', subscription.type)
-          .where('twitchSubscription.id', '==', subscription.id)
-          .limit(1)
-          .get();
+        // Find the user who owns this subscription by getting the broadcaster ID
+        // from the event data
+        const broadcasterId = eventData.broadcaster_user_id || subscription.condition.broadcaster_user_id;
+        
+        if (!broadcasterId) {
+          console.error('No broadcaster ID found in event data');
+          return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'Missing broadcaster ID' })
+          };
+        }
 
-        if (!subscriptionsSnapshot.empty) {
-          const subscriptionDoc = subscriptionsSnapshot.docs[0];
-          const subscriptionData = subscriptionDoc.data();
-          
+        // Look up the user by their Twitch broadcaster ID using a reverse mapping
+        // Store this mapping when subscriptions are created
+        const userId = `twitch:${broadcasterId}`;
+        
+        // Check if subscription exists for this user
+        const subscriptionKey = `twitch_${subscription.type}`;
+        const subscriptionDoc = await db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey).get();
+        
+        let subscriptionData = null;
+        if (subscriptionDoc.exists) {
+          subscriptionData = subscriptionDoc.data();
+        }
+
+        if (subscriptionData) {
           // Only process if subscription is active
           if (subscriptionData.isActive) {
-            // Get the user ID from the subscription document path
-            const userId = subscriptionDoc.ref.parent.parent.id;
             
             // Find all active projects for this user and event type
             const projectsSnapshot = await db.collection('projects')

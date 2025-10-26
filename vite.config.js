@@ -11,7 +11,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: './index.html',
-        membership: './membership.html'
+        membership: './membership.html',
+        twitchevent: './twitchevent.html'
       }
     }
   },

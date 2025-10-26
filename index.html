@@ -95,6 +95,468 @@
         .divider::after {
             margin-left: 1em;
         }
+
+        /* Project Wizard Styles */
+        .project-wizard {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .wizard-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .wizard-subtitle {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+        }
+
+        .wizard-steps {
+            margin-bottom: 2rem;
+        }
+
+        .wizard-step {
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #c084fc, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-right: 1rem;
+            color: white;
+        }
+
+        .step-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .step-content {
+            padding: 1rem 0;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-select:focus, .form-input:focus {
+            outline: none;
+            border-color: #c084fc;
+            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.1);
+        }
+
+        .form-select option {
+            background: #1a1a1a;
+            color: white;
+        }
+
+        /* Voice Recorder Styles */
+        .voice-recorder {
+            text-align: center;
+        }
+
+        .recorder-controls {
+            margin-bottom: 1rem;
+        }
+
+        .recording-status {
+            color: rgba(255, 255, 255, 0.7);
+            font-style: italic;
+            margin: 1rem 0;
+        }
+
+        .audio-preview {
+            margin-top: 1.5rem;
+            background: rgba(0, 255, 0, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
+        .audio-preview audio {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+
+        .voice-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .voice-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .voice-actions .btn {
+            margin: 0.25rem;
+        }
+
+        /* Voice Management Styles */
+        .voice-management {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .voice-selection h4,
+        .voice-recorder h4,
+        .selected-voice h4 {
+            color: #c084fc;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .voice-list {
+            margin-bottom: 2rem;
+        }
+
+        .voice-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .voice-card:hover {
+            border-color: #c084fc;
+            background: rgba(192, 132, 252, 0.1);
+        }
+
+        .voice-card.selected {
+            border-color: #c084fc;
+            background: rgba(192, 132, 252, 0.2);
+        }
+
+        .voice-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .voice-name {
+            font-weight: 600;
+            color: white;
+        }
+
+        .voice-duration {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+        }
+
+        .voice-card audio {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+
+        .voice-loading {
+            color: #c084fc;
+            font-weight: 500;
+            font-size: 0.8rem;
+        }
+
+        .voice-selected {
+            color: #10b981;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .voice-card.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .loading-voices {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            padding: 2rem;
+        }
+
+        .voice-naming {
+            margin: 0;
+            background: rgba(255, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 2px solid rgba(255, 0, 0, 0.5);
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .voice-naming label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .voice-naming input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid rgba(255, 255, 0, 0.8);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 1rem;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
+        .voice-naming input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .voice-naming input:focus {
+            outline: none;
+            border-color: #c084fc;
+            box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.2);
+        }
+
+        /* Avatar Upload Styles */
+        .avatar-upload {
+            text-align: center;
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .upload-area:hover {
+            border-color: #c084fc;
+            background: rgba(192, 132, 252, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .image-preview {
+            margin-top: 1.5rem;
+        }
+
+        .image-preview img {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .image-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        /* Connection Status Styles */
+        .twitch-connection, .content-generation {
+            text-align: center;
+        }
+
+        .connection-status, .generation-status {
+            padding: 2rem;
+        }
+
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #c084fc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .connection-result, .generation-result {
+            padding: 2rem;
+        }
+
+        .result-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .result-icon.success {
+            color: #10b981;
+        }
+
+        .result-icon.error {
+            color: #ef4444;
+        }
+
+        .result-message {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            color: white;
+        }
+
+        .subscription-details {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            text-align: left;
+        }
+
+        .video-url-section {
+            margin: 1.5rem 0;
+        }
+
+        .project-url {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+        }
+
+        .url-display {
+            display: flex;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .url-display input {
+            flex: 1;
+        }
+
+        .url-instructions {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+
+        /* Wizard Navigation */
+        .wizard-navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Recent Projects */
+        .recent-projects {
+            margin-top: 2rem;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .project-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .project-card:hover {
+            transform: translateY(-2px);
+            border-color: #c084fc;
+        }
+
+        .project-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: white;
+        }
+
+        .project-platform {
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 1rem;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -260,40 +722,222 @@
         <div class="dashboard-header-content">
             <div>
                 <h1 class="dashboard-title">Welcome, <span id="username">Creator</span></h1>
-                <p class="dashboard-subtitle">Connect your accounts and start creating amazing alerts</p>
-            </div>
-        </div>
-    </div>            <div id="socialLinking">
-                <h2 class="section-title">Connect Your Twitch Account</h2>
-                <div class="social-grid">
-                    <div class="social-card" id="twitchCard">
-                        <div class="icon-twitch" style="color: #c084fc;"></div>
-                        <div class="social-name">Twitch</div>
-                        <div class="social-status">Not Connected</div>
-                        <button class="btn btn-primary" onclick="connectTwitch()">Connect Twitch</button>
+                        <p class="dashboard-subtitle">Create AI-powered stream alerts with lifelike avatars</p>
                     </div>
                 </div>
             </div>
 
-            <div class="vods-section" id="vodsSection" style="display: none;">
-                <div class="vods-grid" id="vodsGrid">
-                    <!-- VODs will be populated here -->
-                    <div class="vods-loading" id="vodsLoading">
-                        Loading your recent streams...
+            <!-- New Project Wizard -->
+            <div class="project-wizard" id="projectWizard">
+                <div class="wizard-header">
+                    <h2 class="section-title">New Project Wizard</h2>
+                    <p class="wizard-subtitle">Create your first AI-powered stream alert in 5 simple steps</p>
+                </div>
+
+                <div class="wizard-steps">
+                    <!-- Step 1: Platform Selection -->
+                    <div class="wizard-step active" id="step1">
+                        <div class="step-header">
+                            <div class="step-number">1</div>
+                            <div class="step-title">Choose Platform</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="form-group">
+                                <label for="platformSelect">Select your streaming platform:</label>
+                                <select id="platformSelect" class="form-select">
+                                    <option value="">Choose a platform...</option>
+                                    <option value="twitch">Twitch</option>
+                                    <option value="youtube">YouTube</option>
+                                    <option value="facebook">Facebook</option>
+                                    <option value="instagram">Instagram</option>
+                                    <option value="tiktok">TikTok</option>
+                                    <option value="kick">Kick</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="projectName">Project Name:</label>
+                                <input type="text" id="projectName" class="form-input" placeholder="e.g., thankyouthankyouthankyou">
+                            </div>
+                            <div class="form-group">
+                                <label for="eventType">Event Type:</label>
+                                <select id="eventType" class="form-select">
+                                    <option value="channel.follow">New Follower</option>
+                                    <option value="channel.subscribe">New Subscriber</option>
+                                    <option value="channel.cheer">New Cheer</option>
+                                    <option value="channel.bits.use">Bits Used</option>
+                                    <option value="channel.raid">New Raid</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- Step 2: Voice Recording -->
+                    <div class="wizard-step" id="step2">
+                        <div class="step-header">
+                            <div class="step-number">2</div>
+                            <div class="step-title">Create Your Voice</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="voice-management" id="voiceManagement">
+                                <!-- Voice Selection -->
+                                <div class="voice-selection" id="voiceSelection">
+                                    <h4>Select a Voice</h4>
+                                    <div class="voice-list" id="voiceList">
+                                        <div class="loading-voices">Loading your voices...</div>
+                                    </div>
+                                    <div class="voice-actions">
+                                        <button class="btn btn-primary" id="recordNewBtn" onclick="startNewRecording()">
+                                            <span class="record-icon">🎤</span> Record New Voice
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Voice Recording -->
+                                <div class="voice-recorder" id="voiceRecorder" style="display: none;">
+                                    <h4>Record New Voice</h4>
+                                    <div class="recorder-controls">
+                                        <button class="btn btn-primary" id="recordBtn" onclick="startRecording()">
+                                            <span class="record-icon">🎤</span> Start Recording
+                                        </button>
+                                        <button class="btn btn-secondary" id="stopBtn" onclick="stopRecording()" style="display: none;">
+                                            <span class="stop-icon">⏹️</span> Stop Recording
+                                        </button>
+                                    </div>
+                                    <div class="recording-status" id="recordingStatus"></div>
+                                    <div class="audio-preview" id="audioPreview" style="display: none;">
+                                        <audio controls id="recordedAudio"></audio>
+                                        <div class="voice-actions">
+                                            <div class="voice-naming">
+                                                <label for="voiceName">Name your voice:</label>
+                                                <input type="text" id="voiceName" placeholder="e.g., Thank You Voice" maxlength="50">
+                                            </div>
+                                            <div class="voice-buttons">
+                                                <button class="btn btn-primary" onclick="saveVoice()">Save Voice</button>
+                                                <button class="btn btn-secondary" onclick="retryRecording()">Retry</button>
+                                                <button class="btn btn-secondary" onclick="cancelRecording()">Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Selected Voice Display -->
+                                <div class="selected-voice" id="selectedVoice" style="display: none;">
+                                    <h4>Selected Voice</h4>
+                                    <div class="voice-card selected">
+                                        <div class="voice-info">
+                                            <div class="voice-name" id="selectedVoiceName"></div>
+                                            <div class="voice-duration" id="selectedVoiceDuration"></div>
+                                        </div>
+                                        <audio controls id="selectedVoiceAudio"></audio>
+                                        <div class="voice-actions">
+                                            <button class="btn btn-secondary" onclick="changeVoice()">Change Voice</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Avatar Upload -->
+                    <div class="wizard-step" id="step3">
+                        <div class="step-header">
+                            <div class="step-number">3</div>
+                            <div class="step-title">Upload Avatar Image</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="avatar-upload">
+                                <div class="upload-area" id="uploadArea">
+                                    <div class="upload-icon">📷</div>
+                                    <p>Drag & drop an image here or click to browse</p>
+                                    <input type="file" id="avatarFile" accept="image/*" style="display: none;">
+                                </div>
+                                <div class="image-preview" id="imagePreview" style="display: none;">
+                                    <img id="previewImg" alt="Avatar preview">
+                                    <div class="image-actions">
+                                        <button class="btn btn-primary" onclick="saveAvatar()">Use This Image</button>
+                                        <button class="btn btn-secondary" onclick="retryUpload()">Choose Different</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Twitch API Connection -->
+                    <div class="wizard-step" id="step4">
+                        <div class="step-header">
+                            <div class="step-number">4</div>
+                            <div class="step-title">Connect to Twitch</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="twitch-connection">
+                                <div class="connection-status" id="connectionStatus">
+                                    <div class="status-icon">🔗</div>
+                                    <p>Setting up Twitch EventSub subscription...</p>
+                                </div>
+                                <div class="connection-result" id="connectionResult" style="display: none;">
+                                    <div class="result-icon success">✅</div>
+                                    <p class="result-message">Successfully connected to Twitch!</p>
+                                    <div class="subscription-details" id="subscriptionDetails"></div>
+                                </div>
+                                <div class="connection-error" id="connectionError" style="display: none;">
+                                    <div class="result-icon error">❌</div>
+                                    <p class="error-message"></p>
+                                    <button class="btn btn-primary" onclick="retryConnection()">Retry Connection</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Content Generation -->
+                    <div class="wizard-step" id="step5">
+                        <div class="step-header">
+                            <div class="step-number">5</div>
+                            <div class="step-title">Generate Content</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="content-generation">
+                                <div class="generation-status" id="generationStatus">
+                                    <div class="loading-spinner"></div>
+                                    <p>Generating your AI avatar video...</p>
+                                </div>
+                                <div class="generation-result" id="generationResult" style="display: none;">
+                                    <div class="result-icon success">🎬</div>
+                                    <p class="result-message">Your AI avatar is ready!</p>
+                                    <div class="video-url-section">
+                                        <label for="videoUrl">Video URL (for testing):</label>
+                                        <input type="text" id="videoUrl" class="form-input" 
+                                               value="https://resource2.heygen.ai/video/transcode/db4d10b8bf02461386ac1a4c3b271ca0/vJLetG12gwT1WR81fVZ2VVsCnYQwyppLd/1080x1920.mp4?response-content-disposition=attachment%3B+filename%2A%3DUTF-8%27%27Untitled%2520Video.mp4%3B">
+                                        <button class="btn btn-primary" onclick="saveVideoUrl()">Save Video URL</button>
+                                    </div>
+                                    <div class="project-url" id="projectUrl" style="display: none;">
+                                        <h3>Your Project URL:</h3>
+                                        <div class="url-display">
+                                            <input type="text" id="projectUrlInput" readonly>
+                                            <button class="btn btn-secondary" onclick="copyProjectUrl()">Copy URL</button>
+                                        </div>
+                                        <p class="url-instructions">Add this URL as a Browser Source in OBS to display your alerts!</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="wizard-navigation">
+                    <button class="btn btn-secondary" id="prevBtn" onclick="previousStep()" style="display: none;">Previous</button>
+                    <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">Next</button>
+                    <button class="btn btn-primary" id="finishBtn" onclick="finishWizard()" style="display: none;">Finish</button>
                 </div>
             </div>
 
-            <div class="alerts-section" id="alertsSection" style="display: none;">
+            <!-- Recent Projects -->
+            <div class="recent-projects" id="recentProjects" style="display: none;">
                 <div class="section-header">
-                    <h2 class="section-title">Your Alerts</h2>
-                    <button class="btn btn-primary" onclick="createNewAlert()">+ Create Alert</button>
+                    <h2 class="section-title">Recent Projects</h2>
+                    <button class="btn btn-primary" onclick="startNewProject()">+ New Project</button>
                 </div>
-                <div class="alerts-grid" id="alertsGrid">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">✨</div>
-                        <p>No alerts yet. Create your first alert to get started!</p>
-                    </div>
+                <div class="projects-grid" id="projectsGrid">
+                    <!-- Projects will be populated here -->
                 </div>
             </div>
         </div>

@@ -4,17 +4,25 @@
             "*"
         ],
         "AllowedMethods": [
-            "PUT",
-            "POST",
-            "GET"
+            "GET",
+            "HEAD",
+            "OPTIONS"
         ],
         "AllowedOrigins": [
             "http://localhost:3000",
-            "https://masky.net"
+            "http://localhost:5173",
+            "http://localhost:8080",
+            "https://masky.net",
+            "https://www.masky.net",
+            "https://masky.io",
+            "https://www.masky.io"
         ],
         "ExposeHeaders": [
-            "ETag"
+            "ETag",
+            "Content-Length",
+            "Content-Type",
+            "Cache-Control"
         ],
-        "MaxAgeSeconds": 3000
+        "MaxAgeSeconds": 3600
     }
 ]

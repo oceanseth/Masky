@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects - Masky</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Import existing styles */
+        @import url('/src/styles/main.css');
+        @import url('/src/styles/navigation.css');
+        @import url('/src/styles/dashboard.css');
+        @import url('/src/styles/modal.css');
+        @import url('/src/styles/icons.css');
+
+        /* Projects page specific styles */
+        .projects-page {
+            min-height: 100vh;
+            background: #0a0a0a;
+            color: white;
+            padding-top: 80px; /* Account for fixed header */
+        }
+
+        .projects-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .projects-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .projects-title {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #c084fc, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+        }
+
+        .projects-subtitle {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 2rem;
+        }
+
+        .projects-actions {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .projects-actions:has(.btn:only-child) {
+            justify-content: center;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .project-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .project-card:hover {
+            transform: translateY(-4px);
+            border-color: #c084fc;
+            box-shadow: 0 20px 40px rgba(192, 132, 252, 0.1);
+        }
+
+        .project-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, #c084fc, #8b5cf6);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .project-card:hover::before {
+            opacity: 1;
+        }
+
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .project-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 0.5rem;
+        }
+
+        .project-platform {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .platform-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+
+        .platform-icon.twitch {
+            background: #9146FF;
+        }
+
+        .platform-icon.youtube {
+            background: #FF0000;
+        }
+
+        .platform-icon.facebook {
+            background: #1877F2;
+        }
+
+        .platform-icon.instagram {
+            background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+        }
+
+        .platform-icon.tiktok {
+            background: #000000;
+        }
+
+        .platform-icon.kick {
+            background: #53FC18;
+            color: #000;
+        }
+
+        .project-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-toggle {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .status-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .status-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ef4444;
+            transition: 0.3s;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .status-toggle input:checked + .status-slider {
+            background-color: #10b981;
+        }
+
+        .status-toggle input:checked + .status-slider:before {
+            transform: translateX(26px);
+        }
+
+        .status-toggle input:disabled + .status-slider {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-toggle.updating .status-slider {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .status-toggle.updating .status-slider:before {
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .status-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.8rem;
+            min-width: 60px;
+        }
+
+        .project-details {
+            margin: 1.5rem 0;
+        }
+
+        .project-detail {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .project-detail:last-child {
+            border-bottom: none;
+        }
+
+        .project-detail-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+        }
+
+        .project-detail-value {
+            color: white;
+            font-weight: 500;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .project-actions .btn {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: white;
+        }
+
+        .empty-state p {
+            margin-bottom: 2rem;
+        }
+
+        /* Modal styles for project wizard */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .projects-container {
+                padding: 1rem;
+            }
+
+            .projects-title {
+                font-size: 2rem;
+            }
+
+            .projects-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .project-card {
+                padding: 1.5rem;
+            }
+
+            .projects-actions {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .projects-actions:has(.btn:only-child) {
+                align-items: center;
+            }
+
+            .project-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-effects">
+        <div class="holo-bg"></div>
+        <div class="liquid-shape liquid-1"></div>
+        <div class="liquid-shape liquid-2"></div>
+        <div class="liquid-shape liquid-3"></div>
+        <div class="wire-frame wire-frame-1"></div>
+        <div class="wire-frame wire-frame-2"></div>
+
+        <!-- Floating Particles -->
+        <div class="particle particle-1"></div>
+        <div class="particle particle-2"></div>
+        <div class="particle particle-3"></div>
+        <div class="particle particle-4"></div>
+        <div class="particle particle-5"></div>
+
+        <!-- Flowing Grid Lines -->
+        <div class="grid-line grid-horizontal grid-h-1"></div>
+        <div class="grid-line grid-horizontal grid-h-2"></div>
+        <div class="grid-line grid-horizontal grid-h-3"></div>
+        <div class="grid-line grid-vertical grid-v-1"></div>
+        <div class="grid-line grid-vertical grid-v-2"></div>
+        <div class="grid-line grid-vertical grid-v-3"></div>
+
+        <!-- Hexagon Elements -->
+        <div class="hexagon hex-1"></div>
+        <div class="hexagon hex-2"></div>
+        <div class="hexagon hex-3"></div>
+
+        <!-- Light Beams -->
+        <div class="light-beam beam-1"></div>
+        <div class="light-beam beam-2"></div>
+        <div class="light-beam beam-3"></div>
+    </div>
+
+    <!-- Header will be inserted here by header.js -->
+    <div id="header-container"></div>
+
+    <!-- Projects Page -->
+    <div class="projects-page">
+        <div class="projects-container">
+            <div class="projects-header">
+                <h1 class="projects-title">Your Projects</h1>
+                <p class="projects-subtitle">Manage and edit your AI-powered stream alerts</p>
+                <div class="projects-actions">
+                    <button class="btn btn-primary" onclick="createNewProject()">
+                        <span>+</span> Create New
+                    </button>
+                </div>
+            </div>
+
+            <div class="projects-grid" id="projectsGrid">
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>Loading your projects...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Wizard Modal -->
+    <div class="modal" id="projectWizardModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeProjectWizard()">×</button>
+            <div id="projectWizardContainer"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { renderHeader, updateHeaderAuthState } from '/src/header.js';
+        import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
+        import { ProjectWizard } from '/src/projectWizardModule.js';
+        import { config } from '/src/config.js';
+
+        // Global state
+        let projects = [];
+        let currentWizard = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            // Render header
+            renderHeader('#header-container', {
+                currentPage: 'projects',
+                showMembershipLink: true
+            });
+
+            // Update header based on auth state
+            onAuthChange((user) => {
+                updateHeaderAuthState(user);
+                if (user) {
+                    loadProjects();
+                } else {
+                    // Redirect to home if not logged in
+                    window.location.href = '/';
+                }
+            });
+        });
+
+        // Load projects from API
+        async function loadProjects() {
+            try {
+                const user = getCurrentUser();
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch(`${config.api.baseUrl}/api/recent-projects`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    projects = data.projects || [];
+                    renderProjects();
+                } else {
+                    throw new Error('Failed to load projects');
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                showError('Failed to load projects');
+            }
+        }
+
+        // Render projects grid
+        function renderProjects() {
+            const projectsGrid = document.getElementById('projectsGrid');
+            
+            if (projects.length === 0) {
+                projectsGrid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📁</div>
+                        <h3>No Projects Yet</h3>
+                        <p>Create your first AI-powered stream alert to get started!</p>
+                        <button class="btn btn-primary" onclick="createNewProject()">
+                            <span>✨</span> Create Your First Project
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            projectsGrid.innerHTML = projects.map(project => `
+                <div class="project-card">
+                    <div class="project-header">
+                        <div>
+                            <div class="project-name">${project.projectName}</div>
+                            <div class="project-platform">
+                                <div class="platform-icon ${project.platform}">
+                                    ${getPlatformIcon(project.platform)}
+                                </div>
+                                ${project.platform.charAt(0).toUpperCase() + project.platform.slice(1)} - ${getEventTypeName(project.eventType)}
+                            </div>
+                        </div>
+                        <div class="project-status">
+                            <span class="status-label">${project.twitchSubscription ? 'Active' : 'Inactive'}</span>
+                            <label class="status-toggle">
+                                <input type="checkbox" 
+                                       ${project.twitchSubscription ? 'checked' : ''} 
+                                       onchange="toggleProjectStatus('${project.projectId}', this.checked)"
+                                       class="status-checkbox">
+                                <span class="status-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="project-details">
+                        <div class="project-detail">
+                            <span class="project-detail-label">Event Type:</span>
+                            <span class="project-detail-value">${getEventTypeName(project.eventType)}</span>
+                        </div>
+                        <div class="project-detail">
+                            <span class="project-detail-label">Created:</span>
+                            <span class="project-detail-value">${formatDate(project.createdAt)}</span>
+                        </div>
+                        <div class="project-detail">
+                            <span class="project-detail-label">Last Updated:</span>
+                            <span class="project-detail-value">${formatDate(project.updatedAt)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="project-actions">
+                        <button class="btn btn-primary" onclick="editProject('${project.projectId}')">
+                            <span>✏️</span> Edit
+                        </button>
+                        <button class="btn btn-secondary" onclick="viewProject('${project.projectId}')">
+                            <span>👁️</span> View
+                        </button>
+                        <button class="btn btn-secondary" onclick="copyProjectUrl('${project.projectId}')">
+                            <span>🔗</span> Copy URL
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Get platform icon
+        function getPlatformIcon(platform) {
+            const icons = {
+                twitch: '🎮',
+                youtube: '📺',
+                facebook: '📘',
+                instagram: '📷',
+                tiktok: '🎵',
+                kick: '⚡'
+            };
+            return icons[platform] || '📱';
+        }
+
+        // Get event type display name
+        function getEventTypeName(eventType) {
+            const names = {
+                'channel.follow': 'New Follower',
+                'channel.subscribe': 'New Subscriber',
+                'channel.cheer': 'New Cheer',
+                'channel.raid': 'New Raid'
+            };
+            return names[eventType] || eventType;
+        }
+
+        // Format date
+        function formatDate(timestamp) {
+            if (!timestamp) return 'Unknown';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString();
+        }
+
+        // Create new project
+        window.createNewProject = function() {
+            showProjectWizard();
+        };
+
+        // Edit existing project
+        window.editProject = function(projectId) {
+            const project = projects.find(p => p.projectId === projectId);
+            if (project) {
+                showProjectWizard(project);
+            }
+        };
+
+        // View project (open in new tab)
+        window.viewProject = function(projectId) {
+            window.open(`/twitchevent.html#${projectId}`, '_blank');
+        };
+
+        // Copy project URL
+        window.copyProjectUrl = function(projectId) {
+            const url = `${window.location.origin}/twitchevent.html#${projectId}`;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('Project URL copied to clipboard!');
+            });
+        };
+
+
+        // Toggle project status
+        window.toggleProjectStatus = async function(projectId, isActive) {
+            const toggleElement = document.querySelector(`input[onchange*="${projectId}"]`).closest('.status-toggle');
+            const checkbox = document.querySelector(`input[onchange*="${projectId}"]`);
+            
+            try {
+                // Add loading state
+                toggleElement.classList.add('updating');
+                checkbox.disabled = true;
+                
+                const user = getCurrentUser();
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                
+                // Find the project to get its current data
+                const project = projects.find(p => p.projectId === projectId);
+                if (!project) {
+                    console.error('Project not found');
+                    return;
+                }
+
+                // Update the project with new status
+                const updatedProjectData = {
+                    ...project,
+                    twitchSubscription: isActive,
+                    projectId: projectId
+                };
+
+                const response = await fetch(`${config.api.baseUrl}/api/save-project`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updatedProjectData)
+                });
+
+                if (response.ok) {
+                    // Update local projects array
+                    const projectIndex = projects.findIndex(p => p.projectId === projectId);
+                    if (projectIndex !== -1) {
+                        projects[projectIndex].twitchSubscription = isActive;
+                        projects[projectIndex].updatedAt = new Date();
+                    }
+                    
+                    // Update the status label in the UI
+                    const statusLabel = document.querySelector(`input[onchange*="${projectId}"]`).closest('.project-status').querySelector('.status-label');
+                    statusLabel.textContent = isActive ? 'Active' : 'Inactive';
+                    
+                    console.log(`Project ${projectId} status updated to ${isActive ? 'active' : 'inactive'}`);
+                } else {
+                    throw new Error('Failed to update project status');
+                }
+            } catch (error) {
+                console.error('Error toggling project status:', error);
+                
+                // Revert the toggle state on error
+                checkbox.checked = !checkbox.checked;
+                
+                alert('Failed to update project status. Please try again.');
+            } finally {
+                // Remove loading state
+                toggleElement.classList.remove('updating');
+                checkbox.disabled = false;
+            }
+        };
+
+        // Show project wizard modal
+        function showProjectWizard(projectData = null) {
+            const modal = document.getElementById('projectWizardModal');
+            const container = document.getElementById('projectWizardContainer');
+            
+            if (currentWizard) {
+                currentWizard.destroy();
+            }
+
+            currentWizard = new ProjectWizard('projectWizardContainer', {
+                mode: projectData ? 'edit' : 'create',
+                projectData: projectData,
+                onComplete: (project) => {
+                    closeProjectWizard();
+                    loadProjects(); // Refresh the projects list
+                },
+                onCancel: () => {
+                    closeProjectWizard();
+                }
+            });
+
+            currentWizard.init();
+            modal.classList.add('active');
+        }
+
+        // Close project wizard modal
+        window.closeProjectWizard = function() {
+            const modal = document.getElementById('projectWizardModal');
+            modal.classList.remove('active');
+            
+            if (currentWizard) {
+                currentWizard.destroy();
+                currentWizard = null;
+            }
+        };
+
+        // Show error message
+        function showError(message) {
+            const projectsGrid = document.getElementById('projectsGrid');
+            projectsGrid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">⚠️</div>
+                    <h3>Error</h3>
+                    <p>${message}</p>
+                    <button class="btn btn-primary" onclick="loadProjects()">
+                        <span>🔄</span> Try Again
+                    </button>
+                </div>
+            `;
+        }
+
+        // Close modal on outside click
+        document.getElementById('projectWizardModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeProjectWizard();
+            }
+        });
+    </script>
+</body>
+</html>

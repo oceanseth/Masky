@@ -28,6 +28,7 @@ import { fetchTwitchVods, renderVods, showAndLoadVods } from './vods.js';
 import { onboardingManager } from './onboarding.js';
 import { quickStartGuide } from './quickStart.js';
 import { welcomeNotification } from './welcomeNotification.js';
+import { initProjectWizard } from './projectWizard.js';
 
 // Make onboarding manager globally available
 window.onboardingManager = onboardingManager;
@@ -95,7 +96,10 @@ window.loginWithTwitch = async function() {
       const card = document.getElementById('twitchCard');
       if (card) {
         card.classList.add('connected');
-        card.querySelector('.social-status').textContent = 'Connected ✓';
+        const statusElement = card.querySelector('.social-status');
+        if (statusElement) {
+          statusElement.textContent = 'Connected ✓';
+        }
         const btn = card.querySelector('.btn');
         if (btn) {
           btn.textContent = 'Disconnect';
@@ -233,23 +237,8 @@ onAuthChange((user) => {
         // Check if new user needs full onboarding (but don't force it)
         onboardingManager.checkAndShowOnboarding(user);
         
-        // Show quick start guide for users who completed onboarding or existing users (but less prominently)
-        setTimeout(() => {
-            if (!onboardingManager.shouldShowOnboarding(user)) {
-                // Only show quick start if user has been around for more than an hour
-                if (user && user.metadata && user.metadata.creationTime) {
-                    const signupTime = new Date(user.metadata.creationTime);
-                    const now = new Date();
-                    const hoursAgo = (now - signupTime) / (1000 * 60 * 60);
-                    
-                    if (hoursAgo > 1) {
-                        quickStartGuide.show();
-                    }
-                } else {
-                    quickStartGuide.show();
-                }
-            }
-        }, 3000);
+        // Initialize project wizard
+        initProjectWizard();
         
         // Navigation state is now handled by header.js
   } else {
@@ -318,7 +307,10 @@ window.connectTwitch = async function() {
       const card = document.getElementById('twitchCard');
       if (card) {
         card.classList.add('connected');
-        card.querySelector('.social-status').textContent = 'Connected ✓';
+        const statusElement = card.querySelector('.social-status');
+        if (statusElement) {
+          statusElement.textContent = 'Connected ✓';
+        }
         const btn = card.querySelector('.btn');
         if (btn) {
           btn.textContent = 'Disconnect';
@@ -341,12 +333,19 @@ window.connectTwitch = async function() {
 function markTwitchConnected() {
   state.connections.twitch = true;
   const card = document.getElementById('twitchCard');
-  card.classList.add('connected');
-  card.querySelector('.social-status').textContent = 'Connected ✓';
-  const btn = card.querySelector('.btn');
-  btn.textContent = 'Disconnect';
-  btn.classList.remove('btn-primary');
-  btn.classList.add('btn-secondary');
+  if (card) {
+    card.classList.add('connected');
+    const statusElement = card.querySelector('.social-status');
+    if (statusElement) {
+      statusElement.textContent = 'Connected ✓';
+    }
+    const btn = card.querySelector('.btn');
+    if (btn) {
+      btn.textContent = 'Disconnect';
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-secondary');
+    }
+  }
   checkAllConnections();
 }
 
@@ -380,10 +379,13 @@ async function checkTwitchConnection() {
 }
 
 function checkAllConnections() {
-  if (state.connections.twitch) {
-    document.getElementById('alertsSection').style.display = 'block';
-  } else {
-    document.getElementById('alertsSection').style.display = 'none';
+  const alertsSection = document.getElementById('alertsSection');
+  if (alertsSection) {
+    if (state.connections.twitch) {
+      alertsSection.style.display = 'block';
+    } else {
+      alertsSection.style.display = 'none';
+    }
   }
 }
 
@@ -403,6 +405,12 @@ window.createNewAlert = function() {
 
 function renderAlerts() {
   const grid = document.getElementById('alertsGrid');
+  
+  // Check if the alertsGrid element exists (it might not in the new dashboard structure)
+  if (!grid) {
+    console.log('alertsGrid element not found - skipping renderAlerts');
+    return;
+  }
   
   if (state.alerts.length === 0) {
     grid.innerHTML = `
@@ -464,6 +472,10 @@ if (urlParams.has('code') && urlParams.has('state')) {
   handleTwitchCallback().then(() => {
     // Callback handled successfully, user will be signed in via onAuthChange
     console.log('Successfully authenticated with Twitch');
+    
+    // Clear the URL parameters to prevent infinite callback handling
+    const newUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, newUrl);
   }).catch((error) => {
     console.error('Failed to handle Twitch callback:', error);
     alert('Failed to sign in with Twitch: ' + error.message);

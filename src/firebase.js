@@ -9,6 +9,15 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  orderBy,
+  onSnapshot
+} from 'firebase/firestore';
 import { config } from './config';
 
 // Firebase configuration
@@ -25,6 +34,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 // Auth providers
 const googleProvider = new GoogleAuthProvider();
@@ -189,5 +199,14 @@ export function getCurrentUser() {
   return auth.currentUser;
 }
 
-export { auth };
+export { auth, db };
+export { 
+  getFirestore, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  orderBy,
+  onSnapshot
+};
 

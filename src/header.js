@@ -49,6 +49,10 @@ export function createHeader(options = {}) {
                 <span class="icon">🏠</span>
                 Dashboard
             </button>
+            <button class="mobile-menu-item" id="mobileProjects" onclick="window.location.href='/projects.html'; closeMobileMenu()" style="display: none;">
+                <span class="icon">📁</span>
+                Projects
+            </button>
             <button class="mobile-menu-item" id="mobileHelp" onclick="showHelp(); closeMobileMenu()" title="Show Tutorial" style="display: none;">
                 <span class="icon">?</span>
                 Help
@@ -113,6 +117,7 @@ export function updateHeaderAuthState(user) {
     const mobileSignInBtn = document.getElementById('mobileSignInBtn');
     const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
     const mobileDashboard = document.getElementById('mobileDashboard');
+    const mobileProjects = document.getElementById('mobileProjects');
     const mobileHelp = document.getElementById('mobileHelp');
     const mobileMembership = document.getElementById('mobileMembership');
     const mobileSignOut = document.getElementById('mobileSignOut');
@@ -128,6 +133,7 @@ export function updateHeaderAuthState(user) {
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'none';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'none';
         if (mobileDashboard) mobileDashboard.style.display = 'block';
+        if (mobileProjects) mobileProjects.style.display = 'block';
         if (mobileHelp) mobileHelp.style.display = 'block';
         if (mobileMembership) mobileMembership.style.display = 'block';
         if (mobileSignOut) mobileSignOut.style.display = 'block';
@@ -142,6 +148,7 @@ export function updateHeaderAuthState(user) {
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'block';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'block';
         if (mobileDashboard) mobileDashboard.style.display = 'none';
+        if (mobileProjects) mobileProjects.style.display = 'none';
         if (mobileHelp) mobileHelp.style.display = 'none';
         if (mobileMembership) mobileMembership.style.display = 'none';
         if (mobileSignOut) mobileSignOut.style.display = 'none';

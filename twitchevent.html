@@ -137,6 +137,57 @@
             content: '✓ ';
             margin-right: 4px;
         }
+
+        /* Login button styles */
+        .login-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 3rem;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            text-align: center;
+            z-index: 2000;
+            min-width: 300px;
+        }
+
+        .login-container h3 {
+            color: white;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .login-container p {
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .btn-login-twitch {
+            background: linear-gradient(135deg, #9146ff 0%, #6441a4 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            width: 100%;
+        }
+
+        .btn-login-twitch:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(145, 70, 255, 0.4);
+        }
+
+        .btn-login-twitch:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body class="transparent-bg">
@@ -145,6 +196,15 @@
 
     <!-- Status Indicator -->
     <div class="loading" id="statusIndicator">Waiting for events...</div>
+
+    <!-- Login Container -->
+    <div class="login-container" id="loginContainer" style="display: none;">
+        <h3>Sign In Required</h3>
+        <p>Please sign in with Twitch to view event alerts</p>
+        <button class="btn-login-twitch" onclick="loginWithTwitch()">
+            🎮 Sign in with Twitch
+        </button>
+    </div>
 
     <script>
         // Test function accessible from console
@@ -159,9 +219,21 @@
     </script>
 
     <script type="module">
-        import { auth, db, collection, query, where, getDocs, onSnapshot } from '/src/firebase.js';
+        import { auth, db, collection, query, where, getDocs, onSnapshot, signInWithTwitch } from '/src/firebase.js';
         import { onAuthChange } from '/src/firebase.js';
         import '/src/config.js';
+
+        // Login function
+        window.loginWithTwitch = async function() {
+            try {
+                console.log('Initiating Twitch login...');
+                await signInWithTwitch();
+                // signInWithTwitch will redirect to Twitch, so we don't need to do anything else here
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Failed to sign in with Twitch: ' + error.message);
+            }
+        };
 
         // Initialize authentication and event listeners
         let unsubscribeProjects = null;
@@ -171,8 +243,12 @@
         // Check authentication state
         onAuthChange(async (user) => {
             const statusIndicator = document.getElementById('statusIndicator');
+            const loginContainer = document.getElementById('loginContainer');
             
             if (user) {
+                // Hide login container
+                loginContainer.style.display = 'none';
+                
                 currentUserId = user.uid;
                 statusIndicator.textContent = 'Connecting...';
                 statusIndicator.className = 'loading';
@@ -187,6 +263,9 @@
                     statusIndicator.className = 'error';
                 }
             } else {
+                // Show login container
+                loginContainer.style.display = 'block';
+                
                 currentUserId = null;
                 statusIndicator.textContent = 'Not authenticated - Please sign in';
                 statusIndicator.className = 'error';

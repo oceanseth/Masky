@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/styles/projectWizard.css">
     <style>
         /* Viewport constraints to prevent horizontal overflow */
         html, body {
@@ -94,468 +95,6 @@
 
         .divider::after {
             margin-left: 1em;
-        }
-
-        /* Project Wizard Styles */
-        .project-wizard {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 2rem;
-            margin: 2rem 0;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .wizard-header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        .wizard-subtitle {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 1.1rem;
-            margin-top: 0.5rem;
-        }
-
-        .wizard-steps {
-            margin-bottom: 2rem;
-        }
-
-        .wizard-step {
-            display: none;
-            animation: fadeIn 0.3s ease-in-out;
-        }
-
-        .wizard-step.active {
-            display: block;
-        }
-
-        .step-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .step-number {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #c084fc, #8b5cf6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            margin-right: 1rem;
-            color: white;
-        }
-
-        .step-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: white;
-        }
-
-        .step-content {
-            padding: 1rem 0;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: rgba(255, 255, 255, 0.9);
-            font-weight: 500;
-        }
-
-        .form-select, .form-input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            font-size: 1rem;
-            transition: all 0.2s ease;
-        }
-
-        .form-select:focus, .form-input:focus {
-            outline: none;
-            border-color: #c084fc;
-            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.1);
-        }
-
-        .form-select option {
-            background: #1a1a1a;
-            color: white;
-        }
-
-        /* Voice Recorder Styles */
-        .voice-recorder {
-            text-align: center;
-        }
-
-        .recorder-controls {
-            margin-bottom: 1rem;
-        }
-
-        .recording-status {
-            color: rgba(255, 255, 255, 0.7);
-            font-style: italic;
-            margin: 1rem 0;
-        }
-
-        .audio-preview {
-            margin-top: 1.5rem;
-            background: rgba(0, 255, 0, 0.1);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid rgba(0, 255, 0, 0.3);
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-        }
-
-        .audio-preview audio {
-            width: 100%;
-            margin-bottom: 1rem;
-        }
-
-        .voice-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            align-items: center;
-        }
-
-        .voice-buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .voice-actions .btn {
-            margin: 0.25rem;
-        }
-
-        /* Voice Management Styles */
-        .voice-management {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        .voice-selection h4,
-        .voice-recorder h4,
-        .selected-voice h4 {
-            color: #c084fc;
-            margin-bottom: 1.5rem;
-            text-align: center;
-        }
-
-        .voice-list {
-            margin-bottom: 2rem;
-        }
-
-        .voice-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .voice-card:hover {
-            border-color: #c084fc;
-            background: rgba(192, 132, 252, 0.1);
-        }
-
-        .voice-card.selected {
-            border-color: #c084fc;
-            background: rgba(192, 132, 252, 0.2);
-        }
-
-        .voice-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .voice-name {
-            font-weight: 600;
-            color: white;
-        }
-
-        .voice-duration {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.9rem;
-        }
-
-        .voice-card audio {
-            width: 100%;
-            margin-bottom: 1rem;
-        }
-
-        .voice-loading {
-            color: #c084fc;
-            font-weight: 500;
-            font-size: 0.8rem;
-        }
-
-        .voice-selected {
-            color: #10b981;
-            font-weight: 600;
-            font-size: 0.8rem;
-        }
-
-        .voice-card.loading {
-            opacity: 0.7;
-            pointer-events: none;
-        }
-
-        .loading-voices {
-            text-align: center;
-            color: rgba(255, 255, 255, 0.7);
-            padding: 2rem;
-        }
-
-        .voice-naming {
-            margin: 0;
-            background: rgba(255, 0, 0, 0.2);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 2px solid rgba(255, 0, 0, 0.5);
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            width: 100%;
-            max-width: 300px;
-        }
-
-        .voice-naming label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .voice-naming input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid rgba(255, 255, 0, 0.8);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            font-size: 1rem;
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-        }
-
-        .voice-naming input::placeholder {
-            color: rgba(255, 255, 255, 0.5);
-        }
-
-        .voice-naming input:focus {
-            outline: none;
-            border-color: #c084fc;
-            box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.2);
-        }
-
-        /* Avatar Upload Styles */
-        .avatar-upload {
-            text-align: center;
-        }
-
-        .upload-area {
-            border: 2px dashed rgba(255, 255, 255, 0.3);
-            border-radius: 12px;
-            padding: 3rem 2rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .upload-area:hover {
-            border-color: #c084fc;
-            background: rgba(192, 132, 252, 0.1);
-        }
-
-        .upload-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .image-preview {
-            margin-top: 1.5rem;
-        }
-
-        .image-preview img {
-            max-width: 300px;
-            max-height: 300px;
-            border-radius: 12px;
-            margin-bottom: 1rem;
-        }
-
-        .image-actions {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-        }
-
-        /* Connection Status Styles */
-        .twitch-connection, .content-generation {
-            text-align: center;
-        }
-
-        .connection-status, .generation-status {
-            padding: 2rem;
-        }
-
-        .status-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid #c084fc;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .connection-result, .generation-result {
-            padding: 2rem;
-        }
-
-        .result-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .result-icon.success {
-            color: #10b981;
-        }
-
-        .result-icon.error {
-            color: #ef4444;
-        }
-
-        .result-message {
-            font-size: 1.2rem;
-            margin-bottom: 1.5rem;
-            color: white;
-        }
-
-        .subscription-details {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 1rem;
-            border-radius: 8px;
-            margin-top: 1rem;
-            text-align: left;
-        }
-
-        .video-url-section {
-            margin: 1.5rem 0;
-        }
-
-        .project-url {
-            margin-top: 2rem;
-            padding: 1.5rem;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-        }
-
-        .url-display {
-            display: flex;
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-
-        .url-display input {
-            flex: 1;
-        }
-
-        .url-instructions {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.9rem;
-            margin-top: 1rem;
-        }
-
-        /* Wizard Navigation */
-        .wizard-navigation {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 2rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        /* Recent Projects */
-        .recent-projects {
-            margin-top: 2rem;
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-        }
-
-        .projects-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .project-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-        }
-
-        .project-card:hover {
-            transform: translateY(-2px);
-            border-color: #c084fc;
-        }
-
-        .project-name {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: white;
-        }
-
-        .project-platform {
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 1rem;
-        }
-
-        .project-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -946,6 +485,7 @@
     <script type="module">
         import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
         import { auth, onAuthChange } from '/src/firebase.js';
+        import { showProjectWizard } from '/src/projectWizard.js';
         
         // Render the header
         renderHeader('#header-container', {
@@ -959,6 +499,104 @@
         onAuthChange((user) => {
             updateHeaderAuthState(user);
         });
+        
+        // Initialize project wizard when user is authenticated
+        onAuthChange((user) => {
+            if (user) {
+                showProjectWizard({
+                    containerId: 'projectWizard',
+                    mode: 'create',
+                    onComplete: (projectData) => {
+                        // Hide wizard and show recent projects
+                        document.getElementById('projectWizard').style.display = 'none';
+                        document.getElementById('recentProjects').style.display = 'block';
+                        
+                        // Load recent projects
+                        loadRecentProjects();
+                    }
+                });
+            }
+        });
+        
+        // Load Recent Projects function
+        async function loadRecentProjects() {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch('/api/recent-projects', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    renderRecentProjects(data.projects);
+                }
+            } catch (error) {
+                console.error('Error loading recent projects:', error);
+            }
+        }
+
+        function renderRecentProjects(projects) {
+            const projectsGrid = document.getElementById('projectsGrid');
+            
+            if (!projects || projects.length === 0) {
+                projectsGrid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✨</div>
+                        <p>No projects yet. Create your first project to get started!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            projectsGrid.innerHTML = projects.map(project => `
+                <div class="project-card">
+                    <div class="project-name">${project.projectName}</div>
+                    <div class="project-platform">${project.platform.charAt(0).toUpperCase() + project.platform.slice(1)} - ${project.eventType}</div>
+                    <div class="project-actions">
+                        <button class="btn btn-primary" onclick="openProject('${project.projectId}')">Open</button>
+                        <button class="btn btn-secondary" onclick="copyProjectUrl('${project.projectId}')">Copy URL</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Global functions for project actions
+        window.openProject = function(projectId) {
+            window.open(`/twitchevent.html#${projectId}`, '_blank');
+        };
+
+        window.copyProjectUrl = function(projectId) {
+            const url = `${window.location.origin}/twitchevent.html#${projectId}`;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('Project URL copied to clipboard!');
+            });
+        };
+
+        window.startNewProject = function() {
+            // Reset UI
+            document.getElementById('projectWizard').style.display = 'block';
+            document.getElementById('recentProjects').style.display = 'none';
+            
+            // Initialize new wizard
+            showProjectWizard({
+                containerId: 'projectWizard',
+                mode: 'create',
+                onComplete: (projectData) => {
+                    // Hide wizard and show recent projects
+                    document.getElementById('projectWizard').style.display = 'none';
+                    document.getElementById('recentProjects').style.display = 'block';
+                    
+                    // Load recent projects
+                    loadRecentProjects();
+                }
+            });
+        };
     </script>
     <script type="module" src="/src/main.js"></script>
 </body>

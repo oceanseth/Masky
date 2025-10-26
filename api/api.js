@@ -222,6 +222,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Twitch EventSub endpoint
+    if (path.includes('/twitch-eventsub') && method === 'POST') {
+        const response = await twitchInitializer.createEventSub(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Default response for unmatched routes
     return {
         statusCode: 404,

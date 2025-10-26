@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Projects - Masky</title>
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -14,6 +15,7 @@
         @import url('/src/styles/dashboard.css');
         @import url('/src/styles/modal.css');
         @import url('/src/styles/icons.css');
+        @import url('/src/styles/projectWizard.css');
 
         /* Projects page specific styles */
         .projects-page {
@@ -455,7 +457,7 @@
     <script type="module">
         import { renderHeader, updateHeaderAuthState } from '/src/header.js';
         import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
-        import { ProjectWizard } from '/src/projectWizardModule.js';
+        import { showProjectWizard } from '/src/projectWizard.js';
         import { config } from '/src/config.js';
 
         // Global state
@@ -614,14 +616,14 @@
 
         // Create new project
         window.createNewProject = function() {
-            showProjectWizard();
+            showProjectWizardModal();
         };
 
         // Edit existing project
         window.editProject = function(projectId) {
             const project = projects.find(p => p.projectId === projectId);
             if (project) {
-                showProjectWizard(project);
+                showProjectWizardModal(project);
             }
         };
 
@@ -708,7 +710,7 @@
         };
 
         // Show project wizard modal
-        function showProjectWizard(projectData = null) {
+        function showProjectWizardModal(projectData = null) {
             const modal = document.getElementById('projectWizardModal');
             const container = document.getElementById('projectWizardContainer');
             
@@ -716,7 +718,8 @@
                 currentWizard.destroy();
             }
 
-            currentWizard = new ProjectWizard('projectWizardContainer', {
+            currentWizard = showProjectWizard({
+                containerId: 'projectWizardContainer',
                 mode: projectData ? 'edit' : 'create',
                 projectData: projectData,
                 onComplete: (project) => {
@@ -728,7 +731,6 @@
                 }
             });
 
-            currentWizard.init();
             modal.classList.add('active');
         }
 

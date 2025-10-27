@@ -458,7 +458,6 @@
         import { renderHeader, updateHeaderAuthState } from '/src/header.js';
         import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
-        import { config } from '/src/config.js';
 
         // Global state
         let projects = [];
@@ -484,27 +483,37 @@
             });
         });
 
-        // Load projects from API
+        // Load projects from Firestore
         async function loadProjects() {
             try {
                 const user = getCurrentUser();
                 if (!user) return;
 
-                const idToken = await user.getIdToken();
-                const response = await fetch(`${config.api.baseUrl}/api/recent-projects`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
+                // Import Firebase modules
+                const { db, collection, query, where, orderBy, getDocs } = await import('/src/firebase.js');
+                
+                // Query projects for the current user
+                const projectsRef = collection(db, 'projects');
+                const q = query(
+                    projectsRef,
+                    where('userId', '==', user.uid),
+                    orderBy('createdAt', 'desc')
+                );
+                const projectsSnapshot = await getDocs(q);
+
+                projects = [];
+                projectsSnapshot.forEach(doc => {
+                    const projectData = doc.data();
+                    projects.push({
+                        projectId: doc.id,
+                        ...projectData,
+                        // Convert Firestore timestamps to Date objects
+                        createdAt: projectData.createdAt?.toDate ? projectData.createdAt.toDate() : new Date(projectData.createdAt),
+                        updatedAt: projectData.updatedAt?.toDate ? projectData.updatedAt.toDate() : (projectData.updatedAt ? new Date(projectData.updatedAt) : new Date(projectData.createdAt))
+                    });
                 });
 
-                if (response.ok) {
-                    const data = await response.json();
-                    projects = data.projects || [];
-                    renderProjects();
-                } else {
-                    throw new Error('Failed to load projects');
-                }
+                renderProjects();
             } catch (error) {
                 console.error('Error loading projects:', error);
                 showError('Failed to load projects');
@@ -654,7 +663,8 @@
                 const user = getCurrentUser();
                 if (!user) return;
 
-                const idToken = await user.getIdToken();
+                // Import Firebase modules
+                const { db, doc, updateDoc } = await import('/src/firebase.js');
                 
                 // Find the project to get its current data
                 const project = projects.find(p => p.projectId === projectId);
@@ -663,38 +673,25 @@
                     return;
                 }
 
-                // Update the project with new status
-                const updatedProjectData = {
-                    ...project,
+                // Update the project in Firestore
+                const projectRef = doc(db, 'projects', projectId);
+                await updateDoc(projectRef, {
                     twitchSubscription: isActive,
-                    projectId: projectId
-                };
-
-                const response = await fetch(`${config.api.baseUrl}/api/save-project`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updatedProjectData)
+                    updatedAt: new Date().toISOString()
                 });
 
-                if (response.ok) {
-                    // Update local projects array
-                    const projectIndex = projects.findIndex(p => p.projectId === projectId);
-                    if (projectIndex !== -1) {
-                        projects[projectIndex].twitchSubscription = isActive;
-                        projects[projectIndex].updatedAt = new Date();
-                    }
-                    
-                    // Update the status label in the UI
-                    const statusLabel = document.querySelector(`input[onchange*="${projectId}"]`).closest('.project-status').querySelector('.status-label');
-                    statusLabel.textContent = isActive ? 'Active' : 'Inactive';
-                    
-                    console.log(`Project ${projectId} status updated to ${isActive ? 'active' : 'inactive'}`);
-                } else {
-                    throw new Error('Failed to update project status');
+                // Update local projects array
+                const projectIndex = projects.findIndex(p => p.projectId === projectId);
+                if (projectIndex !== -1) {
+                    projects[projectIndex].twitchSubscription = isActive;
+                    projects[projectIndex].updatedAt = new Date();
                 }
+                
+                // Update the status label in the UI
+                const statusLabel = document.querySelector(`input[onchange*="${projectId}"]`).closest('.project-status').querySelector('.status-label');
+                statusLabel.textContent = isActive ? 'Active' : 'Inactive';
+                
+                console.log(`Project ${projectId} status updated to ${isActive ? 'active' : 'inactive'}`);
             } catch (error) {
                 console.error('Error toggling project status:', error);
                 

@@ -16,7 +16,11 @@ import {
   where, 
   getDocs, 
   orderBy,
-  onSnapshot
+  onSnapshot,
+  doc,
+  updateDoc,
+  addDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { config } from './config';
 
@@ -207,6 +211,10 @@ export {
   where, 
   getDocs, 
   orderBy,
-  onSnapshot
+  onSnapshot,
+  doc,
+  updateDoc,
+  addDoc,
+  deleteDoc
 };
 

@@ -31,6 +31,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Install Serverless Framework v4
+        run: npm install -g serverless@4
+
       - name: Deploy Serverless Lambda
         run: npx serverless deploy --stage production --region us-east-1
 

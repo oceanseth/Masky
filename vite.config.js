@@ -39,8 +39,11 @@ export default defineConfig({
             }
           }
         };
+        // Copy i18n locales
         copyRecursive('src/locales', 'dist/src/locales');
-        console.log('✓ Locale files copied to dist/src/locales');        
+        console.log('✓ Locale files copied to dist/src/locales');
+
+        // Static assets are served from Vite's public/ directory; no manual copy needed
       }
     }
   ]

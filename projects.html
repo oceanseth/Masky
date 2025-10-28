@@ -833,6 +833,7 @@
         import { renderHeader, updateHeaderAuthState } from '/src/header.js';
         import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
+        import { config } from '/src/config.js';
 
         // Global state
         let projects = [];
@@ -919,7 +920,7 @@
             }
 
             projectsGrid.innerHTML = projects.map(project => `
-                <div class="project-card">
+                <div class="project-card" onclick="onProjectCardClick('${project.projectId}', event)">
                     <div class="project-header">
                         <div>
                             <div class="project-name">${project.projectName}</div>
@@ -946,7 +947,7 @@
                     <div class="project-video-preview">
                         ${project.videoUrl ? 
                             `<div class="video-thumbnail-container">
-                                <video class="video-thumbnail" 
+                                <video class="video-thumbnail" id="video-${project.projectId}" 
                                        src="${project.videoUrl}" 
                                        muted 
                                        preload="metadata"
@@ -977,6 +978,26 @@
                             <span class="project-detail-label">Event Type:</span>
                             <span class="project-detail-value">${getEventTypeName(project.eventType)}</span>
                         </div>
+                        <div class="project-detail" onclick="event.stopPropagation()">
+                            <span class="project-detail-label">Alert Message:</span>
+                            <span class="project-detail-value">
+                                <span id="alertmsg-display-${project.projectId}" class="inline-display" onclick="startEditAlertMessage('${project.projectId}', event)">${(project.alertConfig && project.alertConfig[project.eventType]?.message) || getDefaultAlertConfigs()[project.eventType].message}</span>
+                                <span id="alertmsg-edit-${project.projectId}" style="display:none">
+                                    <input type="text" id="alertmsg-input-${project.projectId}" class="form-input" style="max-width: 420px;" value="${(project.alertConfig && project.alertConfig[project.eventType]?.message) || getDefaultAlertConfigs()[project.eventType].message}" onkeydown="alertMessageKeyDown('${project.projectId}', event)">
+                                    <button class="btn btn-primary" onclick="saveAlertMessage('${project.projectId}', event)">Save</button>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="project-detail" onclick="event.stopPropagation()">
+                            <span class="project-detail-label">Heygen Video ID:</span>
+                            <span class="project-detail-value">
+                                <span id="heygenid-display-${project.projectId}" class="inline-display" onclick="startEditHeygenId('${project.projectId}', event)">${project.heygenVideoId || '—'}</span>
+                                <span id="heygenid-edit-${project.projectId}" style="display:none">
+                                    <input type="text" id="heygenid-input-${project.projectId}" class="form-input" style="max-width: 260px;" value="${project.heygenVideoId || ''}" placeholder="Enter Heygen video ID" onkeydown="heygenIdKeyDown('${project.projectId}', event)">
+                                    <button class="btn btn-primary" onclick="saveHeygenId('${project.projectId}', event)">Save</button>
+                                </span>
+                            </span>
+                        </div>
                         <div class="project-detail">
                             <span class="project-detail-label">Created:</span>
                             <span class="project-detail-value">${formatDate(project.createdAt)}</span>
@@ -985,21 +1006,6 @@
                             <span class="project-detail-label">Last Updated:</span>
                             <span class="project-detail-value">${formatDate(project.updatedAt)}</span>
                         </div>
-                    </div>
-                    
-                    <div class="project-actions">
-                        <button class="btn btn-primary" onclick="editProject('${project.projectId}')">
-                            <span>✏️</span> Edit
-                        </button>
-                        <button class="btn btn-secondary" onclick="editAlertMessages('${project.projectId}')">
-                            <span>💬</span> Alert Messages
-                        </button>
-                        <button class="btn btn-secondary" onclick="viewProject('${project.projectId}')">
-                            <span>👁️</span> View
-                        </button>
-                        <button class="btn btn-secondary" onclick="copyProjectUrl('${project.projectId}')">
-                            <span>🔗</span> Copy URL
-                        </button>
                     </div>
                 </div>
             `).join('');
@@ -1158,6 +1164,136 @@
                 });
             } else {
                 alert('Please log in to copy your project URL');
+            }
+        };
+
+        // Handle clicking a project card to open editor, but ignore interactive child elements
+        window.onProjectCardClick = function(projectId, e) {
+            const tag = e.target.tagName.toLowerCase();
+            if (['input', 'button', 'select', 'textarea', 'a', 'label', 'video'].includes(tag)) return;
+            editProject(projectId);
+        };
+
+        // Inline Alert Message editing
+        window.startEditAlertMessage = function(projectId, e) {
+            e.stopPropagation();
+            const disp = document.getElementById(`alertmsg-display-${projectId}`);
+            const edit = document.getElementById(`alertmsg-edit-${projectId}`);
+            if (disp && edit) {
+                disp.style.display = 'none';
+                edit.style.display = 'inline-flex';
+                const input = document.getElementById(`alertmsg-input-${projectId}`);
+                if (input) input.focus();
+            }
+        };
+
+        window.alertMessageKeyDown = function(projectId, e) {
+            if (e.key === 'Enter') {
+                saveAlertMessage(projectId, e);
+            }
+        };
+
+        window.saveAlertMessage = async function(projectId, e) {
+            e.stopPropagation();
+            try {
+                const project = projects.find(p => p.projectId === projectId);
+                if (!project) return;
+                const input = document.getElementById(`alertmsg-input-${projectId}`);
+                const newMessage = (input?.value || '').trim();
+                if (!newMessage) return;
+
+                const { db, doc, updateDoc } = await import('/src/firebase.js');
+                const projectRef = doc(db, 'projects', projectId);
+                const currentConfig = project.alertConfig || getDefaultAlertConfigs();
+                const eventType = project.eventType;
+                const updatedConfig = {
+                    ...currentConfig,
+                    [eventType]: {
+                        ...(currentConfig[eventType] || getDefaultAlertConfigs()[eventType]),
+                        message: newMessage
+                    }
+                };
+
+                await updateDoc(projectRef, {
+                    alertConfig: updatedConfig,
+                    updatedAt: new Date()
+                });
+
+                project.alertConfig = updatedConfig;
+                const display = document.getElementById(`alertmsg-display-${projectId}`);
+                if (display) display.textContent = newMessage;
+                const edit = document.getElementById(`alertmsg-edit-${projectId}`);
+                if (edit) edit.style.display = 'none';
+                if (display) display.style.display = 'inline';
+            } catch (err) {
+                console.error('Failed to save alert message', err);
+                alert('Failed to save alert message');
+            }
+        };
+
+        // Inline Heygen Video ID editing
+        window.startEditHeygenId = function(projectId, e) {
+            e.stopPropagation();
+            const disp = document.getElementById(`heygenid-display-${projectId}`);
+            const edit = document.getElementById(`heygenid-edit-${projectId}`);
+            if (disp && edit) {
+                disp.style.display = 'none';
+                edit.style.display = 'inline-flex';
+                const input = document.getElementById(`heygenid-input-${projectId}`);
+                if (input) input.focus();
+            }
+        };
+
+        window.heygenIdKeyDown = function(projectId, e) {
+            if (e.key === 'Enter') {
+                saveHeygenId(projectId, e);
+            }
+        };
+
+        window.saveHeygenId = async function(projectId, e) {
+            e.stopPropagation();
+            try {
+                const project = projects.find(p => p.projectId === projectId);
+                if (!project) return;
+                const input = document.getElementById(`heygenid-input-${projectId}`);
+                const newId = (input?.value || '').trim();
+                if (!newId) return;
+
+                const resp = await fetch(`${config.api.baseUrl}/api/heygen/video_status.get?video_id=${encodeURIComponent(newId)}`, { method: 'GET' });
+                if (!resp.ok) throw new Error('Failed to validate Heygen video ID');
+                const data = await resp.json();
+                const videoUrl = data?.data?.video_url || data?.video_url || null;
+                if (!videoUrl) {
+                    const errMsg = data?.message || 'Video not ready yet or invalid ID';
+                    alert(`Heygen error: ${errMsg}`);
+                    return;
+                }
+
+                const { db, doc, updateDoc } = await import('/src/firebase.js');
+                const projectRef = doc(db, 'projects', projectId);
+                await updateDoc(projectRef, {
+                    heygenVideoId: newId,
+                    videoUrl: videoUrl,
+                    updatedAt: new Date()
+                });
+
+                project.heygenVideoId = newId;
+                project.videoUrl = videoUrl;
+
+                const display = document.getElementById(`heygenid-display-${projectId}`);
+                if (display) display.textContent = newId || '—';
+                const edit = document.getElementById(`heygenid-edit-${projectId}`);
+                if (edit) edit.style.display = 'none';
+                if (display) display.style.display = 'inline';
+
+                const videoEl = document.getElementById(`video-${projectId}`);
+                if (videoEl) {
+                    videoEl.src = videoUrl;
+                    videoEl.load();
+                }
+            } catch (err) {
+                console.error('Failed to save Heygen video ID', err);
+                alert('Failed to save Heygen video ID');
             }
         };
 

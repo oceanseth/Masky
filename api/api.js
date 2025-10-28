@@ -7,6 +7,7 @@ const s3 = new AWS.S3({
 const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
+const heygen = require('../utils/heygen');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
 const handleTwitchOAuth = async (event) => {
@@ -131,6 +132,36 @@ exports.handler = async (event, context) => {
                 'Content-Type': 'application/json'
             }
         };
+    }
+
+    // Heygen proxy: video_status.get
+    if (path.includes('/heygen/video_status.get') && method === 'GET') {
+        try {
+            const url = new URL(event.rawUrl || `${event.headers.origin || 'https://masky.ai'}${path}${event.rawQueryString ? ('?' + event.rawQueryString) : ''}`);
+            const videoId = url.searchParams.get('video_id') || event.queryStringParameters?.video_id;
+            if (!videoId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing video_id' })
+                };
+            }
+            const data = await heygen.getVideoStatus(videoId);
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            };
+        } catch (err) {
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: 'Heygen proxy failed', message: err.message })
+            };
+        }
     }
 
     // Handle Twitch OAuth (legacy - direct access token)

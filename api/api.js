@@ -179,6 +179,102 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Handle Twitch OAuth GET redirect with query params (code or error)
+    if (path.includes('/twitch_oauth') && method === 'GET') {
+        console.log('GET /twitch_oauth handler triggered', { path, method, queryString: event.rawQueryString, queryParams: event.queryStringParameters });
+        try {
+            // Support both API Gateway v1 and v2 styles
+            let params;
+            if (event.rawQueryString && typeof event.rawQueryString === 'string') {
+                params = new URLSearchParams(event.rawQueryString);
+            } else if (event.queryStringParameters && typeof event.queryStringParameters === 'object') {
+                params = new URLSearchParams();
+                for (const [k, v] of Object.entries(event.queryStringParameters)) {
+                    if (typeof v === 'string') params.append(k, v);
+                }
+            } else {
+                params = new URLSearchParams();
+            }
+
+            const error = params.get('error');
+            const errorDescription = params.get('error_description');
+            const state = params.get('state');
+            const accessToken = params.get('access_token');
+            const code = params.get('code');
+
+            // If Twitch sent an error, surface it clearly
+            if (error) {
+                return {
+                    statusCode: 400,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ error, errorDescription, state })
+                };
+            }
+
+            // If implicit flow leaked access_token in query (rare), treat like legacy
+            if (accessToken) {
+                const legacyEvent = {
+                    ...event,
+                    httpMethod: 'POST',
+                    body: JSON.stringify({ accessToken }),
+                    isBase64Encoded: false
+                };
+                const response = await handleTwitchOAuth(legacyEvent);
+                return {
+                    ...response,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    }
+                };
+            }
+
+            // If authorization code present, invoke callback exchange flow
+            if (code) {
+                const callbackEvent = {
+                    ...event,
+                    httpMethod: 'POST',
+                    body: JSON.stringify({
+                        code,
+                        // Use the actual API endpoint as redirect URI
+                        redirectUri: 'https://masky.ai/api/twitch_oauth'
+                    }),
+                    isBase64Encoded: false
+                };
+                const response = await twitchInitializer.handleOAuthCallback(callbackEvent);
+                return {
+                    ...response,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    }
+                };
+            }
+
+            // No recognizable params - return helpful message for GET requests
+            return {
+                statusCode: 400,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    error: 'Invalid request', 
+                    message: 'Expected error, code, or access_token query parameters for GET /twitch_oauth' 
+                })
+            };
+        } catch (err) {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: 'Failed to process Twitch OAuth redirect', message: err.message })
+            };
+        }
+    }
+
     // Subscription status endpoint
     if (path.includes('/subscription/status') && method === 'GET') {
         console.log('Subscription status request received');

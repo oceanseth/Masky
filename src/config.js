@@ -4,7 +4,7 @@ export const config = {
   // Twitch OAuth Configuration
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
-    redirectUri: 'https://masky.ai/api/twitch_oauth',
+    redirectUri: window.location,
     scopes: ['user:read:email', 'channel:manage:videos', 'user:read:broadcast', 'moderator:read:followers']
   },
   

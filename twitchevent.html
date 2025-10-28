@@ -279,7 +279,7 @@
                     projectsRef,
                     where('userId', '==', currentUserId),
                     where('platform', '==', 'twitch'),
-                    where('isActive', '==', true)
+                    where('twitchSubscription', '==', true)
                 );
 
                 const snapshot = await getDocs(q);
@@ -316,7 +316,9 @@
                         eventType,
                         heygenVideoId: projectData.heygenVideoId || null,
                         hasVideoUrl: !!videoUrl,
-                        videoUrl: videoUrl || null
+                        videoUrl: videoUrl || null,
+                        twitchSubscription: projectData.twitchSubscription,
+                        isActive: projectData.isActive
                     });
                     if (videoUrl) {
                         if (!eventVideoCache.has(eventType)) eventVideoCache.set(eventType, []);

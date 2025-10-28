@@ -231,8 +231,9 @@
             
             try {
                 await loadUserProjects();
-                statusIndicator.textContent = 'Connected - Waiting for events';
-                statusIndicator.className = 'connected';
+                // Hide status indicator on success - only show errors
+                statusIndicator.style.display = 'none';
+                console.log('Connected - Waiting for events');
             } catch (error) {
                 console.error('Error loading projects:', error);
                 statusIndicator.textContent = 'Error: ' + error.message;

@@ -81,8 +81,7 @@ class ProjectWizard {
         this.setDefaultValues();
         this.updateNavigationButtons();
         
-        // Check if we're resuming from OAuth callback
-        this.checkForOAuthResume();
+        // No need to check for OAuth resume with popup flow
         
         if (this.options.mode === 'edit' && this.projectData.projectId) {
             this.loadProjectData();
@@ -307,93 +306,6 @@ class ProjectWizard {
         window.projectWizard = this;
     }
 
-    /**
-     * Check if we're resuming from OAuth callback
-     */
-    checkForOAuthResume() {
-        // Check for Twitch OAuth callback in URL fragment (access_token)
-        const urlFragment = window.location.hash.substring(1);
-        const fragmentParams = new URLSearchParams(urlFragment);
-        const hasAccessToken = fragmentParams.has('access_token');
-        
-        // Check for traditional OAuth callback in query params (code)
-        const urlParams = new URLSearchParams(window.location.search);
-        const hasOAuthCode = urlParams.has('code') && urlParams.has('state');
-        
-        const savedState = sessionStorage.getItem('projectWizardState');
-        
-        // Resume if we have saved state and either OAuth callback type
-        if (savedState && (hasAccessToken || hasOAuthCode)) {
-            try {
-                const state = JSON.parse(savedState);
-                if (state.wizardId === this.wizardId) {
-                    console.log('Resuming wizard from OAuth callback');
-                    
-                    // Restore wizard state
-                    this.currentStep = state.currentStep;
-                    this.projectData = { ...this.projectData, ...state.projectData };
-                    
-                    // Update UI to show the correct step
-                    this.showStep(this.currentStep);
-                    this.updateNavigationButtons();
-                    
-                    // Clear the saved state
-                    sessionStorage.removeItem('projectWizardState');
-                    
-                    // If we were on step 4 (Twitch connection), handle the OAuth callback
-                    if (this.currentStep === 4) {
-                        if (hasAccessToken) {
-                            // Handle Twitch OAuth callback with access token
-                            this.handleTwitchOAuthCallback();
-                        } else {
-                            // Handle other OAuth callbacks
-                            setTimeout(() => {
-                                this.connectToTwitch();
-                            }, 1000);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error restoring wizard state:', error);
-                sessionStorage.removeItem('projectWizardState');
-            }
-        }
-    }
-
-    /**
-     * Handle Twitch OAuth callback with access token
-     */
-    async handleTwitchOAuthCallback() {
-        try {
-            console.log('Handling Twitch OAuth callback');
-            
-            // Import the handleTwitchCallback function from firebase.js
-            const { handleTwitchCallback } = await import('./firebase.js');
-            
-            // Handle the OAuth callback
-            await handleTwitchCallback();
-            
-            // Clean up the URL to remove the access token
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            // Now try to connect to Twitch again
-            setTimeout(() => {
-                this.connectToTwitch();
-            }, 1000);
-            
-        } catch (error) {
-            console.error('Error handling Twitch OAuth callback:', error);
-            
-            // Show error in the connection UI
-            const connectionStatus = document.getElementById('connectionStatus');
-            const connectionError = document.getElementById('connectionError');
-            const errorMessage = document.querySelector('.error-message');
-            
-            if (connectionStatus) connectionStatus.style.display = 'none';
-            if (connectionError) connectionError.style.display = 'block';
-            if (errorMessage) errorMessage.textContent = error.message;
-        }
-    }
 
     /**
      * Set default values for form fields
@@ -1027,21 +939,42 @@ class ProjectWizard {
                              );
 
             if (!hasTwitch) {
-                // User doesn't have Twitch connected, initiate OAuth flow
-                // Store current wizard state so we can resume after OAuth
-                sessionStorage.setItem('projectWizardState', JSON.stringify({
-                    currentStep: this.currentStep,
-                    projectData: this.projectData,
-                    wizardId: this.wizardId
-                }));
-                
+                // User doesn't have Twitch connected, initiate popup OAuth flow
                 const { signInWithTwitch } = await import('./firebase.js');
-                await signInWithTwitch();
-                return; // This will redirect to Twitch, so we return here
+                
+                try {
+                    // Show loading state
+                    if (connectionStatus) {
+                        connectionStatus.innerHTML = `
+                            <div class="status-icon">🔗</div>
+                            <p>Opening Twitch authentication...</p>
+                        `;
+                    }
+                    
+                    // Sign in with Twitch using popup
+                    const user = await signInWithTwitch();
+                    
+                    // User is now authenticated, continue with EventSub subscription
+                    console.log('Twitch authentication successful:', user);
+                    
+                } catch (error) {
+                    console.error('Twitch authentication failed:', error);
+                    
+                    // Show error in the connection UI
+                    if (connectionStatus) connectionStatus.style.display = 'none';
+                    if (connectionError) connectionError.style.display = 'block';
+                    
+                    const errorMessage = document.querySelector('.error-message');
+                    if (errorMessage) errorMessage.textContent = error.message;
+                    return;
+                }
             }
 
             // Create EventSub subscription
-            const idToken = await user.getIdToken();
+            const currentUser = getCurrentUser();
+            if (!currentUser) throw new Error('User not authenticated');
+            
+            const idToken = await currentUser.getIdToken();
             const response = await fetch(`${config.api.baseUrl}/api/twitch-eventsub`, {
                 method: 'POST',
                 headers: {
@@ -1052,7 +985,7 @@ class ProjectWizard {
                     type: this.projectData.eventType,
                     version: '2',
                     condition: {
-                        broadcaster_user_id: user.uid.replace('twitch:', '')
+                        broadcaster_user_id: currentUser.uid.replace('twitch:', '')
                     }
                     // Note: projectId will be associated when the project is saved
                 })

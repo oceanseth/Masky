@@ -246,12 +246,100 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Save project endpoint
+    if (path.includes('/save-project') && method === 'POST') {
+        const response = await saveProject(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Default response for unmatched routes
     return {
         statusCode: 404,
         headers,
         body: JSON.stringify({ error: 'Route not found' })
     };
+}
+
+/**
+ * Save project to Firestore
+ */
+async function saveProject(event) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        // Generate a unique project ID using the user's UID and timestamp
+        const projectId = `${userId}_${Date.now()}`;
+
+        // Prepare project data
+        const projectData = {
+            projectId: projectId,
+            userId: userId,
+            platform: body.platform,
+            projectName: body.projectName,
+            eventType: body.eventType,
+            voiceFile: body.voiceFile,
+            avatarFile: body.avatarFile,
+            twitchSubscription: body.twitchSubscription,
+            videoUrl: body.videoUrl,
+            createdAt: body.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        // Save to Firestore
+        const db = admin.firestore();
+        await db.collection('projects').doc(projectId).set(projectData);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true, 
+                projectId: projectId,
+                message: 'Project saved successfully' 
+            })
+        };
+
+    } catch (error) {
+        console.error('Error saving project:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to save project',
+                message: error.message 
+            })
+        };
+    }
 }
 
 /**

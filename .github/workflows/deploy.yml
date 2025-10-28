@@ -35,7 +35,7 @@ jobs:
         run: npm install -g serverless@4
 
       - name: Deploy Serverless Lambda
-        run: npx serverless deploy --stage production --region us-east-1
+        run: serverless deploy --stage production --region us-east-1
 
       - name: Sync files to S3
         run: |

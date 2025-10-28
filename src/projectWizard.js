@@ -1565,12 +1565,22 @@ class ProjectWizard {
             if (generationStatus) generationStatus.style.display = 'none';
             if (generationResult) generationResult.style.display = 'block';
             
-            // Show project URL
+            // Show project URL - use Firebase UID only
             const projectUrl = document.getElementById('projectUrl');
             const projectUrlInput = document.getElementById('projectUrlInput');
             if (projectUrl && projectUrlInput) {
-                const eventTypeForUrl = this.projectData.eventType.replace('channel.', '').replace('.', '_');
-                const projectUrlValue = `${window.location.origin}/twitchevent.html#${this.projectData.platform}_${eventTypeForUrl}`;
+                const user = getCurrentUser();
+                let projectUrlValue;
+                
+                if (user && user.uid) {
+                    // Use Firebase UID as the identifier for all user's projects
+                    projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                } else {
+                    // Fallback to a temporary ID if user is not authenticated
+                    const tempId = `temp_${Date.now()}`;
+                    projectUrlValue = `${window.location.origin}/twitchevent.html#${tempId}`;
+                }
+                
                 projectUrlInput.value = projectUrlValue;
                 projectUrl.style.display = 'block';
             }
@@ -1650,6 +1660,15 @@ class ProjectWizard {
             if (response.ok) {
                 const result = await response.json();
                 this.projectData.projectId = result.projectId;
+                
+                // Update the project URL with the user's UID (not project ID)
+                const projectUrl = document.getElementById('projectUrl');
+                const projectUrlInput = document.getElementById('projectUrlInput');
+                if (projectUrl && projectUrlInput) {
+                    const projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                    projectUrlInput.value = projectUrlValue;
+                    projectUrl.style.display = 'block';
+                }
                 
                 // The Twitch subscription is already included in the project data
                 // No additional association needed
@@ -1805,14 +1824,26 @@ window.startNewProject = function() {
 };
 
 window.openProject = function(projectId) {
-    window.open(`/twitchevent.html#${projectId}`, '_blank');
+    // Get the current user's UID for the URL since we listen for all user's projects
+    const user = getCurrentUser();
+    if (user && user.uid) {
+        window.open(`/twitchevent.html#${user.uid}`, '_blank');
+    } else {
+        alert('Please log in to view your project');
+    }
 };
 
 window.copyProjectUrl = function(projectId) {
-    const url = `${window.location.origin}/twitchevent.html#${projectId}`;
-    navigator.clipboard.writeText(url).then(() => {
-        alert('Project URL copied to clipboard!');
-    });
+    // Get the current user's UID for the URL since we listen for all user's projects
+    const user = getCurrentUser();
+    if (user && user.uid) {
+        const url = `${window.location.origin}/twitchevent.html#${user.uid}`;
+        navigator.clipboard.writeText(url).then(() => {
+            alert('Project URL copied to clipboard!');
+        });
+    } else {
+        alert('Please log in to copy your project URL');
+    }
 };
 
 // Initialize when DOM is loaded

@@ -484,7 +484,7 @@
 
     <script type="module">
         import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
-        import { auth, onAuthChange } from '/src/firebase.js';
+        import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
         
         // Render the header
@@ -568,14 +568,26 @@
 
         // Global functions for project actions
         window.openProject = function(projectId) {
-            window.open(`/twitchevent.html#${projectId}`, '_blank');
+            // Get the current user's UID for the URL since we listen for all user's projects
+            const user = getCurrentUser();
+            if (user && user.uid) {
+                window.open(`/twitchevent.html#${user.uid}`, '_blank');
+            } else {
+                alert('Please log in to view your project');
+            }
         };
 
         window.copyProjectUrl = function(projectId) {
-            const url = `${window.location.origin}/twitchevent.html#${projectId}`;
-            navigator.clipboard.writeText(url).then(() => {
-                alert('Project URL copied to clipboard!');
-            });
+            // Get the current user's UID for the URL since we listen for all user's projects
+            const user = getCurrentUser();
+            if (user && user.uid) {
+                const url = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('Project URL copied to clipboard!');
+                });
+            } else {
+                alert('Please log in to copy your project URL');
+            }
         };
 
         window.startNewProject = function() {

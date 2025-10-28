@@ -534,7 +534,7 @@
             video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
             video.style.pointerEvents = 'none';
 
-            // Create text message overlay
+            // Create text message below the video
             let messageElement = null;
             if (config.message && eventData) {
                 // Build message from template
@@ -553,7 +553,6 @@
                 messageElement = document.createElement('div');
                 messageElement.textContent = message;
                 messageElement.style.cssText = `
-                    position: absolute;
                     background: ${config.backgroundColor};
                     color: ${config.textColor};
                     font-size: ${config.fontSize};
@@ -564,21 +563,12 @@
                     text-align: center;
                     font-family: 'Orbitron', sans-serif;
                     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-                    z-index: 10;
                     max-width: 80%;
                     word-wrap: break-word;
                     white-space: normal;
                     pointer-events: none;
+                    margin-top: 1rem;
                 `;
-
-                // Position the message
-                if (config.position === 'top') {
-                    messageElement.style.top = '10px';
-                    messageElement.style.bottom = 'auto';
-                } else {
-                    messageElement.style.top = 'auto';
-                    messageElement.style.bottom = '10px';
-                }
             }
 
             // Fallback: if autoplay with sound blocked, retry muted
@@ -596,15 +586,10 @@
                 }
             };
 
-            // Assemble the video container
-            if (messageElement && config.position === 'top') {
+            // Assemble the video container - always place message below video
+            videoContainer.appendChild(video);
+            if (messageElement) {
                 videoContainer.appendChild(messageElement);
-                videoContainer.appendChild(video);
-            } else {
-                videoContainer.appendChild(video);
-                if (messageElement) {
-                    videoContainer.appendChild(messageElement);
-                }
             }
 
             overlay.appendChild(videoContainer);

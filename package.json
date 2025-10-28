@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/chqrlotte/minime#readme",
   "devDependencies": {
-    "serverless": "^4.0.0",
+    "serverless": "3.40.0",
     "vite": "^5.0.0"
   },
   "dependencies": {

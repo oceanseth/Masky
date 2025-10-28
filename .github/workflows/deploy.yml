@@ -31,8 +31,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Deploy Serverless Lambda
-        run: npx serverless deploy --stage production --region us-east-1
+      - name: Deploy Serverless Lambda (Serverless 3.40.0)
+        run: npx serverless@3.40.0 deploy --stage production --region us-east-1
 
       - name: Sync files to S3
         run: |

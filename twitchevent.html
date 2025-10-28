@@ -174,6 +174,8 @@
 <body class="transparent-bg">
     <!-- Alert Overlay Container -->
     <div class="alert-overlay" id="alertOverlay"></div>
+    <!-- Video Overlay Container -->
+    <div class="alert-overlay" id="videoOverlay" style="z-index: 2000;"></div>
 
     <!-- Status Indicator -->
     <div class="loading" id="statusIndicator">Waiting for events...</div>
@@ -258,6 +260,10 @@
 
         // Store project configurations for alert customization
         let projectConfigs = new Map();
+        // Map of eventType -> array of video URLs
+        let eventVideoCache = new Map();
+        // Map of eventType -> array of preloaded HTMLVideoElements (detached)
+        let preloadedVideoElements = new Map();
 
         // Load user's active projects from Firestore
         async function loadUserProjects() {
@@ -286,11 +292,14 @@
                     return;
                 }
 
-                // Store project configurations
+                // Store project configurations and build video cache
+                eventVideoCache = new Map();
+                // Debug: list projects
+                const debugProjectsList = [];
                 snapshot.docs.forEach(doc => {
                     const projectData = doc.data();
                     const eventType = projectData.eventType;
-                    
+
                     // Store the alert configuration for this event type
                     if (projectData.alertConfig && projectData.alertConfig[eventType]) {
                         projectConfigs.set(eventType, projectData.alertConfig[eventType]);
@@ -299,7 +308,40 @@
                         // Fallback to default configuration
                         projectConfigs.set(eventType, getDefaultAlertConfig(eventType));
                     }
+
+                    // Collect Heygen video URL if available
+                    const videoUrl = extractHeygenVideoUrl(projectData);
+                    debugProjectsList.push({
+                        projectId: doc.id,
+                        eventType,
+                        heygenVideoId: projectData.heygenVideoId || null,
+                        hasVideoUrl: !!videoUrl,
+                        videoUrl: videoUrl || null
+                    });
+                    if (videoUrl) {
+                        if (!eventVideoCache.has(eventType)) eventVideoCache.set(eventType, []);
+                        eventVideoCache.get(eventType).push({
+                            projectId: doc.id,
+                            videoUrl
+                        });
+                    } else {
+                        const hasHeygenId = !!projectData.heygenVideoId;
+                        if (!hasHeygenId) {
+                            console.warn(`Project ${doc.id} (${eventType}) missing HeyGen video ID and video URL`);
+                        } else {
+                            console.warn(`Project ${doc.id} (${eventType}) has HeyGen ID but no resolvable video URL yet`);
+                        }
+                    }
                 });
+                console.groupCollapsed(`Loading projects for user ${currentUserId}`);
+                try {
+                    console.table(debugProjectsList);
+                } finally {
+                    console.groupEnd();
+                }
+
+                // Preload videos for all event types
+                preloadAllEventVideos();
 
                 // Get event types to listen for
                 const eventTypes = [...new Set(snapshot.docs.map(doc => doc.data().eventType))];
@@ -317,6 +359,48 @@
                 console.error('Error loading projects:', error);
                 throw error;
             }
+        }
+
+        // Try to extract a Heygen video URL from a project document
+        function extractHeygenVideoUrl(projectData) {
+            // Preferred explicit field
+            if (projectData.videoUrl && typeof projectData.videoUrl === 'string') {
+                return projectData.videoUrl;
+            }
+            // If wizard stored full heygen response object
+            const dataObj = projectData.heygenVideoData || projectData.heygen || projectData.heygenData || null;
+            const possibleUrl = dataObj?.data?.video_url || dataObj?.video_url;
+            if (possibleUrl && typeof possibleUrl === 'string') {
+                return possibleUrl;
+            }
+            return null;
+        }
+
+        // Preload all videos into detached video elements to warm cache
+        function preloadAllEventVideos() {
+            preloadedVideoElements = new Map();
+            eventVideoCache.forEach((items, eventType) => {
+                console.groupCollapsed(`Preloading videos for ${eventType}`);
+                const list = [];
+                items.forEach(item => {
+                    try {
+                        const v = document.createElement('video');
+                        v.src = item.videoUrl;
+                        v.preload = 'auto';
+                        v.muted = true; // allow autoplay preloading
+                        // Start loading
+                        v.load();
+                        list.push({ projectId: item.projectId, el: v, url: item.videoUrl });
+                        console.log('Preloading URL:', item.videoUrl, 'projectId:', item.projectId);
+                    } catch (e) {
+                        console.warn('Failed to preload video', item.videoUrl, e);
+                    }
+                });
+                preloadedVideoElements.set(eventType, list);
+                console.groupEnd();
+            });
+            console.log('Preloaded Heygen videos by event type:',
+                Array.from(eventVideoCache.entries()).reduce((acc, [k, v]) => ({...acc, [k]: v.length}), {}));
         }
 
         // Get default alert configuration for an event type
@@ -380,9 +464,11 @@
                     if (change.type === 'added') {
                         const alertData = change.doc.data();
                         console.log('New alert received:', alertData);
-                        
-                        // Display the alert
-                        showAlert(alertData);
+                        // Try to play Heygen video for this event; fallback to text alert
+                        const played = playHeygenVideoForEvent(eventType);
+                        if (!played) {
+                            showAlert(alertData);
+                        }
                     }
                 });
             }, (error) => {
@@ -394,6 +480,73 @@
                 unsubscribeEvents = [];
             }
             unsubscribeEvents.push(unsubscribe);
+        }
+
+        // Play a random preloaded Heygen video for the given event type
+        function playHeygenVideoForEvent(eventType) {
+            const items = eventVideoCache.get(eventType) || [];
+            if (!items.length) {
+                console.log(`No Heygen videos cached for event type: ${eventType}`);
+                return false;
+            }
+
+            const randomIndex = Math.floor(Math.random() * items.length);
+            const selected = items[randomIndex];
+
+            const overlay = document.getElementById('videoOverlay');
+            // Clear any existing video
+            overlay.innerHTML = '';
+
+            // Use preloaded element if available (clone to keep cache warm)
+            const preloadedList = preloadedVideoElements.get(eventType) || [];
+            const preloadedEntry = preloadedList.find(x => x.url === selected.videoUrl);
+            const video = document.createElement('video');
+            video.src = selected.videoUrl;
+            video.autoplay = true;
+            video.controls = false;
+            video.playsInline = true;
+            video.muted = false; // attempt to play with sound in OBS
+            video.style.maxWidth = '90vw';
+            video.style.maxHeight = '90vh';
+            video.style.borderRadius = '12px';
+            video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
+            video.style.pointerEvents = 'none';
+
+            // Fallback: if autoplay with sound blocked, retry muted
+            const tryPlay = async () => {
+                try {
+                    await video.play();
+                } catch (err) {
+                    console.warn('Autoplay blocked, retrying muted', err);
+                    try {
+                        video.muted = true;
+                        await video.play();
+                    } catch (err2) {
+                        console.error('Video play failed', err2);
+                    }
+                }
+            };
+
+            overlay.appendChild(video);
+            // If we had a preloaded element, help the browser by priming with currentTime
+            if (preloadedEntry?.el?.readyState >= 2) {
+                // do nothing special; browser cache should already be warm
+            }
+            // Remove when finished or on error
+            const cleanupVideo = () => {
+                if (video && video.parentNode) {
+                    video.parentNode.removeChild(video);
+                }
+            };
+            video.addEventListener('ended', cleanupVideo, { once: true });
+            video.addEventListener('error', () => {
+                console.error('Error during video playback for', eventType, selected.videoUrl);
+                cleanupVideo();
+            }, { once: true });
+
+            // Start playback
+            tryPlay();
+            return true;
         }
 
         // Display alert on screen
@@ -494,8 +647,11 @@
                 eventType: eventType,
                 eventData: eventData
             };
-            
-            showAlert(testData);
+            // Try to play Heygen video for this event type first; fallback to text alert
+            const played = playHeygenVideoForEvent(eventType);
+            if (!played) {
+                showAlert(testData);
+            }
         };
 
         // Helper function to show usage instructions

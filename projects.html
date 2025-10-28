@@ -1274,11 +1274,13 @@
                 await updateDoc(projectRef, {
                     heygenVideoId: newId,
                     videoUrl: videoUrl,
+                    heygenVideoData: data, // Store the full API response
                     updatedAt: new Date()
                 });
 
                 project.heygenVideoId = newId;
                 project.videoUrl = videoUrl;
+                project.heygenVideoData = data; // Update local project data
 
                 const display = document.getElementById(`heygenid-display-${projectId}`);
                 if (display) display.textContent = newId || '—';

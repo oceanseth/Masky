@@ -245,13 +245,93 @@ exports.handler = async (event, context) => {
                     isBase64Encoded: false
                 };
                 const response = await twitchInitializer.handleOAuthCallback(callbackEvent);
-                return {
-                    ...response,
-                    headers: {
-                        ...headers,
-                        'Content-Type': 'application/json'
+                
+                // Check if this is a popup request (has popup parameter or referer)
+                const isPopup = params.get('popup') === 'true' || 
+                               (event.headers && event.headers.Referer && event.headers.Referer.includes('popup'));
+                
+                if (isPopup) {
+                    // Return HTML page that closes popup and communicates with parent
+                    const htmlResponse = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Twitch OAuth</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: #f0f0f0;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .loading { color: #007bff; }
+    </style>
+</head>
+<body>
+    <div id="status" class="loading">Processing Twitch authentication...</div>
+    <script>
+        (function() {
+            try {
+                const response = ${JSON.stringify(response)};
+                
+                if (response.statusCode === 200) {
+                    // Success - send message to parent and close popup
+                    if (window.opener) {
+                        window.opener.postMessage({
+                            type: 'TWITCH_OAUTH_SUCCESS',
+                            user: response.body ? JSON.parse(response.body) : null
+                        }, window.location.origin);
                     }
-                };
+                    document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! Closing window...</div>';
+                    setTimeout(() => window.close(), 1000);
+                } else {
+                    // Error - send error message to parent
+                    const errorData = response.body ? JSON.parse(response.body) : { error: 'Unknown error' };
+                    if (window.opener) {
+                        window.opener.postMessage({
+                            type: 'TWITCH_OAUTH_ERROR',
+                            error: errorData.error || 'Authentication failed'
+                        }, window.location.origin);
+                    }
+                    document.getElementById('status').innerHTML = '<div class="error">✗ Authentication failed: ' + (errorData.error || 'Unknown error') + '</div>';
+                    setTimeout(() => window.close(), 3000);
+                }
+            } catch (err) {
+                console.error('Popup error:', err);
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'TWITCH_OAUTH_ERROR',
+                        error: err.message
+                    }, window.location.origin);
+                }
+                document.getElementById('status').innerHTML = '<div class="error">✗ Error: ' + err.message + '</div>';
+                setTimeout(() => window.close(), 3000);
+            }
+        })();
+    </script>
+</body>
+</html>`;
+                    
+                    return {
+                        statusCode: 200,
+                        headers: {
+                            ...headers,
+                            'Content-Type': 'text/html'
+                        },
+                        body: htmlResponse
+                    };
+                } else {
+                    // Regular API response for non-popup requests
+                    return {
+                        ...response,
+                        headers: {
+                            ...headers,
+                            'Content-Type': 'application/json'
+                        }
+                    };
+                }
             }
 
             // No recognizable params - return helpful message for GET requests

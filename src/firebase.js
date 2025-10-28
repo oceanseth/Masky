@@ -44,7 +44,7 @@ const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 
 /**
- * Sign in with Twitch using custom OAuth flow
+ * Sign in with Twitch using legacy OAuth flow
  */
 export async function signInWithTwitch() {
   try {
@@ -56,7 +56,7 @@ export async function signInWithTwitch() {
     const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
     authUrl.searchParams.append('client_id', config.twitch.clientId);
     authUrl.searchParams.append('redirect_uri', config.twitch.redirectUri);
-    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('response_type', 'token'); // Use token response type for legacy flow
     authUrl.searchParams.append('scope', config.twitch.scopes.join(' '));
     authUrl.searchParams.append('state', state);
     
@@ -69,13 +69,14 @@ export async function signInWithTwitch() {
 }
 
 /**
- * Handle OAuth callback from Twitch
+ * Handle OAuth callback from Twitch (legacy flow)
  * This should be called on the callback page
  */
 export async function handleTwitchCallback() {
   try {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
+    // For legacy flow, the access token comes in the URL fragment, not query params
+    const urlParams = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = urlParams.get('access_token');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
     
@@ -84,8 +85,8 @@ export async function handleTwitchCallback() {
       throw new Error(`Twitch OAuth error: ${error}`);
     }
     
-    if (!code) {
-      throw new Error('No authorization code received');
+    if (!accessToken) {
+      throw new Error('No access token received');
     }
     
     // Verify state to prevent CSRF
@@ -97,15 +98,14 @@ export async function handleTwitchCallback() {
     // Clear the saved state
     sessionStorage.removeItem('twitch_oauth_state');
     
-    // Exchange code for Firebase token via our backend
-    const response = await fetch(`${config.api.baseUrl}/api/twitch_oauth_callback`, {
+    // Send access token to our backend for Firebase token exchange
+    const response = await fetch(`${config.api.baseUrl}/api/twitch_oauth`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        code,
-        redirectUri: config.twitch.redirectUri 
+        accessToken
       })
     });
     

@@ -509,7 +509,7 @@ class TwitchInitializer {
         client_secret: clientSecret,
         code: code,
         grant_type: 'authorization_code',
-        redirect_uri: redirectUri || 'https://masky.ai/auth/callback'
+        redirect_uri: redirectUri || 'https://masky.ai/api/twitch_oauth'
       });
 
       const url = require('url');

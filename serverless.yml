@@ -48,34 +48,26 @@ provider:
       - 'application/octet-stream'
 
 package:
-  patterns:
-    - '!.git/**'
-    - '!.github/**'
-    - '!dist/**'
-    - '!src/**'
-    - '!iac/**'
-    - '!index.html'
-    - '!vite.config.js'
-    - '!*.md'
-    - '!*.bat'
-    - '!*.txt'
-    - '!**/*.map'
-    - '!**/*.d.ts'
-    - '!node_modules/**'
-    - '!TWITCH_OAUTH_SETUP.md'
-    - '!ENV_SETUP.txt'
-    - '!tortoise_env/**'
-    - '!public/**'
-    - '!assets/**'
-    - '!requirements.txt'
-    - '!test*.js'
-    - '!test*.py'
-    - '!*.json'
-    - 'api/**'
-    - 'utils/**'
-    - 'node_modules/firebase-admin/**'
-    - 'node_modules/stripe/**'
-    - 'node_modules/aws-sdk/**'
+  individually: true
+  excludeDevDependencies: true
+
+plugins:
+  - serverless-esbuild
+  - serverless-prune-plugin
+
+custom:
+  esbuild:
+    bundle: true
+    minify: true
+    sourcemap: false
+    target: node18
+    platform: node
+    concurrency: 10
+    external: []
+    exclude: []
+  prune:
+    automatic: true
+    number: 3
 
 functions:
   api:

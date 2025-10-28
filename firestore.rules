@@ -30,9 +30,15 @@ service cloud.firestore {
       match /events/{eventType} {
         allow read, write: if isOwner(userId);
         
+        // Allow public read access for Twitch events (for overlay)
+        allow read: if eventType.matches('twitch_.*');
+        
         // Event alerts subcollection
         match /alerts/{alertId} {
           allow read, write: if isOwner(userId);
+          
+          // Allow public read access for Twitch event alerts (for overlay)
+          allow read: if eventType.matches('twitch_.*');
         }
       }
     }
@@ -46,6 +52,10 @@ service cloud.firestore {
       // Allow create only if user is setting themselves as the owner
       allow create: if isAuthenticated() && 
         request.resource.data.userId == request.auth.uid;
+      
+      // Allow public read access for active Twitch projects (for overlay)
+      allow read: if resource.data.twitchSubscription == true && 
+        resource.data.platform == 'twitch';
     }
     
     // Voices collection - users can only access their own voices

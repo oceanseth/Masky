@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test OAuth Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <h1>OAuth Fix Test</h1>
+    
+    <div class="test-section">
+        <h3>Test 1: URL Fragment Detection</h3>
+        <p>This tests if the wizard can detect OAuth callbacks in URL fragments (access_token).</p>
+        <button class="test-button" onclick="testFragmentDetection()">Test Fragment Detection</button>
+        <div id="fragmentResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 2: Query Parameter Detection</h3>
+        <p>This tests if the wizard can detect OAuth callbacks in query parameters (code).</p>
+        <button class="test-button" onclick="testQueryDetection()">Test Query Detection</button>
+        <div id="queryResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 3: Session Storage State</h3>
+        <p>This tests if the wizard can properly save and restore state from session storage.</p>
+        <button class="test-button" onclick="testSessionStorage()">Test Session Storage</button>
+        <div id="sessionResult" class="result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 4: Simulate OAuth Callback</h3>
+        <p>This simulates a complete OAuth callback flow.</p>
+        <button class="test-button" onclick="simulateOAuthCallback()">Simulate OAuth Callback</button>
+        <div id="oauthResult" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Mock the project wizard methods for testing
+        class MockProjectWizard {
+            constructor() {
+                this.wizardId = `wizard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                this.currentStep = 4;
+                this.projectData = {
+                    platform: 'twitch',
+                    projectName: 'Test Project',
+                    eventType: 'channel.follow'
+                };
+            }
+
+            checkForOAuthResume() {
+                // Check for Twitch OAuth callback in URL fragment (access_token)
+                const urlFragment = window.location.hash.substring(1);
+                const fragmentParams = new URLSearchParams(urlFragment);
+                const hasAccessToken = fragmentParams.has('access_token');
+                
+                // Check for traditional OAuth callback in query params (code)
+                const urlParams = new URLSearchParams(window.location.search);
+                const hasOAuthCode = urlParams.has('code') && urlParams.has('state');
+                
+                const savedState = sessionStorage.getItem('projectWizardState');
+                
+                // Resume if we have saved state and either OAuth callback type
+                if (savedState && (hasAccessToken || hasOAuthCode)) {
+                    try {
+                        const state = JSON.parse(savedState);
+                        if (state.wizardId === this.wizardId) {
+                            console.log('Resuming wizard from OAuth callback');
+                            
+                            // Restore wizard state
+                            this.currentStep = state.currentStep;
+                            this.projectData = { ...this.projectData, ...state.projectData };
+                            
+                            return {
+                                success: true,
+                                message: 'OAuth callback detected and wizard state restored',
+                                hasAccessToken,
+                                hasOAuthCode,
+                                restoredStep: this.currentStep
+                            };
+                        }
+                    } catch (error) {
+                        console.error('Error restoring wizard state:', error);
+                        return {
+                            success: false,
+                            message: 'Error restoring wizard state: ' + error.message
+                        };
+                    }
+                }
+                
+                return {
+                    success: false,
+                    message: 'No OAuth callback detected or no saved state found',
+                    hasAccessToken,
+                    hasOAuthCode,
+                    hasSavedState: !!savedState
+                };
+            }
+        }
+
+        function showResult(elementId, result) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${result.success ? 'success' : 'error'}`;
+            element.innerHTML = `
+                <strong>${result.success ? '✓ Success' : '✗ Failed'}:</strong> ${result.message}
+                ${result.hasAccessToken !== undefined ? `<br><strong>Has Access Token:</strong> ${result.hasAccessToken}` : ''}
+                ${result.hasOAuthCode !== undefined ? `<br><strong>Has OAuth Code:</strong> ${result.hasOAuthCode}` : ''}
+                ${result.hasSavedState !== undefined ? `<br><strong>Has Saved State:</strong> ${result.hasSavedState}` : ''}
+                ${result.restoredStep !== undefined ? `<br><strong>Restored Step:</strong> ${result.restoredStep}` : ''}
+            `;
+        }
+
+        function testFragmentDetection() {
+            // Simulate URL with access token in fragment
+            const originalHash = window.location.hash;
+            window.location.hash = '#access_token=test_token&state=test_state&token_type=bearer';
+            
+            const wizard = new MockProjectWizard();
+            const result = wizard.checkForOAuthResume();
+            
+            // Restore original hash
+            window.location.hash = originalHash;
+            
+            showResult('fragmentResult', result);
+        }
+
+        function testQueryDetection() {
+            // Simulate URL with code in query parameters
+            const originalSearch = window.location.search;
+            const originalHash = window.location.hash;
+            
+            // Create a temporary URL with query parameters
+            const url = new URL(window.location);
+            url.search = '?code=test_code&state=test_state';
+            url.hash = '';
+            
+            // Temporarily replace the location
+            const originalLocation = window.location;
+            Object.defineProperty(window, 'location', {
+                value: url,
+                writable: true
+            });
+            
+            const wizard = new MockProjectWizard();
+            const result = wizard.checkForOAuthResume();
+            
+            // Restore original location
+            Object.defineProperty(window, 'location', {
+                value: originalLocation,
+                writable: true
+            });
+            
+            showResult('queryResult', result);
+        }
+
+        function testSessionStorage() {
+            const wizard = new MockProjectWizard();
+            
+            // Save state to session storage
+            sessionStorage.setItem('projectWizardState', JSON.stringify({
+                currentStep: 4,
+                projectData: wizard.projectData,
+                wizardId: wizard.wizardId
+            }));
+            
+            // Test detection
+            const result = wizard.checkForOAuthResume();
+            
+            // Clean up
+            sessionStorage.removeItem('projectWizardState');
+            
+            showResult('sessionResult', result);
+        }
+
+        function simulateOAuthCallback() {
+            const wizard = new MockProjectWizard();
+            
+            // Save state to session storage
+            sessionStorage.setItem('projectWizardState', JSON.stringify({
+                currentStep: 4,
+                projectData: wizard.projectData,
+                wizardId: wizard.wizardId
+            }));
+            
+            // Simulate OAuth callback with access token
+            const originalHash = window.location.hash;
+            window.location.hash = '#access_token=test_token_123&state=test_state&token_type=bearer';
+            
+            const result = wizard.checkForOAuthResume();
+            
+            // Restore original hash
+            window.location.hash = originalHash;
+            
+            // Clean up
+            sessionStorage.removeItem('projectWizardState');
+            
+            showResult('oauthResult', result);
+        }
+
+        // Show current URL info
+        document.addEventListener('DOMContentLoaded', function() {
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'test-section';
+            infoDiv.innerHTML = `
+                <h3>Current URL Info</h3>
+                <p><strong>Current URL:</strong> ${window.location.href}</p>
+                <p><strong>Hash:</strong> ${window.location.hash || '(empty)'}</p>
+                <p><strong>Search:</strong> ${window.location.search || '(empty)'}</p>
+                <p><strong>Session Storage Keys:</strong> ${Object.keys(sessionStorage).join(', ') || '(empty)'}</p>
+            `;
+            document.body.insertBefore(infoDiv, document.body.firstChild);
+        });
+    </script>
+</body>
+</html>

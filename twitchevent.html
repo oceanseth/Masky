@@ -467,7 +467,7 @@
                         const alertData = change.doc.data();
                         console.log('New alert received:', alertData);
                         // Try to play Heygen video for this event; fallback to text alert
-                        const played = playHeygenVideoForEvent(eventType);
+                        const played = playHeygenVideoForEvent(eventType, alertData.eventData);
                         if (!played) {
                             showAlert(alertData);
                         }
@@ -485,7 +485,7 @@
         }
 
         // Play a random preloaded Heygen video for the given event type
-        function playHeygenVideoForEvent(eventType) {
+        function playHeygenVideoForEvent(eventType, eventData = null) {
             const items = eventVideoCache.get(eventType) || [];
             if (!items.length) {
                 console.log(`No Heygen videos cached for event type: ${eventType}`);
@@ -498,6 +498,25 @@
             const overlay = document.getElementById('videoOverlay');
             // Clear any existing video
             overlay.innerHTML = '';
+
+            // Get the configuration for this event type
+            const config = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
+            
+            // Skip if disabled
+            if (!config.enabled) {
+                console.log(`Video playback disabled for event type: ${eventType}`);
+                return false;
+            }
+
+            // Create video container
+            const videoContainer = document.createElement('div');
+            videoContainer.style.position = 'relative';
+            videoContainer.style.display = 'flex';
+            videoContainer.style.flexDirection = 'column';
+            videoContainer.style.alignItems = 'center';
+            videoContainer.style.justifyContent = 'center';
+            videoContainer.style.maxWidth = '90vw';
+            videoContainer.style.maxHeight = '90vh';
 
             // Use preloaded element if available (clone to keep cache warm)
             const preloadedList = preloadedVideoElements.get(eventType) || [];
@@ -514,6 +533,53 @@
             video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
             video.style.pointerEvents = 'none';
 
+            // Create text message overlay
+            let messageElement = null;
+            if (config.message && eventData) {
+                // Build message from template
+                let message = config.message;
+                
+                // Replace placeholders with actual data
+                message = message.replace('{username}', eventData.user_name || eventData.from_broadcaster_user_name || 'Someone');
+                
+                // Handle event-specific placeholders
+                if (eventType === 'channel.cheer') {
+                    message = message.replace('{bits}', eventData.bits || '0');
+                } else if (eventType === 'channel.raid') {
+                    message = message.replace('{viewers}', eventData.viewers || '0');
+                }
+
+                messageElement = document.createElement('div');
+                messageElement.textContent = message;
+                messageElement.style.cssText = `
+                    position: absolute;
+                    background: ${config.backgroundColor};
+                    color: ${config.textColor};
+                    font-size: ${config.fontSize};
+                    font-weight: ${config.fontWeight};
+                    padding: 1rem 2rem;
+                    border-radius: 12px;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+                    text-align: center;
+                    font-family: 'Orbitron', sans-serif;
+                    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+                    z-index: 10;
+                    max-width: 80%;
+                    word-wrap: break-word;
+                    white-space: normal;
+                    pointer-events: none;
+                `;
+
+                // Position the message
+                if (config.position === 'top') {
+                    messageElement.style.top = '10px';
+                    messageElement.style.bottom = 'auto';
+                } else {
+                    messageElement.style.top = 'auto';
+                    messageElement.style.bottom = '10px';
+                }
+            }
+
             // Fallback: if autoplay with sound blocked, retry muted
             const tryPlay = async () => {
                 try {
@@ -529,17 +595,31 @@
                 }
             };
 
-            overlay.appendChild(video);
+            // Assemble the video container
+            if (messageElement && config.position === 'top') {
+                videoContainer.appendChild(messageElement);
+                videoContainer.appendChild(video);
+            } else {
+                videoContainer.appendChild(video);
+                if (messageElement) {
+                    videoContainer.appendChild(messageElement);
+                }
+            }
+
+            overlay.appendChild(videoContainer);
+
             // If we had a preloaded element, help the browser by priming with currentTime
             if (preloadedEntry?.el?.readyState >= 2) {
                 // do nothing special; browser cache should already be warm
             }
+            
             // Remove when finished or on error
             const cleanupVideo = () => {
-                if (video && video.parentNode) {
-                    video.parentNode.removeChild(video);
+                if (videoContainer && videoContainer.parentNode) {
+                    videoContainer.parentNode.removeChild(videoContainer);
                 }
             };
+            
             video.addEventListener('ended', cleanupVideo, { once: true });
             video.addEventListener('error', () => {
                 console.error('Error during video playback for', eventType, selected.videoUrl);
@@ -650,7 +730,7 @@
                 eventData: eventData
             };
             // Try to play Heygen video for this event type first; fallback to text alert
-            const played = playHeygenVideoForEvent(eventType);
+            const played = playHeygenVideoForEvent(eventType, eventData);
             if (!played) {
                 showAlert(testData);
             }

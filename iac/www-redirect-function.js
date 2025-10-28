@@ -3,8 +3,19 @@ function handler(event) {
     var headers = request.headers;
     var host = headers.host.value;
     
-    // If the host is www.masky.ai, redirect to masky.ai
+    // Redirect www.masky.ai to masky.ai
     if (host === 'www.masky.ai') {
+        return {
+            statusCode: 301,
+            statusDescription: 'Moved Permanently',
+            headers: {
+                'location': { value: 'https://masky.ai' + request.uri }
+            }
+        };
+    }
+    
+    // Redirect any masky.net hostnames to masky.ai
+    if (host === 'www.masky.net' || host === 'masky.net') {
         return {
             statusCode: 301,
             statusDescription: 'Moved Permanently',

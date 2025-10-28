@@ -773,6 +773,11 @@
             <div class="projects-header">
                 <h1 class="projects-title">Your Projects</h1>
                 <p class="projects-subtitle">Manage and edit your AI-powered stream alerts</p>
+                <p class="projects-subtitle" style="margin-top: 0.5rem; color: rgba(255,255,255,0.75);">Active projects will play on your OBS browser source URL when configured events fire</p>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.25rem;">
+                    <small id="obsUrlText" style="color: rgba(255,255,255,0.6);"></small>
+                    <button class="btn btn-secondary" onclick="copyObsUrl()" title="Copy URL" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">📋</button>
+                </div>
                 <div class="projects-actions">
                     <button class="btn btn-primary" onclick="createNewProject()">
                         <span>+</span> Create New
@@ -845,6 +850,11 @@
             onAuthChange((user) => {
                 updateHeaderAuthState(user);
                 if (user) {
+                    // Set OBS browser source URL text
+                    const obsUrlEl = document.getElementById('obsUrlText');
+                    if (obsUrlEl) {
+                        obsUrlEl.textContent = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                    }
                     loadProjects();
                 } else {
                     // Redirect to home if not logged in
@@ -1093,9 +1103,29 @@
             }
         }
 
+        // Expose video helpers for inline handlers (module scripts are not global by default)
+        window.playVideoPreview = playVideoPreview;
+        window.updateVideoDuration = updateVideoDuration;
+        window.showVideoLoading = showVideoLoading;
+        window.hideVideoLoading = hideVideoLoading;
+        window.showVideoError = showVideoError;
+
         // Create new project
         window.createNewProject = function() {
             showProjectWizardModal();
+        };
+
+        // Copy OBS browser source URL
+        window.copyObsUrl = function() {
+            const user = getCurrentUser();
+            if (user && user.uid) {
+                const url = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('OBS Browser Source URL copied to clipboard!');
+                });
+            } else {
+                alert('Please log in to copy your OBS Browser Source URL');
+            }
         };
 
         // Edit existing project
@@ -1354,36 +1384,23 @@
                 const user = getCurrentUser();
                 if (!user) return;
 
-                const idToken = await user.getIdToken();
-                
-                // Update the project with new alert configuration
-                const updatedProjectData = {
-                    ...currentProjectForAlerts,
+                // Save directly to Firestore
+                const { db, doc, updateDoc } = await import('/src/firebase.js');
+                const projectRef = doc(db, 'projects', currentProjectForAlerts.projectId);
+                await updateDoc(projectRef, {
                     alertConfig: alertConfigs,
-                    updatedAt: new Date().toISOString()
-                };
-
-                const response = await fetch(`${config.api.baseUrl}/api/save-project`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updatedProjectData)
+                    updatedAt: new Date()
                 });
 
-                if (response.ok) {
-                    // Update local projects array
-                    const projectIndex = projects.findIndex(p => p.projectId === currentProjectForAlerts.projectId);
-                    if (projectIndex !== -1) {
-                        projects[projectIndex].alertConfig = alertConfigs;
-                    }
-                    
-                    alert('Alert messages saved successfully!');
-                    closeAlertMessagesModal();
-                } else {
-                    throw new Error('Failed to save alert messages');
+                // Update local projects array
+                const projectIndex = projects.findIndex(p => p.projectId === currentProjectForAlerts.projectId);
+                if (projectIndex !== -1) {
+                    projects[projectIndex].alertConfig = alertConfigs;
+                    projects[projectIndex].updatedAt = new Date();
                 }
+                
+                alert('Alert messages saved successfully!');
+                closeAlertMessagesModal();
             } catch (error) {
                 console.error('Error saving alert messages:', error);
                 alert('Error saving alert messages: ' + error.message);

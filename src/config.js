@@ -4,7 +4,7 @@ export const config = {
   // Twitch OAuth Configuration
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
-    redirectUri: window.location,
+    redirectUri: window.location.origin + window.location.pathname,
     scopes: ['user:read:email', 'channel:manage:videos', 'user:read:broadcast', 'moderator:read:followers']
   },
   

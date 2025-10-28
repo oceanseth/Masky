@@ -54,6 +54,7 @@ class ProjectWizard {
             ...options
         };
         
+        this.wizardId = `wizard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         this.currentStep = 1;
         this.projectData = this.options.projectData || {
             platform: '',
@@ -310,12 +311,19 @@ class ProjectWizard {
      * Check if we're resuming from OAuth callback
      */
     checkForOAuthResume() {
-        // Check if we just handled an OAuth callback (URL has no query params)
+        // Check for Twitch OAuth callback in URL fragment (access_token)
+        const urlFragment = window.location.hash.substring(1);
+        const fragmentParams = new URLSearchParams(urlFragment);
+        const hasAccessToken = fragmentParams.has('access_token');
+        
+        // Check for traditional OAuth callback in query params (code)
         const urlParams = new URLSearchParams(window.location.search);
-        const hasOAuthParams = urlParams.has('code') && urlParams.has('state');
+        const hasOAuthCode = urlParams.has('code') && urlParams.has('state');
         
         const savedState = sessionStorage.getItem('projectWizardState');
-        if (savedState && !hasOAuthParams) {
+        
+        // Resume if we have saved state and either OAuth callback type
+        if (savedState && (hasAccessToken || hasOAuthCode)) {
             try {
                 const state = JSON.parse(savedState);
                 if (state.wizardId === this.wizardId) {
@@ -332,17 +340,58 @@ class ProjectWizard {
                     // Clear the saved state
                     sessionStorage.removeItem('projectWizardState');
                     
-                    // If we were on step 4 (Twitch connection), try to connect again
+                    // If we were on step 4 (Twitch connection), handle the OAuth callback
                     if (this.currentStep === 4) {
-                        setTimeout(() => {
-                            this.connectToTwitch();
-                        }, 1000); // Give a moment for auth state to update
+                        if (hasAccessToken) {
+                            // Handle Twitch OAuth callback with access token
+                            this.handleTwitchOAuthCallback();
+                        } else {
+                            // Handle other OAuth callbacks
+                            setTimeout(() => {
+                                this.connectToTwitch();
+                            }, 1000);
+                        }
                     }
                 }
             } catch (error) {
                 console.error('Error restoring wizard state:', error);
                 sessionStorage.removeItem('projectWizardState');
             }
+        }
+    }
+
+    /**
+     * Handle Twitch OAuth callback with access token
+     */
+    async handleTwitchOAuthCallback() {
+        try {
+            console.log('Handling Twitch OAuth callback');
+            
+            // Import the handleTwitchCallback function from firebase.js
+            const { handleTwitchCallback } = await import('./firebase.js');
+            
+            // Handle the OAuth callback
+            await handleTwitchCallback();
+            
+            // Clean up the URL to remove the access token
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            // Now try to connect to Twitch again
+            setTimeout(() => {
+                this.connectToTwitch();
+            }, 1000);
+            
+        } catch (error) {
+            console.error('Error handling Twitch OAuth callback:', error);
+            
+            // Show error in the connection UI
+            const connectionStatus = document.getElementById('connectionStatus');
+            const connectionError = document.getElementById('connectionError');
+            const errorMessage = document.querySelector('.error-message');
+            
+            if (connectionStatus) connectionStatus.style.display = 'none';
+            if (connectionError) connectionError.style.display = 'block';
+            if (errorMessage) errorMessage.textContent = error.message;
         }
     }
 

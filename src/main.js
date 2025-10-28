@@ -465,16 +465,16 @@ document.getElementById('authModal').addEventListener('click', function(e) {
 renderAlerts();
 
 
-// Check if this is an OAuth callback
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.has('code') && urlParams.has('state')) {
+// Check if this is an OAuth callback (legacy flow with access token in fragment)
+const urlParams = new URLSearchParams(window.location.hash.substring(1));
+if (urlParams.has('access_token') && urlParams.has('state')) {
   // This is a Twitch OAuth callback
   handleTwitchCallback().then(() => {
     // Callback handled successfully, user will be signed in via onAuthChange
     console.log('Successfully authenticated with Twitch');
     
-    // Clear the URL parameters to prevent infinite callback handling
-    const newUrl = window.location.pathname + window.location.hash;
+    // Clear the URL fragment to prevent infinite callback handling
+    const newUrl = window.location.pathname + window.location.search;
     window.history.replaceState({}, document.title, newUrl);
   }).catch((error) => {
     console.error('Failed to handle Twitch callback:', error);

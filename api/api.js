@@ -210,6 +210,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Save project endpoint
+    if (path.includes('/save-project') && method === 'POST') {
+        const response = await saveProject(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Debug endpoint to test Stripe connection
     if (path.includes('/debug/stripe') && method === 'GET') {
         const response = await debugStripeConnection(event);
@@ -1053,6 +1065,120 @@ async function debugStripeConnection(event) {
                 error: 'Stripe connection failed',
                 message: error.message,
                 stripeConnected: false
+            })
+        };
+    }
+}
+
+/**
+ * Save project to Firestore
+ */
+async function saveProject(event) {
+    try {
+        console.log('Saving project...');
+        
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        // Verify the token
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { 
+            platform, 
+            projectName, 
+            eventType, 
+            voiceUrl, 
+            voiceId,
+            voiceName,
+            avatarFile, 
+            avatarUrl,
+            videoUrl,
+            alertConfig,
+            twitchSubscription 
+        } = body;
+
+        if (!platform || !projectName || !eventType) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing required fields: platform, projectName, and eventType are required' })
+            };
+        }
+
+        // Ensure user ID matches the authenticated user
+        if (body.userId !== userId) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'User ID mismatch' })
+            };
+        }
+
+        const db = admin.firestore();
+        
+        // Prepare project data
+        const projectData = {
+            userId: userId,
+            platform: platform,
+            projectName: projectName,
+            eventType: eventType,
+            voiceUrl: voiceUrl || null,
+            voiceId: voiceId || null,
+            voiceName: voiceName || null,
+            avatarFile: avatarFile || null,
+            avatarUrl: avatarUrl || null,
+            videoUrl: videoUrl || null,
+            alertConfig: alertConfig || {},
+            twitchSubscription: twitchSubscription || null,
+            isActive: true, // Set project as active by default
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Save project to Firestore
+        const projectRef = await db.collection('projects').add(projectData);
+        const projectId = projectRef.id;
+
+        console.log(`Project saved successfully with ID: ${projectId}`);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                projectId: projectId,
+                message: 'Project saved successfully'
+            })
+        };
+
+    } catch (error) {
+        console.error('Error saving project:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to save project',
+                message: error.message 
             })
         };
     }

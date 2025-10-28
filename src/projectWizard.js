@@ -1653,6 +1653,7 @@ class ProjectWizard {
                 body: JSON.stringify({
                     ...this.projectData,
                     userId: user.uid,
+                    isActive: true,
                     createdAt: new Date().toISOString()
                 })
             });

@@ -30,14 +30,23 @@
         /* Alert overlay container */
         .alert-overlay {
             position: fixed;
-            top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translateX(-50%);
             pointer-events: none;
             z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
         }
 
-        /* Follow alert message */
+        /* Custom alert message styles */
+        .custom-alert {
+            transform: translateY(0);
+            transition: all 0.3s ease;
+        }
+
+        /* Legacy follow alert for backward compatibility */
         .follow-alert {
             background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%);
             color: white;
@@ -52,6 +61,28 @@
             white-space: nowrap;
             font-family: 'Orbitron', sans-serif;
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes alertSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes alertSlideOut {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.9);
+            }
         }
 
         @keyframes fadeIn {
@@ -225,6 +256,9 @@
         // Cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
 
+        // Store project configurations for alert customization
+        let projectConfigs = new Map();
+
         // Load user's active projects from Firestore
         async function loadUserProjects() {
             if (!currentUserId) return;
@@ -252,11 +286,27 @@
                     return;
                 }
 
+                // Store project configurations
+                snapshot.docs.forEach(doc => {
+                    const projectData = doc.data();
+                    const eventType = projectData.eventType;
+                    
+                    // Store the alert configuration for this event type
+                    if (projectData.alertConfig && projectData.alertConfig[eventType]) {
+                        projectConfigs.set(eventType, projectData.alertConfig[eventType]);
+                        console.log(`Loaded alert config for ${eventType}:`, projectData.alertConfig[eventType]);
+                    } else {
+                        // Fallback to default configuration
+                        projectConfigs.set(eventType, getDefaultAlertConfig(eventType));
+                    }
+                });
+
                 // Get event types to listen for
                 const eventTypes = [...new Set(snapshot.docs.map(doc => doc.data().eventType))];
                 console.log('Active projects found:', snapshot.size);
                 console.log('Event types to monitor:', eventTypes);
                 console.log('User ID from hash:', currentUserId);
+                console.log('Project configurations loaded:', projectConfigs.size);
 
                 // Set up listeners for each event type
                 for (const eventType of eventTypes) {
@@ -267,6 +317,54 @@
                 console.error('Error loading projects:', error);
                 throw error;
             }
+        }
+
+        // Get default alert configuration for an event type
+        function getDefaultAlertConfig(eventType) {
+            const defaults = {
+                'channel.follow': {
+                    enabled: true,
+                    message: '{username} just followed!',
+                    backgroundColor: '#c084fc',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.subscribe': {
+                    enabled: true,
+                    message: '{username} just subscribed!',
+                    backgroundColor: '#22c55e',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.cheer': {
+                    enabled: true,
+                    message: '{username} cheered {bits} bits!',
+                    backgroundColor: '#f59e0b',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.raid': {
+                    enabled: true,
+                    message: '{username} is raiding with {viewers} viewers!',
+                    backgroundColor: '#ef4444',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                }
+            };
+            
+            return defaults[eventType] || defaults['channel.follow'];
         }
 
         // Set up real-time listener for specific event type
@@ -302,56 +400,101 @@
         function showAlert(alertData) {
             const { eventType, eventData } = alertData;
             
-            let message = '';
+            // Get the configuration for this event type
+            const config = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
             
-            // Handle different event types
-            switch (eventType) {
-                case 'channel.follow':
-                    const followerName = eventData.user_name || 'Someone';
-                    message = `${followerName} just followed!`;
-                    break;
-                
-                default:
-                    const userName = eventData.user_name || eventData.from_broadcaster_user_name || 'Someone';
-                    message = `${userName} just triggered ${eventType}!`;
-                    break;
+            // Skip if disabled
+            if (!config.enabled) {
+                console.log(`Alert disabled for event type: ${eventType}`);
+                return;
             }
+            
+            // Build message from template
+            let message = config.message;
+            
+            // Replace placeholders with actual data
+            message = message.replace('{username}', eventData.user_name || eventData.from_broadcaster_user_name || 'Someone');
+            
+            // Handle event-specific placeholders
+            if (eventType === 'channel.cheer') {
+                message = message.replace('{bits}', eventData.bits || '0');
+            } else if (eventType === 'channel.raid') {
+                message = message.replace('{viewers}', eventData.viewers || '0');
+            }
+
+            console.log(`Showing alert: ${message} (${eventType})`);
 
             // Create alert element
             const alertOverlay = document.getElementById('alertOverlay');
             const alertElement = document.createElement('div');
-            alertElement.className = 'follow-alert';
+            
+            // Apply custom styling
+            alertElement.className = 'custom-alert';
             alertElement.textContent = message;
+            alertElement.style.cssText = `
+                background: ${config.backgroundColor};
+                color: ${config.textColor};
+                font-size: ${config.fontSize};
+                font-weight: ${config.fontWeight};
+                padding: 1.5rem 2.5rem;
+                border-radius: 16px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                text-align: center;
+                animation: alertSlideIn 0.5s ease-out, alertSlideOut 0.5s ease-in ${config.duration - 500}ms;
+                opacity: 1;
+                white-space: nowrap;
+                font-family: 'Orbitron', sans-serif;
+                text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+                position: relative;
+                z-index: 1000;
+                max-width: 90vw;
+                word-wrap: break-word;
+                white-space: normal;
+            `;
+            
+            // Position the alert
+            if (config.position === 'top') {
+                alertOverlay.style.top = '10%';
+                alertOverlay.style.bottom = 'auto';
+            } else {
+                alertOverlay.style.top = 'auto';
+                alertOverlay.style.bottom = '10%';
+            }
             
             // Clear any existing alerts
             alertOverlay.innerHTML = '';
             alertOverlay.appendChild(alertElement);
             
-            // Remove alert after animation completes (5s fade in + 5s visible + 5s fade out = 15s total)
+            // Remove alert after specified duration
             setTimeout(() => {
-                alertElement.style.transition = 'opacity 0.3s ease-out';
-                alertElement.style.opacity = '0';
-                
-                // Remove from DOM after transition
-                setTimeout(() => {
-                    if (alertElement.parentNode) {
-                        alertElement.parentNode.removeChild(alertElement);
-                    }
-                }, 300);
-            }, 15000);
+                if (alertElement.parentNode) {
+                    alertElement.parentNode.removeChild(alertElement);
+                }
+            }, config.duration);
         }
 
         // Expose functions to window for console access
-        window.showTestAlert = function(name = 'TestUser') {
-            console.log('Testing alert with name:', name);
-            const testData = {
-                eventType: 'channel.follow',
-                eventData: {
-                    user_name: name,
-                    user_id: '123456',
-                    broadcaster_user_id: '11867613'
-                }
+        window.showTestAlert = function(name = 'TestUser', eventType = 'channel.follow') {
+            console.log(`Testing alert with name: ${name}, event: ${eventType}`);
+            
+            let eventData = {
+                user_name: name,
+                user_id: '123456',
+                broadcaster_user_id: '11867613'
             };
+            
+            // Add event-specific data
+            if (eventType === 'channel.cheer') {
+                eventData.bits = Math.floor(Math.random() * 1000) + 1;
+            } else if (eventType === 'channel.raid') {
+                eventData.viewers = Math.floor(Math.random() * 100) + 1;
+            }
+            
+            const testData = {
+                eventType: eventType,
+                eventData: eventData
+            };
+            
             showAlert(testData);
         };
 
@@ -366,8 +509,24 @@
             console.log('================================');
         };
 
+        // Test all event types
+        window.testAllAlerts = function(name = 'TestUser') {
+            const eventTypes = ['channel.follow', 'channel.subscribe', 'channel.cheer', 'channel.raid'];
+            eventTypes.forEach((eventType, index) => {
+                setTimeout(() => {
+                    window.showTestAlert(name, eventType);
+                }, index * 3000); // 3 second delay between each alert
+            });
+        };
+
         console.log('Twitch Event Overlay initialized');
         console.log('Using hashtag-based user identification - no login required');
+        console.log('Available test functions:');
+        console.log('  showTestAlert("YourName") - Test a follow alert');
+        console.log('  showTestAlert("YourName", "channel.subscribe") - Test a subscription alert');
+        console.log('  showTestAlert("YourName", "channel.cheer") - Test a cheer alert');
+        console.log('  showTestAlert("YourName", "channel.raid") - Test a raid alert');
+        console.log('  testAllAlerts("YourName") - Test all alert types sequentially');
         console.log('Call showUsageInstructions() for usage details');
         console.log('Call testAlert("YourName") in the console to test an alert');
     </script>

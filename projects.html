@@ -279,6 +279,126 @@
             font-size: 0.9rem;
         }
 
+        /* Video Preview Styles */
+        .project-video-preview {
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .video-thumbnail-container {
+            position: relative;
+            aspect-ratio: 16/9;
+            background: #1a1a1a;
+            overflow: hidden;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+
+        .video-thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .video-thumbnail-container:hover .video-thumbnail {
+            transform: scale(1.05);
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .video-overlay:hover {
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .play-button {
+            font-size: 3rem;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        .video-overlay:hover .play-button {
+            transform: scale(1.1);
+        }
+
+        .video-duration {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .video-placeholder {
+            aspect-ratio: 16/9;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .placeholder-icon {
+            font-size: 2rem;
+            opacity: 0.6;
+        }
+
+        .placeholder-text {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        .video-loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            z-index: 2;
+        }
+
+        .loading-spinner {
+            font-size: 2rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 0.9rem;
+        }
+
         .empty-state {
             text-align: center;
             padding: 4rem 2rem;
@@ -383,6 +503,229 @@
             .project-actions {
                 flex-direction: column;
             }
+
+            .play-button {
+                font-size: 2rem;
+            }
+
+            .video-duration {
+                bottom: 4px;
+                right: 4px;
+                padding: 2px 6px;
+                font-size: 0.7rem;
+            }
+        }
+
+        /* Alert Messages Modal Styles */
+        .alert-messages-modal {
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        .modal-header h2 {
+            color: white;
+            margin-bottom: 0.5rem;
+            font-size: 1.5rem;
+        }
+
+        .modal-header p {
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+        }
+
+        .modal-body {
+            margin-bottom: 2rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .event-configs {
+            margin-bottom: 2rem;
+        }
+
+        .event-config {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .event-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .event-header h3 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: white;
+            margin: 0;
+            flex: 1;
+        }
+
+        .event-icon {
+            font-size: 1.5rem;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            display: none;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #c084fc;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+
+        .event-settings {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .setting-group {
+            margin-bottom: 1rem;
+        }
+
+        .setting-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .setting-group small {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+            display: block;
+        }
+
+        .setting-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .setting-group input[type="color"] {
+            width: 60px;
+            height: 40px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: none;
+        }
+
+        .setting-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .setting-group select option {
+            background: #1a1a1a;
+            color: white;
+        }
+
+        .setting-group input[type="range"] {
+            width: calc(100% - 50px);
+            margin-right: 0.5rem;
+        }
+
+        .setting-group input[type="range"] + span {
+            color: #c084fc;
+            font-weight: 600;
+            min-width: 40px;
+            display: inline-block;
+        }
+
+        .preview-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .preview-section h3 {
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .alert-preview {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 1rem 0;
+            position: relative;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview-message {
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-family: 'Orbitron', sans-serif;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
         }
     </style>
 </head>
@@ -451,6 +794,33 @@
         <div class="modal-content">
             <button class="modal-close" onclick="closeProjectWizard()">×</button>
             <div id="projectWizardContainer"></div>
+        </div>
+    </div>
+
+    <!-- Alert Messages Modal -->
+    <div class="modal" id="alertMessagesModal">
+        <div class="modal-content alert-messages-modal">
+            <button class="modal-close" onclick="closeAlertMessagesModal()">×</button>
+            <div class="modal-header">
+                <h2>Configure Alert Messages</h2>
+                <p>Customize the messages that appear with your AI avatar for different Twitch events.</p>
+            </div>
+            <div class="modal-body">
+                <div class="event-configs" id="modalEventConfigs">
+                    <!-- Event configurations will be rendered here -->
+                </div>
+                
+                <div class="preview-section">
+                    <h3>Preview</h3>
+                    <div class="alert-preview" id="modalAlertPreview">
+                        <div class="preview-message" id="modalPreviewMessage">TestUser just followed!</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeAlertMessagesModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveAlertMessages()">Save Changes</button>
+            </div>
         </div>
     </div>
 
@@ -562,6 +932,36 @@
                         </div>
                     </div>
                     
+                    <!-- Video Preview Section -->
+                    <div class="project-video-preview">
+                        ${project.videoUrl ? 
+                            `<div class="video-thumbnail-container">
+                                <video class="video-thumbnail" 
+                                       src="${project.videoUrl}" 
+                                       muted 
+                                       preload="metadata"
+                                       onloadedmetadata="this.currentTime = 1; updateVideoDuration(this, '${project.projectId}')"
+                                       onloadstart="showVideoLoading('${project.projectId}')"
+                                       oncanplay="hideVideoLoading('${project.projectId}')"
+                                       onerror="showVideoError('${project.projectId}')"
+                                       onclick="playVideoPreview(this)">
+                                </video>
+                                <div class="video-overlay">
+                                    <div class="play-button">▶️</div>
+                                    <div class="video-duration" id="duration-${project.projectId}"></div>
+                                </div>
+                                <div class="video-loading" id="loading-${project.projectId}" style="display: none;">
+                                    <div class="loading-spinner">⏳</div>
+                                    <div class="loading-text">Loading video...</div>
+                                </div>
+                            </div>` : 
+                            `<div class="video-placeholder">
+                                <div class="placeholder-icon">🎬</div>
+                                <div class="placeholder-text">No video created yet</div>
+                            </div>`
+                        }
+                    </div>
+                    
                     <div class="project-details">
                         <div class="project-detail">
                             <span class="project-detail-label">Event Type:</span>
@@ -580,6 +980,9 @@
                     <div class="project-actions">
                         <button class="btn btn-primary" onclick="editProject('${project.projectId}')">
                             <span>✏️</span> Edit
+                        </button>
+                        <button class="btn btn-secondary" onclick="editAlertMessages('${project.projectId}')">
+                            <span>💬</span> Alert Messages
                         </button>
                         <button class="btn btn-secondary" onclick="viewProject('${project.projectId}')">
                             <span>👁️</span> View
@@ -623,6 +1026,73 @@
             return date.toLocaleDateString();
         }
 
+        // Video preview functions
+        function playVideoPreview(video) {
+            const overlay = video.nextElementSibling;
+            
+            if (video.paused) {
+                video.play();
+                overlay.style.opacity = '0';
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                }, 300);
+                
+                // Show overlay when video ends
+                video.onended = () => {
+                    overlay.style.display = 'flex';
+                    overlay.style.opacity = '1';
+                    video.currentTime = 0;
+                };
+            } else {
+                video.pause();
+                overlay.style.display = 'flex';
+                overlay.style.opacity = '1';
+            }
+        }
+
+        // Format video duration
+        function formatVideoDuration(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        // Update video duration when metadata loads
+        function updateVideoDuration(video, projectId) {
+            const durationElement = document.getElementById(`duration-${projectId}`);
+            if (durationElement && video.duration) {
+                durationElement.textContent = formatVideoDuration(video.duration);
+            }
+        }
+
+        // Show video loading state
+        function showVideoLoading(projectId) {
+            const loading = document.getElementById(`loading-${projectId}`);
+            if (loading) {
+                loading.style.display = 'flex';
+            }
+        }
+
+        // Hide video loading state
+        function hideVideoLoading(projectId) {
+            const loading = document.getElementById(`loading-${projectId}`);
+            if (loading) {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Show video error state
+        function showVideoError(projectId) {
+            const loading = document.getElementById(`loading-${projectId}`);
+            if (loading) {
+                loading.innerHTML = `
+                    <div class="error-icon">❌</div>
+                    <div class="error-text">Failed to load video</div>
+                `;
+                loading.style.display = 'flex';
+            }
+        }
+
         // Create new project
         window.createNewProject = function() {
             showProjectWizardModal();
@@ -661,6 +1131,264 @@
             }
         };
 
+        // Alert Messages Modal Functions
+        let currentProjectForAlerts = null;
+        let alertConfigs = {};
+
+        // Edit alert messages for a project
+        window.editAlertMessages = function(projectId) {
+            const project = projects.find(p => p.projectId === projectId);
+            if (!project) return;
+
+            currentProjectForAlerts = project;
+            
+            // Initialize alert configs with project data or defaults
+            alertConfigs = project.alertConfig || getDefaultAlertConfigs();
+            
+            // Show modal and render configurations
+            showAlertMessagesModal();
+            renderAlertConfigurations();
+            updateAlertPreview();
+        };
+
+        // Show alert messages modal
+        function showAlertMessagesModal() {
+            document.getElementById('alertMessagesModal').style.display = 'block';
+        }
+
+        // Close alert messages modal
+        window.closeAlertMessagesModal = function() {
+            document.getElementById('alertMessagesModal').style.display = 'none';
+            currentProjectForAlerts = null;
+            alertConfigs = {};
+        };
+
+        // Get default alert configurations
+        function getDefaultAlertConfigs() {
+            return {
+                'channel.follow': {
+                    enabled: true,
+                    message: '{username} just followed!',
+                    backgroundColor: '#c084fc',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.subscribe': {
+                    enabled: true,
+                    message: '{username} just subscribed!',
+                    backgroundColor: '#22c55e',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.cheer': {
+                    enabled: true,
+                    message: '{username} cheered {bits} bits!',
+                    backgroundColor: '#f59e0b',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
+                'channel.raid': {
+                    enabled: true,
+                    message: '{username} is raiding with {viewers} viewers!',
+                    backgroundColor: '#ef4444',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                }
+            };
+        }
+
+        // Render alert configurations
+        function renderAlertConfigurations() {
+            const eventConfigs = document.getElementById('modalEventConfigs');
+            if (!eventConfigs) return;
+            
+            const eventTypes = [
+                { key: 'channel.follow', label: 'Follows', icon: '👤' },
+                { key: 'channel.subscribe', label: 'Subscriptions', icon: '⭐' },
+                { key: 'channel.cheer', label: 'Cheers/Bits', icon: '💎' },
+                { key: 'channel.raid', label: 'Raids', icon: '⚔️' }
+            ];
+            
+            eventConfigs.innerHTML = eventTypes.map(eventType => {
+                const config = alertConfigs[eventType.key];
+                return `
+                    <div class="event-config" data-event-type="${eventType.key}">
+                        <div class="event-header">
+                            <h3><span class="event-icon">${eventType.icon}</span> ${eventType.label}</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" ${config.enabled ? 'checked' : ''} 
+                                       onchange="toggleEventConfig('${eventType.key}', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="event-settings" ${!config.enabled ? 'style="display: none;"' : ''}>
+                            <div class="setting-group">
+                                <label>Message Template:</label>
+                                <input type="text" class="form-input" value="${config.message}" 
+                                       onchange="updateEventConfig('${eventType.key}', 'message', this.value)"
+                                       placeholder="Use {username}, {bits}, {viewers} as placeholders">
+                                <small>Available placeholders: {username}${eventType.key === 'channel.cheer' ? ', {bits}' : ''}${eventType.key === 'channel.raid' ? ', {viewers}' : ''}</small>
+                            </div>
+                            
+                            <div class="setting-row">
+                                <div class="setting-group">
+                                    <label>Background Color:</label>
+                                    <input type="color" value="${config.backgroundColor}" 
+                                           onchange="updateEventConfig('${eventType.key}', 'backgroundColor', this.value)">
+                                </div>
+                                
+                                <div class="setting-group">
+                                    <label>Text Color:</label>
+                                    <input type="color" value="${config.textColor}" 
+                                           onchange="updateEventConfig('${eventType.key}', 'textColor', this.value)">
+                                </div>
+                            </div>
+                            
+                            <div class="setting-row">
+                                <div class="setting-group">
+                                    <label>Font Size:</label>
+                                    <select onchange="updateEventConfig('${eventType.key}', 'fontSize', this.value)">
+                                        <option value="1.5rem" ${config.fontSize === '1.5rem' ? 'selected' : ''}>Small</option>
+                                        <option value="2rem" ${config.fontSize === '2rem' ? 'selected' : ''}>Medium</option>
+                                        <option value="2.5rem" ${config.fontSize === '2.5rem' ? 'selected' : ''}>Large</option>
+                                        <option value="3rem" ${config.fontSize === '3rem' ? 'selected' : ''}>Extra Large</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="setting-group">
+                                    <label>Position:</label>
+                                    <select onchange="updateEventConfig('${eventType.key}', 'position', this.value)">
+                                        <option value="top" ${config.position === 'top' ? 'selected' : ''}>Above Video</option>
+                                        <option value="bottom" ${config.position === 'bottom' ? 'selected' : ''}>Below Video</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="setting-group">
+                                <label>Duration (seconds):</label>
+                                <input type="range" min="2" max="10" value="${config.duration / 1000}" 
+                                       onchange="updateEventConfig('${eventType.key}', 'duration', this.value * 1000); updateDurationDisplay('${eventType.key}', this.value)">
+                                <span id="duration-${eventType.key}">${config.duration / 1000}s</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Toggle event configuration enabled/disabled
+        window.toggleEventConfig = function(eventType, enabled) {
+            alertConfigs[eventType].enabled = enabled;
+            
+            // Show/hide settings
+            const eventConfig = document.querySelector(`[data-event-type="${eventType}"]`);
+            const settings = eventConfig.querySelector('.event-settings');
+            if (settings) {
+                settings.style.display = enabled ? 'block' : 'none';
+            }
+            
+            updateAlertPreview();
+        };
+
+        // Update event configuration property
+        window.updateEventConfig = function(eventType, property, value) {
+            alertConfigs[eventType][property] = value;
+            updateAlertPreview();
+        };
+
+        // Update duration display
+        window.updateDurationDisplay = function(eventType, value) {
+            const durationSpan = document.getElementById(`duration-${eventType}`);
+            if (durationSpan) {
+                durationSpan.textContent = `${value}s`;
+            }
+        };
+
+        // Update alert preview
+        function updateAlertPreview() {
+            const previewMessage = document.getElementById('modalPreviewMessage');
+            if (!previewMessage) return;
+            
+            // Use the current project's event type for preview
+            const currentEventType = currentProjectForAlerts?.eventType || 'channel.follow';
+            const config = alertConfigs[currentEventType];
+            
+            if (!config.enabled) {
+                previewMessage.textContent = 'Message disabled for this event type';
+                previewMessage.style.backgroundColor = '#666';
+                previewMessage.style.color = '#ccc';
+                return;
+            }
+            
+            // Replace placeholders with sample data
+            let message = config.message;
+            message = message.replace('{username}', 'TestUser');
+            message = message.replace('{bits}', '100');
+            message = message.replace('{viewers}', '25');
+            
+            previewMessage.textContent = message;
+            previewMessage.style.backgroundColor = config.backgroundColor;
+            previewMessage.style.color = config.textColor;
+            previewMessage.style.fontSize = config.fontSize;
+            previewMessage.style.fontWeight = config.fontWeight;
+        }
+
+        // Save alert messages
+        window.saveAlertMessages = async function() {
+            if (!currentProjectForAlerts) return;
+
+            try {
+                const user = getCurrentUser();
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                
+                // Update the project with new alert configuration
+                const updatedProjectData = {
+                    ...currentProjectForAlerts,
+                    alertConfig: alertConfigs,
+                    updatedAt: new Date().toISOString()
+                };
+
+                const response = await fetch(`${config.api.baseUrl}/api/save-project`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updatedProjectData)
+                });
+
+                if (response.ok) {
+                    // Update local projects array
+                    const projectIndex = projects.findIndex(p => p.projectId === currentProjectForAlerts.projectId);
+                    if (projectIndex !== -1) {
+                        projects[projectIndex].alertConfig = alertConfigs;
+                    }
+                    
+                    alert('Alert messages saved successfully!');
+                    closeAlertMessagesModal();
+                } else {
+                    throw new Error('Failed to save alert messages');
+                }
+            } catch (error) {
+                console.error('Error saving alert messages:', error);
+                alert('Error saving alert messages: ' + error.message);
+            }
+        };
 
         // Toggle project status
         window.toggleProjectStatus = async function(projectId, isActive) {
@@ -773,6 +1501,13 @@
         document.getElementById('projectWizardModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeProjectWizard();
+            }
+        });
+
+        // Close alert messages modal on outside click
+        document.getElementById('alertMessagesModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeAlertMessagesModal();
             }
         });
     </script>

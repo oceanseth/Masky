@@ -1601,25 +1601,19 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            const idToken = await user.getIdToken();
-            const response = await fetch(`${config.api.baseUrl}/api/save-video-url`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${idToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    projectId: this.projectData.projectId,
-                    videoUrl: videoUrl.value.trim()
-                })
+            // Save directly to Firestore
+            const { db, doc, updateDoc } = await import('./firebase.js');
+            if (!this.projectData.projectId) {
+                throw new Error('Project ID missing. Save the project first.');
+            }
+            const projectRef = doc(db, 'projects', this.projectData.projectId);
+            await updateDoc(projectRef, {
+                videoUrl: videoUrl.value.trim(),
+                updatedAt: new Date()
             });
 
-            if (response.ok) {
-                this.projectData.videoUrl = videoUrl.value.trim();
-                console.log('Video URL saved');
-            } else {
-                throw new Error('Failed to save video URL');
-            }
+            this.projectData.videoUrl = videoUrl.value.trim();
+            console.log('Video URL saved directly to Firestore');
         } catch (error) {
             console.error('Error saving video URL:', error);
             alert('Error saving video URL: ' + error.message);
@@ -1643,45 +1637,44 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            const idToken = await user.getIdToken();
-            const response = await fetch(`${config.api.baseUrl}/api/save-project`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${idToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    ...this.projectData,
-                    userId: user.uid,
-                    createdAt: new Date().toISOString()
-                })
-            });
+            // Create project directly in Firestore
+            const { db, addDoc, collection } = await import('./firebase.js');
+            const projectData = {
+                userId: user.uid,
+                platform: this.projectData.platform,
+                projectName: this.projectData.projectName,
+                eventType: this.projectData.eventType,
+                voiceUrl: this.projectData.voiceUrl || null,
+                voiceId: this.projectData.voiceId || null,
+                voiceName: this.projectData.voiceName || null,
+                avatarFile: this.projectData.avatarFile || null,
+                avatarUrl: this.projectData.avatarUrl || null,
+                videoUrl: this.projectData.videoUrl || null,
+                alertConfig: this.projectData.alertConfig || {},
+                twitchSubscription: this.projectData.twitchSubscription || null,
+                isActive: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
 
-            if (response.ok) {
-                const result = await response.json();
-                this.projectData.projectId = result.projectId;
-                
-                // Update the project URL with the user's UID (not project ID)
-                const projectUrl = document.getElementById('projectUrl');
-                const projectUrlInput = document.getElementById('projectUrlInput');
-                if (projectUrl && projectUrlInput) {
-                    const projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
-                    projectUrlInput.value = projectUrlValue;
-                    projectUrl.style.display = 'block';
-                }
-                
-                // The Twitch subscription is already included in the project data
-                // No additional association needed
-                
-                // Call completion callback
-                if (this.options.onComplete) {
-                    this.options.onComplete(this.projectData);
-                }
-                
-                alert('Project saved successfully!');
-            } else {
-                throw new Error('Failed to save project');
+            const projectsRef = collection(db, 'projects');
+            const createdRef = await addDoc(projectsRef, projectData);
+            this.projectData.projectId = createdRef.id;
+
+            // Update the project URL with the user's UID (not project ID)
+            const projectUrl = document.getElementById('projectUrl');
+            const projectUrlInput = document.getElementById('projectUrlInput');
+            if (projectUrl && projectUrlInput) {
+                const projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                projectUrlInput.value = projectUrlValue;
+                projectUrl.style.display = 'block';
             }
+
+            if (this.options.onComplete) {
+                this.options.onComplete(this.projectData);
+            }
+
+            alert('Project saved successfully!');
         } catch (error) {
             console.error('Error finishing wizard:', error);
             alert('Error creating project: ' + error.message);

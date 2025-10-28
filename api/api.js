@@ -7,6 +7,7 @@ const s3 = new AWS.S3({
 const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
+const heygen = require('../utils/heygen');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
 const handleTwitchOAuth = async (event) => {
@@ -133,6 +134,36 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Heygen proxy: video_status.get
+    if (path.includes('/heygen/video_status.get') && method === 'GET') {
+        try {
+            const url = new URL(event.rawUrl || `${event.headers.origin || 'https://masky.ai'}${path}${event.rawQueryString ? ('?' + event.rawQueryString) : ''}`);
+            const videoId = url.searchParams.get('video_id') || event.queryStringParameters?.video_id;
+            if (!videoId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing video_id' })
+                };
+            }
+            const data = await heygen.getVideoStatus(videoId);
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            };
+        } catch (err) {
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: 'Heygen proxy failed', message: err.message })
+            };
+        }
+    }
+
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
         const response = await handleTwitchOAuth(event);
@@ -210,6 +241,8 @@ exports.handler = async (event, context) => {
         };
     }
 
+    
+
     // Debug endpoint to test Stripe connection
     if (path.includes('/debug/stripe') && method === 'GET') {
         const response = await debugStripeConnection(event);
@@ -246,17 +279,7 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // Save project endpoint
-    if (path.includes('/save-project') && method === 'POST') {
-        const response = await saveProject(event);
-        return {
-            ...response,
-            headers: {
-                ...headers,
-                'Content-Type': 'application/json'
-            }
-        };
-    }
+    
 
     // Default response for unmatched routes
     return {
@@ -266,81 +289,7 @@ exports.handler = async (event, context) => {
     };
 }
 
-/**
- * Save project to Firestore
- */
-async function saveProject(event) {
-    try {
-        // Verify Firebase token
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return {
-                statusCode: 401,
-                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
-            };
-        }
-
-        const idToken = authHeader.split('Bearer ')[1];
-        await firebaseInitializer.initialize();
-        const admin = require('firebase-admin');
-        
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const userId = decodedToken.uid;
-
-        // Parse request body
-        let body;
-        if (typeof event.body === 'string') {
-            let bodyString = event.body;
-            if (event.isBase64Encoded) {
-                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
-            }
-            body = JSON.parse(bodyString || '{}');
-        } else {
-            body = event.body || {};
-        }
-
-        // Generate a unique project ID using the user's UID and timestamp
-        const projectId = `${userId}_${Date.now()}`;
-
-        // Prepare project data
-        const projectData = {
-            projectId: projectId,
-            userId: userId,
-            platform: body.platform,
-            projectName: body.projectName,
-            eventType: body.eventType,
-            voiceFile: body.voiceFile,
-            avatarFile: body.avatarFile,
-            twitchSubscription: body.twitchSubscription,
-            videoUrl: body.videoUrl,
-            createdAt: body.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        };
-
-        // Save to Firestore
-        const db = admin.firestore();
-        await db.collection('projects').doc(projectId).set(projectData);
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-                success: true, 
-                projectId: projectId,
-                message: 'Project saved successfully' 
-            })
-        };
-
-    } catch (error) {
-        console.error('Error saving project:', error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ 
-                error: 'Failed to save project',
-                message: error.message 
-            })
-        };
-    }
-}
+    
 
 /**
  * Get subscription status for a user
@@ -1057,3 +1006,5 @@ async function debugStripeConnection(event) {
         };
     }
 }
+
+    

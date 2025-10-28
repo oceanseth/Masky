@@ -20,6 +20,7 @@ provider:
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/twitch_client_secret  
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/stripe_secret_key
             - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/stripe_webhook_secret
+            - arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/masky/${self:provider.stage}/heygen_api_key
         - Effect: Allow
           Action:
             - kms:Decrypt
@@ -58,6 +59,9 @@ package:
     - '!*.md'
     - '!*.bat'
     - '!*.txt'
+    - '!**/*.map'
+    - '!**/*.d.ts'
+    - '!node_modules/**'
     - '!TWITCH_OAUTH_SETUP.md'
     - '!ENV_SETUP.txt'
     - '!tortoise_env/**'
@@ -70,7 +74,6 @@ package:
     - 'api/**'
     - 'utils/**'
     - 'node_modules/firebase-admin/**'
-    - 'node_modules/firebase/**'
     - 'node_modules/stripe/**'
     - 'node_modules/aws-sdk/**'
 

@@ -12,7 +12,8 @@ export default defineConfig({
       input: {
         main: './index.html',
         membership: './membership.html',
-        twitchevent: './twitchevent.html'
+        twitchevent: './twitchevent.html',
+        projects: './projects.html'
       }
     }
   },

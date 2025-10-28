@@ -195,7 +195,7 @@ Once deployed, update your Stripe webhook endpoint URL:
 1. Go to Stripe Dashboard → **Developers** → **Webhooks**
 2. Click on your webhook endpoint
 3. Update the URL to your production API endpoint
-4. Example: `https://api.masky.net/api/stripe/webhook`
+4. Example: `https://api.masky.ai/api/stripe/webhook`
 
 ## Testing
 
@@ -278,8 +278,8 @@ Create Stripe checkout session
 ```json
 {
   "tier": "standard",
-  "successUrl": "https://masky.net/membership.html?success=true",
-  "cancelUrl": "https://masky.net/membership.html?canceled=true"
+  "successUrl": "https://masky.ai/membership.html?success=true",
+  "cancelUrl": "https://masky.ai/membership.html?canceled=true"
 }
 ```
 - **Response**:
@@ -310,7 +310,7 @@ Create Stripe customer portal session
 - **Body**:
 ```json
 {
-  "returnUrl": "https://masky.net/membership.html"
+  "returnUrl": "https://masky.ai/membership.html"
 }
 ```
 - **Response**:

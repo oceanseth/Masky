@@ -768,7 +768,7 @@ async function createPortalSession(event) {
         // Create portal session
         const session = await stripe.billingPortal.sessions.create({
             customer: stripeCustomerId,
-            return_url: returnUrl || event.headers.origin || 'https://masky.net'
+            return_url: returnUrl || event.headers.origin || 'https://masky.ai'
         });
 
         return {

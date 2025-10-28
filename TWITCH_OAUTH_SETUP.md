@@ -27,7 +27,7 @@ Your application now uses a **custom OAuth flow** for Twitch authentication inst
 1. Go to https://dev.twitch.tv/console/apps
 2. Select your existing app or create a new one
 3. Add OAuth Redirect URLs:
-   - **Production**: `https://masky.net/auth/callback`
+   - **Production**: `https://masky.ai/auth/callback`
    - **Local Dev**: `http://localhost:5173/auth/callback`
    - **Any other environments you use**
 4. Copy your **Client ID** (you'll need this next)
@@ -117,7 +117,7 @@ aws cloudfront create-invalidation \
    - CSRF state token is stored in sessionStorage
 
 2. **User authorizes the app on Twitch**
-   - Twitch redirects back to `https://masky.net/auth/callback?code=xxx&state=yyy`
+   - Twitch redirects back to `https://masky.ai/auth/callback?code=xxx&state=yyy`
 
 3. **App receives callback**
    - `main.js` detects the `code` and `state` parameters
@@ -153,7 +153,7 @@ aws cloudfront create-invalidation \
 
 ### Production Testing
 
-1. Visit https://masky.net
+1. Visit https://masky.ai
 2. Click "Sign in with Twitch"
 3. Authorize the app
 4. You should be signed in and see the dashboard
@@ -161,7 +161,7 @@ aws cloudfront create-invalidation \
 ## Troubleshooting
 
 ### Error: "Invalid redirect URI"
-- **Solution**: Make sure the redirect URI in your Twitch app settings exactly matches `https://masky.net/auth/callback`
+- **Solution**: Make sure the redirect URI in your Twitch app settings exactly matches `https://masky.ai/auth/callback`
 
 ### Error: "Invalid state parameter"
 - **Solution**: This is CSRF protection. Clear your browser's sessionStorage and try again.

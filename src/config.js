@@ -11,7 +11,7 @@ export const config = {
   // API Configuration  
   api: {
     // Use direct API Gateway to bypass CloudFront (which is still deploying updated config)
-    baseUrl: 'https://masky.net'
+    baseUrl: 'https://masky.ai'
   },
   stripe: {
     // Stripe Price IDs (not Product IDs)

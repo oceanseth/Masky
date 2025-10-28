@@ -270,7 +270,7 @@ class TwitchInitializer {
           condition,
           transport: {
             method: 'webhook',
-            callback: 'https://masky.net/api/twitch-webhook',
+            callback: 'https://masky.ai/api/twitch-webhook',
             secret: clientSecret
           }
         };
@@ -509,7 +509,7 @@ class TwitchInitializer {
         client_secret: clientSecret,
         code: code,
         grant_type: 'authorization_code',
-        redirect_uri: redirectUri || 'https://masky.net/auth/callback'
+        redirect_uri: redirectUri || 'https://masky.ai/auth/callback'
       });
 
       const url = require('url');

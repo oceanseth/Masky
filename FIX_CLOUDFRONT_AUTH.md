@@ -10,7 +10,7 @@ CloudFront is not forwarding the `Authorization` header to your API Gateway/Lamb
 1. **Go to AWS CloudFront Console**
    - https://console.aws.amazon.com/cloudfront/
 
-2. **Find your distribution** (the one serving masky.net)
+2. **Find your distribution** (the one serving masky.ai)
 
 3. **Click on the distribution ID**
 
@@ -76,7 +76,7 @@ After CloudFront finishes deploying (5-10 minutes):
 const user = firebase.auth().currentUser;
 const token = await user.getIdToken();
 
-fetch('https://masky.net/api/subscription/status', {
+fetch('https://masky.ai/api/subscription/status', {
   headers: {
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
@@ -120,7 +120,7 @@ This bypasses CloudFront and sends requests directly to API Gateway, which will 
 serverless info --stage production
 
 # Check if you have CloudFront
-aws cloudfront list-distributions --query "DistributionList.Items[?Aliases.Items[?contains(@, 'masky.net')]].{ID:Id,Domain:DomainName,Status:Status}" --output table
+aws cloudfront list-distributions --query "DistributionList.Items[?Aliases.Items[?contains(@, 'masky.ai')]].{ID:Id,Domain:DomainName,Status:Status}" --output table
 ```
 
 ## Current Issue Summary

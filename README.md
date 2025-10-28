@@ -67,7 +67,7 @@ VITE_TWITCH_CLIENT_ID=your_twitch_client_id_here
 1. Go to [Twitch Developer Console](https://dev.twitch.tv/console/apps)
 2. Create a new application or select existing one
 3. Add OAuth Redirect URLs:
-   - For production: `https://masky.net/auth/callback`
+   - For production: `https://masky.ai/auth/callback`
    - For local dev: `http://localhost:5173/auth/callback`
 4. Copy the Client ID and paste it in your `.env` file
 5. Copy the Client Secret and store it in AWS SSM (see below)

@@ -246,13 +246,19 @@ exports.handler = async (event, context) => {
                 };
                 const response = await twitchInitializer.handleOAuthCallback(callbackEvent);
                 
-                // Check if this is a popup request (has popup parameter or referer)
-                const isPopup = params.get('popup') === 'true' || 
-                               (event.headers && event.headers.Referer && event.headers.Referer.includes('popup'));
+                // For GET requests with code parameter, always return HTML popup response
+                // since this endpoint is only used for popup OAuth flow
+                console.log('OAuth callback received:', {
+                    code: !!code,
+                    popupParam: params.get('popup'),
+                    headers: event.headers,
+                    referer: event.headers?.Referer || event.headers?.referer,
+                    allParams: Object.fromEntries(params.entries())
+                });
                 
-                if (isPopup) {
-                    // Return HTML page that closes popup and communicates with parent
-                    const htmlResponse = `
+                // Always return HTML for popup OAuth flow
+                // Return HTML page that closes popup and communicates with parent
+                const htmlResponse = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -278,25 +284,53 @@ exports.handler = async (event, context) => {
                 
                 if (response.statusCode === 200) {
                     // Success - send message to parent and close popup
+                    console.log('Processing successful OAuth response:', response);
+                    
                     if (window.opener) {
-                        window.opener.postMessage({
-                            type: 'TWITCH_OAUTH_SUCCESS',
-                            user: response.body ? JSON.parse(response.body) : null
-                        }, window.location.origin);
+                        try {
+                            const userData = response.body ? JSON.parse(response.body) : null;
+                            const message = {
+                                type: 'TWITCH_OAUTH_SUCCESS',
+                                user: userData
+                            };
+                            
+                            console.log('Sending success message to parent:', message);
+                            console.log('Target origin:', window.location.origin);
+                            console.log('Window opener exists:', !!window.opener);
+                            
+                            window.opener.postMessage(message, window.location.origin);
+                            console.log('Success message sent to parent');
+                        } catch (e) {
+                            console.error('Error sending success message:', e);
+                        }
+                    } else {
+                        console.error('No window.opener found - popup may have been opened incorrectly');
                     }
                     document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! Closing window...</div>';
-                    setTimeout(() => window.close(), 1000);
+                    // Give more time for the message to be received
+                    setTimeout(() => {
+                        console.log('Closing popup window');
+                        window.close();
+                    }, 2000);
                 } else {
                     // Error - send error message to parent
                     const errorData = response.body ? JSON.parse(response.body) : { error: 'Unknown error' };
                     if (window.opener) {
-                        window.opener.postMessage({
-                            type: 'TWITCH_OAUTH_ERROR',
-                            error: errorData.error || 'Authentication failed'
-                        }, window.location.origin);
+                        try {
+                            window.opener.postMessage({
+                                type: 'TWITCH_OAUTH_ERROR',
+                                error: errorData.error || 'Authentication failed'
+                            }, window.location.origin);
+                            console.log('Error message sent to parent:', errorData.error);
+                        } catch (e) {
+                            console.error('Error sending error message:', e);
+                        }
                     }
                     document.getElementById('status').innerHTML = '<div class="error">✗ Authentication failed: ' + (errorData.error || 'Unknown error') + '</div>';
-                    setTimeout(() => window.close(), 3000);
+                    setTimeout(() => {
+                        console.log('Closing popup window after error');
+                        window.close();
+                    }, 3000);
                 }
             } catch (err) {
                 console.error('Popup error:', err);
@@ -313,25 +347,15 @@ exports.handler = async (event, context) => {
     </script>
 </body>
 </html>`;
-                    
-                    return {
-                        statusCode: 200,
-                        headers: {
-                            ...headers,
-                            'Content-Type': 'text/html'
-                        },
-                        body: htmlResponse
-                    };
-                } else {
-                    // Regular API response for non-popup requests
-                    return {
-                        ...response,
-                        headers: {
-                            ...headers,
-                            'Content-Type': 'application/json'
-                        }
-                    };
-                }
+                
+                return {
+                    statusCode: 200,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'text/html'
+                    },
+                    body: htmlResponse
+                };
             }
 
             // No recognizable params - return helpful message for GET requests

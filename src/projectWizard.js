@@ -83,6 +83,11 @@ class ProjectWizard {
         
         // No need to check for OAuth resume with popup flow
         
+        // Add global message listener for debugging
+        window.addEventListener('message', (event) => {
+            console.log('Global message listener received:', event.data);
+        });
+        
         if (this.options.mode === 'edit' && this.projectData.projectId) {
             this.loadProjectData();
         }
@@ -951,6 +956,8 @@ class ProjectWizard {
                         `;
                     }
                     
+                    console.log('Starting Twitch popup authentication...');
+                    
                     // Sign in with Twitch using popup
                     const user = await signInWithTwitch();
                     
@@ -959,6 +966,11 @@ class ProjectWizard {
                     
                 } catch (error) {
                     console.error('Twitch authentication failed:', error);
+                    console.error('Error details:', {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    });
                     
                     // Show error in the connection UI
                     if (connectionStatus) connectionStatus.style.display = 'none';

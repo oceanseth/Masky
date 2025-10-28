@@ -77,27 +77,52 @@ export async function signInWithTwitch() {
     
     // Wait for popup to close or receive message
     return new Promise((resolve, reject) => {
+      let messageReceived = false;
+      
       const checkClosed = setInterval(() => {
-        if (popup.closed) {
+        if (popup.closed && !messageReceived) {
+          console.log('Popup was closed before receiving message');
           clearInterval(checkClosed);
           reject(new Error('OAuth popup was closed by user'));
+        } else if (popup.closed && messageReceived) {
+          console.log('Popup was closed after receiving message - this is expected');
         }
       }, 1000);
       
       // Listen for message from popup
       const messageHandler = (event) => {
-        if (event.origin !== window.location.origin) return;
+        console.log('Message received from popup:', {
+          origin: event.origin,
+          expectedOrigin: window.location.origin,
+          data: event.data,
+          type: event.data?.type
+        });
+        
+        if (event.origin !== window.location.origin) {
+          console.log('Ignoring message from different origin:', event.origin);
+          return;
+        }
         
         if (event.data.type === 'TWITCH_OAUTH_SUCCESS') {
+          console.log('Processing OAuth success message...');
+          messageReceived = true;
           clearInterval(checkClosed);
           window.removeEventListener('message', messageHandler);
-          popup.close();
+          
+          // Don't close popup here, let it close itself
+          console.log('OAuth success, resolving with user:', event.data.user);
           resolve(event.data.user);
         } else if (event.data.type === 'TWITCH_OAUTH_ERROR') {
+          console.log('Processing OAuth error message...');
+          messageReceived = true;
           clearInterval(checkClosed);
           window.removeEventListener('message', messageHandler);
-          popup.close();
+          
+          // Don't close popup here, let it close itself
+          console.log('OAuth error:', event.data.error);
           reject(new Error(event.data.error));
+        } else {
+          console.log('Unknown message type from popup:', event.data.type);
         }
       };
       
@@ -105,10 +130,12 @@ export async function signInWithTwitch() {
       
       // Timeout after 5 minutes
       setTimeout(() => {
-        clearInterval(checkClosed);
-        window.removeEventListener('message', messageHandler);
-        popup.close();
-        reject(new Error('OAuth timeout'));
+        if (!messageReceived) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', messageHandler);
+          popup.close();
+          reject(new Error('OAuth timeout'));
+        }
       }, 300000);
     });
   } catch (error) {

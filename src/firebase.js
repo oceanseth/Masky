@@ -98,8 +98,14 @@ export async function signInWithTwitch() {
           type: event.data?.type
         });
         
-        if (event.origin !== window.location.origin) {
-          console.log('Ignoring message from different origin:', event.origin);
+        // Accept messages from masky.ai domain only
+        if (event.origin !== 'https://masky.ai') {
+          console.log('Ignoring message from non-whitelisted origin:', event.origin);
+          return;
+        }
+        
+        if (!event.data || typeof event.data !== 'object' || !event.data.type) {
+          console.log('Ignoring invalid message:', event.data);
           return;
         }
         

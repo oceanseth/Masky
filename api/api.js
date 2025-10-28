@@ -298,7 +298,7 @@ exports.handler = async (event, context) => {
                             console.log('Target origin:', window.location.origin);
                             console.log('Window opener exists:', !!window.opener);
                             
-                            window.opener.postMessage(message, window.location.origin);
+                            window.opener.postMessage(message, 'https://masky.ai');
                             console.log('Success message sent to parent');
                         } catch (e) {
                             console.error('Error sending success message:', e);
@@ -320,7 +320,7 @@ exports.handler = async (event, context) => {
                             window.opener.postMessage({
                                 type: 'TWITCH_OAUTH_ERROR',
                                 error: errorData.error || 'Authentication failed'
-                            }, window.location.origin);
+                            }, 'https://masky.ai');
                             console.log('Error message sent to parent:', errorData.error);
                         } catch (e) {
                             console.error('Error sending error message:', e);
@@ -338,7 +338,7 @@ exports.handler = async (event, context) => {
                     window.opener.postMessage({
                         type: 'TWITCH_OAUTH_ERROR',
                         error: err.message
-                    }, window.location.origin);
+                    }, 'https://masky.ai');
                 }
                 document.getElementById('status').innerHTML = '<div class="error">✗ Error: ' + err.message + '</div>';
                 setTimeout(() => window.close(), 3000);

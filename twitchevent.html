@@ -437,7 +437,11 @@
                     fontSize: '2rem',
                     fontWeight: '700',
                     duration: 5000,
-                    position: 'bottom'
+                    position: 'bottom',
+                    conditions: {
+                        minimumBits: 1,
+                        maximumBits: null // null = no maximum
+                    }
                 },
                 'channel.raid': {
                     enabled: true,
@@ -447,7 +451,26 @@
                     fontSize: '2rem',
                     fontWeight: '700',
                     duration: 5000,
-                    position: 'bottom'
+                    position: 'bottom',
+                    conditions: {
+                        minimumViewers: 1,
+                        maximumViewers: null
+                    }
+                },
+                'channel.channel_points_custom_reward_redemption': {
+                    enabled: true,
+                    message: '{username} redeemed {reward} for {cost} points!',
+                    backgroundColor: '#8b5cf6',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom',
+                    conditions: {
+                        minimumCost: 5000, // Only trigger for 5000+ point redeems
+                        maximumCost: null,
+                        specificRewardIds: [] // Empty = all rewards, or specify reward IDs
+                    }
                 }
             };
             
@@ -487,6 +510,20 @@
 
         // Play a random preloaded Heygen video for the given event type
         function playHeygenVideoForEvent(eventType, eventData = null) {
+            // Get config and check conditions first
+            const eventConfig = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
+            
+            // Skip if disabled
+            if (!eventConfig.enabled) {
+                console.log(`Video alert disabled for event type: ${eventType}`);
+                return false;
+            }
+            
+            // Check if event meets conditions
+            if (eventData && !meetsConditions(eventType, eventData, eventConfig)) {
+                return false; // Conditions not met, skip video
+            }
+            
             const items = eventVideoCache.get(eventType) || [];
             if (!items.length) {
                 console.log(`No Heygen videos cached for event type: ${eventType}`);
@@ -495,6 +532,12 @@
 
             const randomIndex = Math.floor(Math.random() * items.length);
             const selected = items[randomIndex];
+            
+            console.log(`🎲 Random video selection for ${eventType}:`);
+            console.log(`  - Available videos: ${items.length}`);
+            console.log(`  - Random index: ${randomIndex}`);
+            console.log(`  - Selected project: ${selected.projectId}`);
+            console.log(`  - Video URL: ${selected.videoUrl}`);
 
             const overlay = document.getElementById('videoOverlay');
             // Clear any existing video
@@ -548,6 +591,9 @@
                     message = message.replace('{bits}', eventData.bits || '0');
                 } else if (eventType === 'channel.raid') {
                     message = message.replace('{viewers}', eventData.viewers || '0');
+                } else if (eventType === 'channel.channel_points_custom_reward_redemption') {
+                    message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
+                    message = message.replace('{cost}', eventData.reward?.cost || '0');
                 }
 
                 messageElement = document.createElement('div');
@@ -617,6 +663,68 @@
             return true;
         }
 
+        // Check if event meets the configured conditions
+        function meetsConditions(eventType, eventData, config) {
+            const conditions = config.conditions;
+            if (!conditions) return true; // No conditions = always trigger
+
+            // Check cheer bit conditions
+            if (eventType === 'channel.cheer' && eventData.bits !== undefined) {
+                const bits = parseInt(eventData.bits) || 0;
+                
+                if (conditions.minimumBits && bits < conditions.minimumBits) {
+                    console.log(`Cheer ${bits} bits below minimum ${conditions.minimumBits}, skipping alert`);
+                    return false;
+                }
+                
+                if (conditions.maximumBits && bits > conditions.maximumBits) {
+                    console.log(`Cheer ${bits} bits above maximum ${conditions.maximumBits}, skipping alert`);
+                    return false;
+                }
+            }
+            
+            // Check raid viewer conditions
+            if (eventType === 'channel.raid' && eventData.viewers !== undefined) {
+                const viewers = parseInt(eventData.viewers) || 0;
+                
+                if (conditions.minimumViewers && viewers < conditions.minimumViewers) {
+                    console.log(`Raid ${viewers} viewers below minimum ${conditions.minimumViewers}, skipping alert`);
+                    return false;
+                }
+                
+                if (conditions.maximumViewers && viewers > conditions.maximumViewers) {
+                    console.log(`Raid ${viewers} viewers above maximum ${conditions.maximumViewers}, skipping alert`);
+                    return false;
+                }
+            }
+            
+            // Check channel points conditions
+            if (eventType === 'channel.channel_points_custom_reward_redemption') {
+                const cost = parseInt(eventData.reward?.cost) || 0;
+                const rewardId = eventData.reward?.id;
+                
+                if (conditions.minimumCost && cost < conditions.minimumCost) {
+                    console.log(`Channel points ${cost} below minimum ${conditions.minimumCost}, skipping alert`);
+                    return false;
+                }
+                
+                if (conditions.maximumCost && cost > conditions.maximumCost) {
+                    console.log(`Channel points ${cost} above maximum ${conditions.maximumCost}, skipping alert`);
+                    return false;
+                }
+                
+                // Check if specific reward IDs are configured
+                if (conditions.specificRewardIds && conditions.specificRewardIds.length > 0) {
+                    if (!conditions.specificRewardIds.includes(rewardId)) {
+                        console.log(`Reward ID ${rewardId} not in allowed list, skipping alert`);
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
+        }
+
         // Display alert on screen
         function showAlert(alertData) {
             const { eventType, eventData } = alertData;
@@ -630,6 +738,11 @@
                 return;
             }
             
+            // Check if event meets conditions
+            if (!meetsConditions(eventType, eventData, config)) {
+                return; // Conditions not met, skip alert
+            }
+            
             // Build message from template
             let message = config.message;
             
@@ -641,6 +754,9 @@
                 message = message.replace('{bits}', eventData.bits || '0');
             } else if (eventType === 'channel.raid') {
                 message = message.replace('{viewers}', eventData.viewers || '0');
+            } else if (eventType === 'channel.channel_points_custom_reward_redemption') {
+                message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
+                message = message.replace('{cost}', eventData.reward?.cost || '0');
             }
 
             console.log(`Showing alert: ${message} (${eventType})`);
@@ -743,6 +859,77 @@
             });
         };
 
+        // Test random follow alerts specifically
+        window.testRandomFollows = function(name = 'TestUser', count = 5) {
+            console.log(`🎯 Testing ${count} random follow alerts...`);
+            for (let i = 0; i < count; i++) {
+                setTimeout(() => {
+                    console.log(`\n--- Random Follow Test #${i + 1} ---`);
+                    window.showTestAlert(name, 'channel.follow');
+                }, i * 2000); // 2 second delay between each test
+            }
+        };
+
+        // Test conditional cheer alerts with different bit amounts
+        window.testCheerConditions = function(name = 'TestUser') {
+            const bitAmounts = [1, 100, 1000, 5000, 10000];
+            console.log(`🎯 Testing cheer conditions with different bit amounts...`);
+            
+            bitAmounts.forEach((bits, index) => {
+                setTimeout(() => {
+                    console.log(`\n--- Testing ${bits} bits ---`);
+                    const eventData = {
+                        user_name: name,
+                        user_id: '123456',
+                        broadcaster_user_id: '11867613',
+                        bits: bits
+                    };
+                    const testData = {
+                        eventType: 'channel.cheer',
+                        eventData: eventData
+                    };
+                    
+                    // Test both video and text alert
+                    const played = playHeygenVideoForEvent('channel.cheer', eventData);
+                    if (!played) {
+                        showAlert(testData);
+                    }
+                }, index * 3000);
+            });
+        };
+
+        // Test channel points with different costs
+        window.testChannelPoints = function(name = 'TestUser') {
+            const costs = [1000, 2500, 5000, 10000, 50000];
+            console.log(`🎯 Testing channel points with different costs...`);
+            
+            costs.forEach((cost, index) => {
+                setTimeout(() => {
+                    console.log(`\n--- Testing ${cost} point reward ---`);
+                    const eventData = {
+                        user_name: name,
+                        user_id: '123456',
+                        broadcaster_user_id: '11867613',
+                        reward: {
+                            id: 'test-reward-' + cost,
+                            title: `${cost} Point Reward`,
+                            cost: cost
+                        }
+                    };
+                    const testData = {
+                        eventType: 'channel.channel_points_custom_reward_redemption',
+                        eventData: eventData
+                    };
+                    
+                    // Test both video and text alert
+                    const played = playHeygenVideoForEvent('channel.channel_points_custom_reward_redemption', eventData);
+                    if (!played) {
+                        showAlert(testData);
+                    }
+                }, index * 3000);
+            });
+        };
+
         console.log('Twitch Event Overlay initialized');
         console.log('Using hashtag-based user identification - no login required');
         console.log('Available test functions:');
@@ -751,6 +938,8 @@
         console.log('  showTestAlert("YourName", "channel.cheer") - Test a cheer alert');
         console.log('  showTestAlert("YourName", "channel.raid") - Test a raid alert');
         console.log('  testAllAlerts("YourName") - Test all alert types sequentially');
+        console.log('  testCheerConditions("YourName") - Test cheer alerts with different bit amounts');
+        console.log('  testChannelPoints("YourName") - Test channel point alerts with different costs');
         console.log('Call showUsageInstructions() for usage details');
         console.log('Call testAlert("YourName") in the console to test an alert');
     </script>

@@ -141,6 +141,7 @@ class ProjectWizard {
                                     <option value="channel.subscribe">New Subscriber</option>
                                     <option value="channel.cheer">New Cheer</option>
                                     <option value="channel.raid">New Raid</option>
+                                    <option value="channel.channel_points_custom_reward_redemption">Channel Points Redeem</option>
                                 </select>
                             </div>
                         </div>
@@ -1537,7 +1538,8 @@ class ProjectWizard {
             'channel.subscribe': 'Subscribe',
             'channel.cheer': 'Cheer',
             'channel.bits.use': 'Bits Use',
-            'channel.raid': 'Raid'
+            'channel.raid': 'Raid',
+            'channel.channel_points_custom_reward_redemption': 'Channel Points'
         };
         
         const eventName = eventNames[eventType] || eventType.replace('channel.', '').replace('_', ' ');

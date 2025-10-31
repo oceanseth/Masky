@@ -429,8 +429,7 @@ class TwitchInitializer {
               const selectedProject = activeProjects[randomIndex];
               const projectId = selectedProject.id;
 
-              // Save event to user's events collection (provider + eventType specific)
-              const eventKey = `twitch_${subscription.type}`;
+              // Save event to project-specific events collection
               const alertData = {
                 eventType: subscription.type,
                 provider: 'twitch',
@@ -438,14 +437,18 @@ class TwitchInitializer {
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 userName: eventData.user_name || eventData.from_broadcaster_user_name || 'Anonymous',
                 userId: eventData.user_id || eventData.from_broadcaster_user_id || null,
-                selectedProjectId: projectId, // For reference, but not the primary storage
+                projectId: projectId,
                 messageId: messageId // For deduplication
               };
 
-              // Store in user's events collection
+              // Store in project-specific events collection
+              await db.collection('projects').doc(projectId).collection('events').add(alertData);
+              
+              // Also store in user's global events for cross-project viewing
+              const eventKey = `twitch_${subscription.type}`;
               await db.collection('users').doc(userId).collection('events').doc(eventKey).collection('alerts').add(alertData);
 
-              console.log(`Event saved to user events: ${userId}/events/${eventKey} (selected project: ${projectId} from ${activeProjects.length} active projects), Event: ${subscription.type}`);
+              console.log(`Event saved to project: ${projectId} and user events: ${userId}/events/${eventKey} (selected from ${activeProjects.length} active projects), Event: ${subscription.type}`);
             } else {
               console.log(`No active projects found for user ${userId} and event type ${subscription.type}`);
             }

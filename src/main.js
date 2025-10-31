@@ -20,7 +20,16 @@ import {
   signOut,
   onAuthChange,
   handleTwitchCallback,
-  getCurrentUser
+  getCurrentUser,
+  getFirestore,
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+  collectionGroup,
+  db
 } from './firebase';
 
 import { config } from './config';
@@ -208,6 +217,250 @@ function showLanding() {
   document.getElementById('dashboard').classList.remove('active');
 }
 
+// Alert System Functions
+async function loadUserAlerts(user) {
+    try {
+        console.log('Loading alerts for user:', user.uid);
+        
+        // Clear existing alerts
+        state.alerts = [];
+        
+        // Load alerts from both user events and project events
+        
+        // 1. Load from user's global event collections (legacy path)
+        const userEventsRef = collection(db, `users/${user.uid}/events`);
+        
+        try {
+            const eventTypesSnapshot = await getDocs(userEventsRef);
+            
+            for (const eventTypeDoc of eventTypesSnapshot.docs) {
+                const eventType = eventTypeDoc.id;
+                console.log(`Loading user alerts for event type: ${eventType}`);
+                
+                // Get recent alerts from this event type
+                const alertsRef = collection(db, `users/${user.uid}/events/${eventType}/alerts`);
+                const alertsQuery = query(alertsRef, orderBy('timestamp', 'desc'), limit(5));
+                
+                const alertsSnapshot = await getDocs(alertsQuery);
+                
+                alertsSnapshot.forEach((alertDoc) => {
+                    const alertData = alertDoc.data();
+                    console.log('Found user alert:', alertData);
+                    
+                    // Convert Firestore alert to display format
+                    const displayAlert = {
+                        id: alertDoc.id,
+                        type: alertData.eventType || 'Unknown Event',
+                        provider: alertData.provider || 'twitch',
+                        userName: alertData.userName || 'Anonymous',
+                        timestamp: alertData.timestamp?.toDate() || new Date(),
+                        projectId: alertData.selectedProjectId || alertData.projectId,
+                        rawData: alertData.eventData,
+                        source: 'user-events'
+                    };
+                    
+                    state.alerts.push(displayAlert);
+                });
+            }
+        } catch (error) {
+            console.log('No user events collection found (expected for new users)');
+        }
+        
+        // 2. Load from project-specific events (new path)
+        try {
+            const projectsRef = collection(db, 'projects');
+            const userProjectsQuery = query(projectsRef, where('userId', '==', user.uid));
+            const userProjectsSnapshot = await getDocs(userProjectsQuery);
+            
+            for (const projectDoc of userProjectsSnapshot.docs) {
+                const projectId = projectDoc.id;
+                const projectData = projectDoc.data();
+                console.log(`Loading project alerts for: ${projectData.name || projectId}`);
+                
+                // Get recent events from this project
+                const eventsRef = collection(db, `projects/${projectId}/events`);
+                const eventsQuery = query(eventsRef, orderBy('timestamp', 'desc'), limit(10));
+                
+                const eventsSnapshot = await getDocs(eventsQuery);
+                
+                eventsSnapshot.forEach((eventDoc) => {
+                    const eventData = eventDoc.data();
+                    console.log('Found project alert:', eventData);
+                    
+                    // Convert Firestore event to display format
+                    const displayAlert = {
+                        id: eventDoc.id,
+                        type: eventData.eventType || 'Unknown Event',
+                        provider: eventData.provider || 'twitch',
+                        userName: eventData.userName || 'Anonymous',
+                        timestamp: eventData.timestamp?.toDate() || new Date(),
+                        projectId: eventData.projectId || projectId,
+                        projectName: projectData.name || 'Unnamed Project',
+                        rawData: eventData.eventData,
+                        source: 'project-events'
+                    };
+                    
+                    state.alerts.push(displayAlert);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading project alerts:', error);
+        }
+        
+        // Sort all alerts by timestamp (newest first)
+        state.alerts.sort((a, b) => b.timestamp - a.timestamp);
+        
+        console.log(`Loaded ${state.alerts.length} total alerts`);
+        renderAlerts();
+        
+    } catch (error) {
+        console.error('Error loading user alerts:', error);
+    }
+}
+
+async function setupRealTimeAlertListeners(user) {
+    try {
+        console.log('Setting up real-time alert listeners for user:', user.uid);
+        
+        // 1. Listen for alerts in user events collections (legacy path)
+        try {
+            const userAlertsQuery = query(
+                collectionGroup(db, 'alerts'),
+                orderBy('timestamp', 'desc'),
+                limit(1)
+            );
+            
+            onSnapshot(userAlertsQuery, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const alertData = change.doc.data();
+                        
+                        // Only process alerts for the current user
+                        const docPath = change.doc.ref.path;
+                        if (docPath.includes(`users/${user.uid}/events`)) {
+                            console.log('New user alert received:', alertData);
+                            
+                            const displayAlert = {
+                                id: change.doc.id,
+                                type: alertData.eventType || 'Unknown Event',
+                                provider: alertData.provider || 'twitch',
+                                userName: alertData.userName || 'Anonymous', 
+                                timestamp: alertData.timestamp?.toDate() || new Date(),
+                                projectId: alertData.selectedProjectId || alertData.projectId,
+                                rawData: alertData.eventData,
+                                source: 'user-events'
+                            };
+                            
+                            // Add to beginning of alerts array (newest first)
+                            state.alerts.unshift(displayAlert);
+                            
+                            // Update display and notify
+                            renderAlerts();
+                            showAlertNotification(displayAlert);
+                        }
+                    }
+                });
+            });
+        } catch (error) {
+            console.log('User alerts listener setup failed (expected for new users):', error);
+        }
+        
+        // 2. Listen for project events (new path)
+        try {
+            // First get user's projects
+            const projectsRef = collection(db, 'projects');
+            const userProjectsQuery = query(projectsRef, where('userId', '==', user.uid));
+            
+            const userProjectsSnapshot = await getDocs(userProjectsQuery);
+            
+            // Set up listeners for each project
+            userProjectsSnapshot.forEach((projectDoc) => {
+                const projectId = projectDoc.id;
+                const projectData = projectDoc.data();
+                
+                console.log(`Setting up event listener for project: ${projectData.name || projectId}`);
+                
+                const projectEventsQuery = query(
+                    collection(db, `projects/${projectId}/events`),
+                    orderBy('timestamp', 'desc'),
+                    limit(1)
+                );
+                
+                onSnapshot(projectEventsQuery, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === 'added') {
+                            const eventData = change.doc.data();
+                            console.log('New project event received:', eventData);
+                            
+                            const displayAlert = {
+                                id: change.doc.id,
+                                type: eventData.eventType || 'Unknown Event',
+                                provider: eventData.provider || 'twitch',
+                                userName: eventData.userName || 'Anonymous',
+                                timestamp: eventData.timestamp?.toDate() || new Date(),
+                                projectId: eventData.projectId || projectId,
+                                projectName: projectData.name || 'Unnamed Project',
+                                rawData: eventData.eventData,
+                                source: 'project-events'
+                            };
+                            
+                            // Add to beginning of alerts array (newest first)
+                            state.alerts.unshift(displayAlert);
+                            
+                            // Keep only last 50 alerts in memory
+                            if (state.alerts.length > 50) {
+                                state.alerts = state.alerts.slice(0, 50);
+                            }
+                            
+                            // Update display and notify
+                            renderAlerts();
+                            showAlertNotification(displayAlert);
+                        }
+                    });
+                });
+            });
+            
+        } catch (error) {
+            console.error('Error setting up project event listeners:', error);
+        }
+        
+    } catch (error) {
+        console.error('Error setting up real-time listeners:', error);
+    }
+}
+
+function showAlertNotification(alert) {
+    // Create a temporary notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    `;
+    notification.textContent = `New ${alert.type}: ${alert.userName}`;
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 3 seconds
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 3000);
+}
+
 // Listen for auth state changes
 onAuthChange((user) => {
     if (user) {
@@ -227,6 +480,12 @@ onAuthChange((user) => {
         
         // Load and display membership status
         loadMembershipStatus();
+        
+        // Load user alerts from Firestore
+        loadUserAlerts(user);
+        
+        // Set up real-time alert listeners
+        setupRealTimeAlertListeners(user);
         
         // Show welcome popup for brand new users
         onboardingManager.showWelcomePopup(user);
@@ -403,6 +662,17 @@ window.createNewAlert = function() {
   renderAlerts();
 };
 
+function formatTimeAgo(timestamp) {
+  const now = new Date();
+  const alertTime = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  const diffInSeconds = Math.floor((now - alertTime) / 1000);
+  
+  if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  return `${Math.floor(diffInSeconds / 86400)}d ago`;
+}
+
 function renderAlerts() {
   const grid = document.getElementById('alertsGrid');
   
@@ -422,30 +692,79 @@ function renderAlerts() {
     return;
   }
 
-  grid.innerHTML = state.alerts.map(alert => `
+  grid.innerHTML = state.alerts.map(alert => {
+    const timeAgo = formatTimeAgo(alert.timestamp);
+    const alertUrl = alert.url || `https://masky.ai/alert/${alert.projectId || alert.id}`;
+    
+    return `
     <div class="alert-card">
       <div class="alert-header">
-        <div class="alert-type">${alert.type}</div>
+        <div class="alert-type">
+          <span class="provider-badge ${alert.provider}">${alert.provider?.toUpperCase() || 'TWITCH'}</span>
+          ${alert.type}
+        </div>
         <div class="alert-actions">
-          <button class="icon-btn" title="Edit">✏️</button>
-          <button class="icon-btn" title="Copy URL" onclick="copyUrl('${alert.url}')">🔗</button>
-          <button class="icon-btn" onclick="deleteAlert(${alert.id})" title="Delete">🗑️</button>
+          <button class="icon-btn" title="View Details" onclick="viewAlertDetails('${alert.id}')">👁️</button>
+          <button class="icon-btn" title="Copy URL" onclick="copyUrl('${alertUrl}')">🔗</button>
+          <button class="icon-btn" onclick="deleteAlert('${alert.id}')" title="Delete">🗑️</button>
         </div>
       </div>
-      <div style="color: rgba(255,255,255,0.6); font-size: 1rem; margin-bottom: 0.8rem;">
-        <strong>Avatar:</strong> ${alert.avatar}
+      <div class="alert-content">
+        <div class="alert-user">
+          <strong>User:</strong> ${alert.userName}
+        </div>
+        <div class="alert-time">
+          <strong>Triggered:</strong> ${timeAgo}
+        </div>
+        ${alert.projectId ? `<div class="alert-project">
+          <strong>Mask:</strong> ${alert.projectName || alert.projectId}
+        </div>` : ''}
+        ${alert.source ? `<div class="alert-source">
+          <strong>Source:</strong> ${alert.source}
+        </div>` : ''}
       </div>
-      <div style="color: rgba(255,255,255,0.5); font-size: 0.95rem; font-style: italic; margin-bottom: 0.5rem;">
-        "${alert.script}"
-      </div>
-      <div class="alert-url">${alert.url}</div>
-    </div>
-  `).join('');
+      <div class="alert-url">${alertUrl}</div>
+    </div>`
+  }).join('');
 }
 
 window.deleteAlert = function(id) {
   state.alerts = state.alerts.filter(a => a.id !== id);
   renderAlerts();
+};
+
+window.viewAlertDetails = function(alertId) {
+  const alert = state.alerts.find(a => a.id === alertId);
+  if (!alert) return;
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Alert Details</h3>
+        <button class="modal-close" onclick="this.closest('.modal').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert-detail-grid">
+          <div><strong>Type:</strong> ${alert.type}</div>
+          <div><strong>Provider:</strong> ${alert.provider}</div>
+          <div><strong>User:</strong> ${alert.userName}</div>
+          <div><strong>Timestamp:</strong> ${formatTimeAgo(alert.timestamp)}</div>
+          <div><strong>Project ID:</strong> ${alert.projectId || 'N/A'}</div>
+        </div>
+        ${alert.rawData ? `
+          <details style="margin-top: 1rem;">
+            <summary>Raw Event Data</summary>
+            <pre style="background: #2a2a2a; padding: 1rem; border-radius: 4px; overflow: auto; max-height: 300px;">${JSON.stringify(alert.rawData, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+          </details>
+        ` : ''}
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  document.body.classList.add('modal-open');
 };
 
 window.copyUrl = function(url) {

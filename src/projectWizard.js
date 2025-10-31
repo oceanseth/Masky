@@ -2,18 +2,18 @@ import { getCurrentUser } from './firebase.js';
 import { config } from './config.js';
 
 /**
- * Project Wizard - Single consolidated module for creating and editing projects
+ * Mask Wizard - Single consolidated module for creating and editing alert masks
  */
 
 // Global wizard instance
 let projectWizard = null;
 
 /**
- * Show Project Wizard - Main function to display the wizard
+ * Show Mask Wizard - Main function to display the wizard
  * @param {Object} options - Configuration options
  * @param {string} options.containerId - ID of container to render wizard in
  * @param {string} options.mode - 'create' or 'edit'
- * @param {Object} options.projectData - Existing project data for editing
+ * @param {Object} options.projectData - Existing mask data for editing (kept as projectData for backend compatibility)
  * @param {Function} options.onComplete - Callback when wizard completes
  * @param {Function} options.onCancel - Callback when wizard is cancelled
  */
@@ -41,7 +41,7 @@ export function showProjectWizard(options = {}) {
 }
 
 /**
- * Project Wizard Class
+ * Mask Wizard Class
  */
 class ProjectWizard {
     constructor(options = {}) {
@@ -99,15 +99,15 @@ class ProjectWizard {
     render() {
         const container = document.getElementById(this.options.containerId);
         if (!container) {
-            console.error('Project wizard container not found:', this.options.containerId);
+            console.error('Mask wizard container not found:', this.options.containerId);
             return;
         }
 
         container.innerHTML = `
             <div class="project-wizard" id="projectWizard">
                 <div class="wizard-header">
-                    <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Project' : 'New Project Wizard'}</h2>
-                    <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your project settings' : 'Create your first AI-powered stream alert in 5 simple steps'}</p>
+                    <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Mask' : 'New Mask Wizard'}</h2>
+                    <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your mask settings' : 'Create your first AI-powered stream alert mask in 5 simple steps'}</p>
                 </div>
 
                 <div class="wizard-steps">
@@ -123,6 +123,7 @@ class ProjectWizard {
                                 <select id="platformSelect" class="form-select">
                                     <option value="">Choose a platform...</option>
                                     <option value="twitch">Twitch</option>
+                                    <option value="streamelements">StreamElements (Donations)</option>
                                     <option value="youtube">YouTube</option>
                                     <option value="facebook">Facebook</option>
                                     <option value="instagram">Instagram</option>
@@ -131,7 +132,7 @@ class ProjectWizard {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label for="projectName">Project Name:</label>
+                                <label for="projectName">Mask Name:</label>
                                 <input type="text" id="projectName" class="form-input" placeholder="e.g., thankyouthankyouthankyou">
                             </div>
                             <div class="form-group">
@@ -143,6 +144,177 @@ class ProjectWizard {
                                     <option value="channel.raid">New Raid</option>
                                     <option value="channel.channel_points_custom_reward_redemption">Channel Points Redeem</option>
                                 </select>
+                            </div>
+
+                            <!-- Conditional Settings -->
+                            <div class="conditional-settings" id="conditionalSettings" style="display: none; background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 1rem; margin-top: 1rem; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                <h4 style="margin: 0 0 0.5rem 0; color: #c084fc;">🎯 Alert Conditions</h4>
+                                <p class="settings-description" style="margin: 0 0 1rem 0; color: rgba(255, 255, 255, 0.7); font-size: 0.9rem;">Set conditions for when this alert should trigger</p>
+                                
+                                <!-- Bits/Cheer Settings -->
+                                <div class="condition-group" id="bitsSettings" style="display: none; margin-bottom: 1rem;">
+                                    <div class="form-row" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="minimumBits">Minimum Bits:</label>
+                                            <input type="number" id="minimumBits" class="form-input" placeholder="e.g., 100" min="1">
+                                            <small>Only trigger for cheers with at least this many bits</small>
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="maximumBits">Maximum Bits (optional):</label>
+                                            <input type="number" id="maximumBits" class="form-input" placeholder="e.g., 1000" min="1">
+                                            <small>Only trigger for cheers up to this many bits</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Channel Points Settings -->
+                                <div class="condition-group" id="channelPointsSettings" style="display: none; margin-bottom: 1rem;">
+                                    <div class="form-row" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="minimumCost">Minimum Cost:</label>
+                                            <input type="number" id="minimumCost" class="form-input" placeholder="e.g., 5000" min="1">
+                                            <small>Only trigger for rewards costing at least this many channel points</small>
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="maximumCost">Maximum Cost (optional):</label>
+                                            <input type="number" id="maximumCost" class="form-input" placeholder="e.g., 10000" min="1">
+                                            <small>Only trigger for rewards up to this many channel points</small>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="specificRewardIds">Specific Reward IDs (optional):</label>
+                                        <input type="text" id="specificRewardIds" class="form-input" placeholder="reward-id-1,reward-id-2">
+                                        <small>Comma-separated list of reward IDs to trigger for (leave empty for all rewards)</small>
+                                    </div>
+                                </div>
+
+                                <!-- Raid Settings -->
+                                <div class="condition-group" id="raidSettings" style="display: none; margin-bottom: 1rem;">
+                                    <div class="form-group">
+                                        <label for="minimumViewers">Minimum Viewers:</label>
+                                        <input type="number" id="minimumViewers" class="form-input" placeholder="e.g., 10" min="1">
+                                        <small>Only trigger for raids with at least this many viewers</small>
+                                    </div>
+                                </div>
+
+                                <!-- Donation Settings -->
+                                <div class="condition-group" id="donationSettings" style="display: none; margin-bottom: 1rem;">
+                                    <div class="form-row" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="minimumAmount">Minimum Amount:</label>
+                                            <input type="number" id="minimumAmount" class="form-input" placeholder="e.g., 5.00" min="0" step="0.01">
+                                            <small>Only trigger for donations of at least this amount</small>
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="maximumAmount">Maximum Amount (optional):</label>
+                                            <input type="number" id="maximumAmount" class="form-input" placeholder="e.g., 100.00" min="0" step="0.01">
+                                            <small>Only trigger for donations up to this amount</small>
+                                        </div>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 1rem;">
+                                        <label for="currency">Currency:</label>
+                                        <select id="currency" class="form-select">
+                                            <option value="USD">USD ($)</option>
+                                            <option value="EUR">EUR (€)</option>
+                                            <option value="GBP">GBP (£)</option>
+                                            <option value="CAD">CAD ($)</option>
+                                            <option value="AUD">AUD ($)</option>
+                                        </select>
+                                        <small>Currency for donation amount filtering</small>
+                                    </div>
+                                    
+                                    <!-- Text-to-Speech Settings -->
+                                    <div class="tts-settings" style="border: 1px solid #e1e5e9; border-radius: 8px; padding: 1rem; background: #f8f9fa; margin-top: 1rem; color: #2c3e50;">
+                                        <h5 style="margin: 0 0 1rem 0; color: #2c3e50;">💬 Tip Message Settings</h5>
+                                        
+                                        <div class="form-group" style="margin-bottom: 1rem;">
+                                            <label for="readDonationMessages" style="color: #2c3e50;">
+                                                <input type="checkbox" id="readDonationMessages" style="margin-right: 0.5rem;" checked>
+                                                Read donation messages aloud (Text-to-Speech)
+                                            </label>
+                                            <small style="color: #6c757d;">When enabled, tip messages will be read after your alert audio</small>
+                                        </div>
+                                        
+                                        <div id="ttsOptions" style="margin-left: 1.5rem;">
+                                            <div class="form-group" style="margin-bottom: 1rem;">
+                                                <label for="ttsDelay" style="color: #2c3e50;">Delay before reading message:</label>
+                                                <select id="ttsDelay" class="form-select">
+                                                    <option value="0">Immediately after alert</option>
+                                                    <option value="2" selected>2 seconds after alert</option>
+                                                    <option value="3">3 seconds after alert</option>
+                                                    <option value="5">5 seconds after alert</option>
+                                                </select>
+                                                <small style="color: #6c757d;">How long to wait after your alert audio finishes</small>
+                                            </div>
+                                            
+                                            <div class="form-group" style="margin-bottom: 1rem;">
+                                                <label for="ttsVoice" style="color: #2c3e50;">Text-to-Speech Voice:</label>
+                                                <select id="ttsVoice" class="form-select">
+                                                    <optgroup label="Browser Default">
+                                                        <option value="browser-default">Browser Default</option>
+                                                    </optgroup>
+                                                    <optgroup label="StreamElements TTS (High Quality)">
+                                                        <option value="Brian">Brian (Male, British)</option>
+                                                        <option value="Amy" selected>Amy (Female, British)</option>
+                                                        <option value="Emma">Emma (Female, British)</option>
+                                                        <option value="Geraint">Geraint (Male, Welsh)</option>
+                                                        <option value="Russell">Russell (Male, Australian)</option>
+                                                        <option value="Nicole">Nicole (Female, Australian)</option>
+                                                        <option value="Joey">Joey (Male, American)</option>
+                                                        <option value="Joanna">Joanna (Female, American)</option>
+                                                        <option value="Kendra">Kendra (Female, American)</option>
+                                                        <option value="Kimberly">Kimberly (Female, American)</option>
+                                                        <option value="Salli">Salli (Female, American)</option>
+                                                        <option value="Matthew">Matthew (Male, American)</option>
+                                                        <option value="Justin">Justin (Male, American)</option>
+                                                        <option value="Ivy">Ivy (Female, American, Child)</option>
+                                                    </optgroup>
+                                                    <optgroup label="International Voices">
+                                                        <option value="Mizuki">Mizuki (Female, Japanese)</option>
+                                                        <option value="Chantal">Chantal (Female, French)</option>
+                                                        <option value="Mathieu">Mathieu (Male, French)</option>
+                                                        <option value="Marlene">Marlene (Female, German)</option>
+                                                        <option value="Hans">Hans (Male, German)</option>
+                                                        <option value="Lucia">Lucia (Female, Spanish)</option>
+                                                        <option value="Enrique">Enrique (Male, Spanish)</option>
+                                                    </optgroup>
+                                                    <optgroup label="Custom Voice">
+                                                        <option value="custom">Use My Cloned Voice</option>
+                                                    </optgroup>
+                                                </select>
+                                                <small style="color: #6c757d;">StreamElements TTS provides high-quality voices (recommended)</small>
+                                            </div>
+                                            
+                                            <div class="form-row" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                                <div class="form-group" style="flex: 1;">
+                                                    <label for="ttsSpeed" style="color: #2c3e50;">Reading Speed:</label>
+                                                    <select id="ttsSpeed" class="form-select">
+                                                        <option value="0.8">Slow</option>
+                                                        <option value="1.0" selected>Normal</option>
+                                                        <option value="1.2">Fast</option>
+                                                        <option value="1.5">Very Fast</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group" style="flex: 1;">
+                                                    <label for="messageMaxLength" style="color: #2c3e50;">Max Message Length:</label>
+                                                    <input type="number" id="messageMaxLength" class="form-input" value="200" min="50" max="500">
+                                                    <small style="color: #6c757d;">Characters</small>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="messageFilter" style="color: #2c3e50;">Message Filtering:</label>
+                                                <select id="messageFilter" class="form-select">
+                                                    <option value="none">Read all messages</option>
+                                                    <option value="profanity" selected>Filter profanity</option>
+                                                    <option value="links">Filter links and profanity</option>
+                                                    <option value="strict">Strict filtering (safe words only)</option>
+                                                </select>
+                                                <small style="color: #6c757d;">How to filter inappropriate content from messages</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -286,7 +458,7 @@ class ProjectWizard {
                                         <button class="btn btn-primary" onclick="projectWizard.saveVideoUrl()">Save Video URL</button>
                                     </div>
                                     <div class="project-url" id="projectUrl" style="display: none;">
-                                        <h3>Your Project URL:</h3>
+                                        <h3>Your Mask URL:</h3>
                                         <div class="url-display">
                                             <input type="text" id="projectUrlInput" readonly>
                                             <button class="btn btn-secondary" onclick="projectWizard.copyProjectUrl()">Copy URL</button>
@@ -324,13 +496,16 @@ class ProjectWizard {
             this.projectData.eventType = 'channel.follow';
         }
         
-        // Set default project name if empty
+        // Set default mask name if empty
         const projectNameInput = document.getElementById('projectName');
         if (projectNameInput && !projectNameInput.value && !this.projectData.projectName) {
             const defaultName = this.getDefaultProjectName(this.projectData.eventType);
             projectNameInput.value = defaultName;
             this.projectData.projectName = defaultName;
         }
+        
+        // Update conditional settings based on current event type
+        this.updateConditionalSettings(this.projectData.eventType);
         
         // Trigger validation after setting defaults
         setTimeout(() => {
@@ -347,11 +522,12 @@ class ProjectWizard {
         if (platformSelect) {
             platformSelect.addEventListener('change', (e) => {
                 this.projectData.platform = e.target.value;
+                this.updateEventTypeOptions(e.target.value);
                 this.validateStep1();
             });
         }
 
-        // Project name
+        // Mask name
         const projectName = document.getElementById('projectName');
         if (projectName) {
             projectName.addEventListener('input', (e) => {
@@ -366,7 +542,7 @@ class ProjectWizard {
             eventType.addEventListener('change', (e) => {
                 this.projectData.eventType = e.target.value;
                 
-                // Update project name if it's still the default
+                // Update mask name if it's still the default
                 const projectNameInput = document.getElementById('projectName');
                 if (projectNameInput && projectNameInput.value.includes('My ') && projectNameInput.value.includes(' Alert')) {
                     const defaultName = this.getDefaultProjectName(e.target.value);
@@ -374,9 +550,15 @@ class ProjectWizard {
                     this.projectData.projectName = defaultName;
                 }
                 
+                // Show/hide conditional settings based on event type
+                this.updateConditionalSettings(e.target.value);
+                
                 this.validateStep1();
             });
         }
+
+        // Conditional settings event listeners
+        this.setupConditionalSettingsListeners();
 
         // Avatar file upload
         const uploadArea = document.getElementById('uploadArea');
@@ -399,6 +581,250 @@ class ProjectWizard {
     }
 
     /**
+     * Setup conditional settings event listeners
+     */
+    setupConditionalSettingsListeners() {
+        // Minimum bits
+        const minimumBits = document.getElementById('minimumBits');
+        if (minimumBits) {
+            minimumBits.addEventListener('input', (e) => {
+                this.projectData.minimumBits = parseInt(e.target.value) || null;
+            });
+        }
+
+        // Maximum bits
+        const maximumBits = document.getElementById('maximumBits');
+        if (maximumBits) {
+            maximumBits.addEventListener('input', (e) => {
+                this.projectData.maximumBits = parseInt(e.target.value) || null;
+            });
+        }
+
+        // Minimum cost (channel points)
+        const minimumCost = document.getElementById('minimumCost');
+        if (minimumCost) {
+            minimumCost.addEventListener('input', (e) => {
+                this.projectData.minimumCost = parseInt(e.target.value) || null;
+            });
+        }
+
+        // Maximum cost (channel points)
+        const maximumCost = document.getElementById('maximumCost');
+        if (maximumCost) {
+            maximumCost.addEventListener('input', (e) => {
+                this.projectData.maximumCost = parseInt(e.target.value) || null;
+            });
+        }
+
+        // Specific reward IDs
+        const specificRewardIds = document.getElementById('specificRewardIds');
+        if (specificRewardIds) {
+            specificRewardIds.addEventListener('input', (e) => {
+                const value = e.target.value.trim();
+                this.projectData.specificRewardIds = value ? value.split(',').map(id => id.trim()).filter(id => id) : null;
+            });
+        }
+
+        // Minimum viewers (raids)
+        const minimumViewers = document.getElementById('minimumViewers');
+        if (minimumViewers) {
+            minimumViewers.addEventListener('input', (e) => {
+                this.projectData.minimumViewers = parseInt(e.target.value) || null;
+            });
+        }
+
+        // Minimum amount (donations)
+        const minimumAmount = document.getElementById('minimumAmount');
+        if (minimumAmount) {
+            minimumAmount.addEventListener('input', (e) => {
+                this.projectData.minimumAmount = parseFloat(e.target.value) || null;
+            });
+        }
+
+        // Maximum amount (donations)
+        const maximumAmount = document.getElementById('maximumAmount');
+        if (maximumAmount) {
+            maximumAmount.addEventListener('input', (e) => {
+                this.projectData.maximumAmount = parseFloat(e.target.value) || null;
+            });
+        }
+
+        // Currency (donations)
+        const currency = document.getElementById('currency');
+        if (currency) {
+            currency.addEventListener('change', (e) => {
+                this.projectData.currency = e.target.value || 'USD';
+            });
+        }
+
+        // Text-to-Speech settings for donations
+        this.setupTTSListeners();
+    }
+
+    /**
+     * Setup Text-to-Speech event listeners for donation messages
+     */
+    setupTTSListeners() {
+        // Read donation messages checkbox
+        const readDonationMessages = document.getElementById('readDonationMessages');
+        if (readDonationMessages) {
+            readDonationMessages.addEventListener('change', (e) => {
+                this.projectData.readDonationMessages = e.target.checked;
+                this.toggleTTSOptions(e.target.checked);
+            });
+        }
+
+        // TTS delay
+        const ttsDelay = document.getElementById('ttsDelay');
+        if (ttsDelay) {
+            ttsDelay.addEventListener('change', (e) => {
+                this.projectData.ttsDelay = parseFloat(e.target.value) || 2;
+            });
+        }
+
+        // TTS voice
+        const ttsVoice = document.getElementById('ttsVoice');
+        if (ttsVoice) {
+            ttsVoice.addEventListener('change', (e) => {
+                this.projectData.ttsVoice = e.target.value || 'browser-default';
+            });
+        }
+
+        // TTS speed
+        const ttsSpeed = document.getElementById('ttsSpeed');
+        if (ttsSpeed) {
+            ttsSpeed.addEventListener('change', (e) => {
+                this.projectData.ttsSpeed = parseFloat(e.target.value) || 1.0;
+            });
+        }
+
+        // Message max length
+        const messageMaxLength = document.getElementById('messageMaxLength');
+        if (messageMaxLength) {
+            messageMaxLength.addEventListener('input', (e) => {
+                this.projectData.messageMaxLength = parseInt(e.target.value) || 200;
+            });
+        }
+
+        // Message filtering
+        const messageFilter = document.getElementById('messageFilter');
+        if (messageFilter) {
+            messageFilter.addEventListener('change', (e) => {
+                this.projectData.messageFilter = e.target.value || 'profanity';
+            });
+        }
+    }
+
+    /**
+     * Toggle TTS options visibility
+     */
+    toggleTTSOptions(show) {
+        const ttsOptions = document.getElementById('ttsOptions');
+        if (ttsOptions) {
+            ttsOptions.style.display = show ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Update event type options based on selected platform
+     */
+    updateEventTypeOptions(platform) {
+        const eventTypeSelect = document.getElementById('eventType');
+        if (!eventTypeSelect) return;
+
+        // Clear existing options
+        eventTypeSelect.innerHTML = '';
+
+        let options = [];
+        
+        switch (platform) {
+            case 'twitch':
+                options = [
+                    { value: 'channel.follow', text: 'New Follower' },
+                    { value: 'channel.subscribe', text: 'New Subscriber' },
+                    { value: 'channel.cheer', text: 'New Cheer' },
+                    { value: 'channel.raid', text: 'New Raid' },
+                    { value: 'channel.channel_points_custom_reward_redemption', text: 'Channel Points Redeem' }
+                ];
+                break;
+            case 'streamelements':
+                options = [
+                    { value: 'donation', text: 'New Donation' },
+                    { value: 'follower', text: 'New Follower' },
+                    { value: 'subscriber', text: 'New Subscriber' },
+                    { value: 'cheer', text: 'New Cheer' },
+                    { value: 'raid', text: 'New Raid' }
+                ];
+                break;
+            default:
+                options = [
+                    { value: 'follow', text: 'New Follower' },
+                    { value: 'subscribe', text: 'New Subscriber' },
+                    { value: 'donation', text: 'New Donation' }
+                ];
+                break;
+        }
+
+        // Add options to select
+        options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.text;
+            eventTypeSelect.appendChild(optionElement);
+        });
+
+        // Set default selection
+        if (options.length > 0) {
+            eventTypeSelect.value = options[0].value;
+            this.projectData.eventType = options[0].value;
+            this.updateConditionalSettings(options[0].value);
+        }
+    }
+
+    /**
+     * Update conditional settings visibility based on event type
+     */
+    updateConditionalSettings(eventType) {
+        const conditionalSettings = document.getElementById('conditionalSettings');
+        const bitsSettings = document.getElementById('bitsSettings');
+        const channelPointsSettings = document.getElementById('channelPointsSettings');
+        const raidSettings = document.getElementById('raidSettings');
+        const donationSettings = document.getElementById('donationSettings');
+
+        // Hide all settings first
+        if (bitsSettings) bitsSettings.style.display = 'none';
+        if (channelPointsSettings) channelPointsSettings.style.display = 'none';
+        if (raidSettings) raidSettings.style.display = 'none';
+        if (donationSettings) donationSettings.style.display = 'none';
+
+        // Show relevant settings based on event type
+        switch (eventType) {
+            case 'channel.cheer':
+            case 'cheer':
+                if (conditionalSettings) conditionalSettings.style.display = 'block';
+                if (bitsSettings) bitsSettings.style.display = 'block';
+                break;
+            case 'channel.channel_points_custom_reward_redemption':
+                if (conditionalSettings) conditionalSettings.style.display = 'block';
+                if (channelPointsSettings) channelPointsSettings.style.display = 'block';
+                break;
+            case 'channel.raid':
+            case 'raid':
+                if (conditionalSettings) conditionalSettings.style.display = 'block';
+                if (raidSettings) raidSettings.style.display = 'block';
+                break;
+            case 'donation':
+                if (conditionalSettings) conditionalSettings.style.display = 'block';
+                if (donationSettings) donationSettings.style.display = 'block';
+                break;
+            default:
+                // Hide conditional settings for follow and subscribe events
+                if (conditionalSettings) conditionalSettings.style.display = 'none';
+                break;
+        }
+    }
+
+    /**
      * Load existing project data for editing
      */
     loadProjectData() {
@@ -415,8 +841,50 @@ class ProjectWizard {
         if (eventType) eventType.value = this.projectData.eventType || 'channel.follow';
         if (videoUrl) videoUrl.value = this.projectData.videoUrl || '';
         
+        // Load conditional settings
+        const minimumBits = document.getElementById('minimumBits');
+        const maximumBits = document.getElementById('maximumBits');
+        const minimumCost = document.getElementById('minimumCost');
+        const maximumCost = document.getElementById('maximumCost');
+        const specificRewardIds = document.getElementById('specificRewardIds');
+        const minimumViewers = document.getElementById('minimumViewers');
+        const minimumAmount = document.getElementById('minimumAmount');
+        const maximumAmount = document.getElementById('maximumAmount');
+        const currency = document.getElementById('currency');
+
+        if (minimumBits) minimumBits.value = this.projectData.minimumBits || '';
+        if (maximumBits) maximumBits.value = this.projectData.maximumBits || '';
+        if (minimumCost) minimumCost.value = this.projectData.minimumCost || '';
+        if (maximumCost) maximumCost.value = this.projectData.maximumCost || '';
+        if (specificRewardIds) specificRewardIds.value = this.projectData.specificRewardIds ? this.projectData.specificRewardIds.join(',') : '';
+        if (minimumViewers) minimumViewers.value = this.projectData.minimumViewers || '';
+        if (minimumAmount) minimumAmount.value = this.projectData.minimumAmount || '';
+        if (maximumAmount) maximumAmount.value = this.projectData.maximumAmount || '';
+        if (currency) currency.value = this.projectData.currency || 'USD';
+
+        // Load TTS settings
+        const readDonationMessages = document.getElementById('readDonationMessages');
+        const ttsDelay = document.getElementById('ttsDelay');
+        const ttsVoice = document.getElementById('ttsVoice');
+        const ttsSpeed = document.getElementById('ttsSpeed');
+        const messageMaxLength = document.getElementById('messageMaxLength');
+        const messageFilter = document.getElementById('messageFilter');
+
+        if (readDonationMessages) {
+            readDonationMessages.checked = this.projectData.readDonationMessages !== false; // default true
+            this.toggleTTSOptions(readDonationMessages.checked);
+        }
+        if (ttsDelay) ttsDelay.value = this.projectData.ttsDelay || '2';
+        if (ttsVoice) ttsVoice.value = this.projectData.ttsVoice || 'browser-default';
+        if (ttsSpeed) ttsSpeed.value = this.projectData.ttsSpeed || '1.0';
+        if (messageMaxLength) messageMaxLength.value = this.projectData.messageMaxLength || '200';
+        if (messageFilter) messageFilter.value = this.projectData.messageFilter || 'profanity';
+        
         // Ensure projectData has the correct values
         this.projectData.eventType = this.projectData.eventType || 'channel.follow';
+
+        // Update conditional settings visibility
+        this.updateConditionalSettings(this.projectData.eventType);
 
         // Validate step 1
         this.validateStep1();
@@ -434,7 +902,7 @@ class ProjectWizard {
                 
                 // Auto-execute step actions
                 if (this.currentStep === 4) {
-                    this.connectToTwitch();
+                    this.connectToPlatform();
                 } else if (this.currentStep === 5) {
                     this.generateContent();
                 }
@@ -923,7 +1391,21 @@ class ProjectWizard {
     }
 
     /**
-     * Step 4: Twitch API Connection
+     * Step 4: Platform Connection
+     */
+    async connectToPlatform() {
+        if (this.projectData.platform === 'twitch') {
+            return this.connectToTwitch();
+        } else if (this.projectData.platform === 'streamelements') {
+            return this.connectToStreamElements();
+        } else {
+            // For other platforms, skip connection step
+            this.showConnectionSuccess('Platform connection not required for ' + this.projectData.platform);
+        }
+    }
+
+    /**
+     * Twitch API Connection
      */
     async connectToTwitch() {
         const connectionStatus = document.getElementById('connectionStatus');
@@ -988,6 +1470,21 @@ class ProjectWizard {
             if (!currentUser) throw new Error('User not authenticated');
             
             const idToken = await currentUser.getIdToken();
+            
+            // Get correct version for each event type based on Twitch EventSub API
+            const getEventVersion = (eventType) => {
+                switch (eventType) {
+                    case 'channel.follow':
+                        return '2'; // Only channel.follow uses version 2
+                    case 'channel.subscribe':
+                    case 'channel.cheer':
+                    case 'channel.raid':
+                    case 'channel.channel_points_custom_reward_redemption.add':
+                    default:
+                        return '1'; // All other events use version 1
+                }
+            };
+            
             const response = await fetch(`${config.api.baseUrl}/api/twitch-eventsub`, {
                 method: 'POST',
                 headers: {
@@ -996,7 +1493,7 @@ class ProjectWizard {
                 },
                 body: JSON.stringify({
                     type: this.projectData.eventType,
-                    version: '2',
+                    version: getEventVersion(this.projectData.eventType),
                     condition: {
                         broadcaster_user_id: currentUser.uid.replace('twitch:', '')
                     }
@@ -1055,6 +1552,117 @@ class ProjectWizard {
         }
     }
 
+    /**
+     * StreamElements Connection
+     */
+    async connectToStreamElements() {
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectionResult = document.getElementById('connectionResult');
+        const connectionError = document.getElementById('connectionError');
+
+        try {
+            // Show loading state
+            if (connectionStatus) {
+                connectionStatus.innerHTML = `
+                    <div class="status-icon">🔗</div>
+                    <p>Setting up StreamElements integration...</p>
+                `;
+                connectionStatus.style.display = 'block';
+            }
+            if (connectionResult) connectionResult.style.display = 'none';
+            if (connectionError) connectionError.style.display = 'none';
+
+            // For StreamElements, we need the channel ID
+            const channelId = prompt("Please enter your StreamElements Channel ID (found in your StreamElements dashboard):");
+            
+            if (!channelId) {
+                throw new Error('Channel ID is required for StreamElements integration');
+            }
+
+            const currentUser = getCurrentUser();
+            if (!currentUser) throw new Error('User not authenticated');
+            
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch(`${config.api.baseUrl}/api/streamelements-setup`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    channelId: channelId,
+                    eventTypes: [this.projectData.eventType],
+                    webhookUrl: `${config.api.baseUrl}/api/streamelements-webhook`
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                this.projectData.streamElementsConfig = {
+                    channelId: channelId,
+                    method: result.method,
+                    pollInterval: result.pollInterval
+                };
+
+                // Show success
+                if (connectionStatus) connectionStatus.style.display = 'none';
+                if (connectionResult) connectionResult.style.display = 'block';
+                
+                const subscriptionDetails = document.getElementById('subscriptionDetails');
+                if (subscriptionDetails) {
+                    subscriptionDetails.innerHTML = `
+                        <h4>StreamElements Integration:</h4>
+                        <p><strong>Channel ID:</strong> ${channelId}</p>
+                        <p><strong>Event Type:</strong> ${this.projectData.eventType}</p>
+                        <p><strong>Method:</strong> ${result.method}</p>
+                        <p><strong>Status:</strong> Active</p>
+                    `;
+                }
+
+                // Auto-advance to next step after a short delay
+                setTimeout(() => {
+                    this.nextStep();
+                }, 2000);
+
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to set up StreamElements integration');
+            }
+
+        } catch (error) {
+            console.error('StreamElements connection error:', error);
+            
+            if (connectionStatus) connectionStatus.style.display = 'none';
+            if (connectionError) connectionError.style.display = 'block';
+            
+            const errorMessage = document.querySelector('.error-message');
+            if (errorMessage) errorMessage.textContent = error.message;
+        }
+    }
+
+    /**
+     * Show connection success message (for platforms that don't need connection)
+     */
+    showConnectionSuccess(message) {
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectionResult = document.getElementById('connectionResult');
+        const connectionError = document.getElementById('connectionError');
+
+        if (connectionStatus) connectionStatus.style.display = 'none';
+        if (connectionResult) connectionResult.style.display = 'block';
+        if (connectionError) connectionError.style.display = 'none';
+
+        const subscriptionDetails = document.getElementById('subscriptionDetails');
+        if (subscriptionDetails) {
+            subscriptionDetails.innerHTML = `<h4>${message}</h4>`;
+        }
+
+        // Auto-advance to next step after a short delay
+        setTimeout(() => {
+            this.nextStep();
+        }, 1500);
+    }
+
     retryConnection() {
         const connectionStatus = document.getElementById('connectionStatus');
         const connectionResult = document.getElementById('connectionResult');
@@ -1064,7 +1672,7 @@ class ProjectWizard {
         if (connectionResult) connectionResult.style.display = 'none';
         if (connectionError) connectionError.style.display = 'none';
         
-        this.connectToTwitch();
+        this.connectToPlatform();
     }
 
     /**
@@ -1530,7 +2138,7 @@ class ProjectWizard {
     }
 
     /**
-     * Get default project name based on event type
+     * Get default mask name based on event type
      */
     getDefaultProjectName(eventType) {
         const eventNames = {
@@ -1543,7 +2151,7 @@ class ProjectWizard {
         };
         
         const eventName = eventNames[eventType] || eventType.replace('channel.', '').replace('_', ' ');
-        return `My ${eventName} Alert`;
+        return `My ${eventName} Mask`;
     }
 
     /**
@@ -1621,7 +2229,7 @@ class ProjectWizard {
         if (projectUrlInput) {
             projectUrlInput.select();
             document.execCommand('copy');
-            alert('Project URL copied to clipboard!');
+            alert('Mask URL copied to clipboard!');
         }
     }
 
@@ -1633,7 +2241,7 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            // Create project directly in Firestore
+            // Create mask directly in Firestore (stored as project for backend compatibility)
             const { db, addDoc, collection } = await import('./firebase.js');
             const projectData = {
                 userId: user.uid,
@@ -1670,7 +2278,7 @@ class ProjectWizard {
                 this.options.onComplete(this.projectData);
             }
 
-            alert('Project saved successfully!');
+            alert('Mask saved successfully!');
         } catch (error) {
             console.error('Error finishing wizard:', error);
             alert('Error creating project: ' + error.message);

@@ -7,6 +7,7 @@ const s3 = new AWS.S3({
 const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
+const streamElementsInitializer = require('../utils/streamElementsInit');
 const heygen = require('../utils/heygen');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
@@ -473,6 +474,32 @@ exports.handler = async (event, context) => {
     // Twitch webhook endpoint
     if (path.includes('/twitch-webhook') && method === 'POST') {
         const response = await twitchInitializer.handleWebhook(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // StreamElements webhook endpoint
+    if (path.includes('/streamelements-webhook') && method === 'POST') {
+        const seInitializer = new streamElementsInitializer();
+        const response = await seInitializer.handleWebhook(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // StreamElements setup endpoint
+    if (path.includes('/streamelements-setup') && method === 'POST') {
+        const seInitializer = new streamElementsInitializer();
+        const response = await seInitializer.createWebhookSubscription(event);
         return {
             ...response,
             headers: {

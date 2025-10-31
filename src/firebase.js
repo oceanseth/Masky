@@ -20,7 +20,9 @@ import {
   doc,
   updateDoc,
   addDoc,
-  deleteDoc
+  deleteDoc,
+  limit,
+  collectionGroup
 } from 'firebase/firestore';
 import { config } from './config';
 
@@ -297,6 +299,8 @@ export {
   doc,
   updateDoc,
   addDoc,
-  deleteDoc
+  deleteDoc,
+  limit,
+  collectionGroup
 };
 

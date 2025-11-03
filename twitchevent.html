@@ -419,6 +419,16 @@
                     duration: 5000,
                     position: 'bottom'
                 },
+                'channel.chat_command': {
+                    enabled: true,
+                    message: 'Playing {command}!',
+                    backgroundColor: '#0ea5e9',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
                 'channel.subscribe': {
                     enabled: true,
                     message: '{username} just subscribed!',
@@ -594,6 +604,8 @@
                 } else if (eventType === 'channel.channel_points_custom_reward_redemption') {
                     message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
                     message = message.replace('{cost}', eventData.reward?.cost || '0');
+                } else if (eventType === 'channel.chat_command') {
+                    message = message.replace('{command}', eventData.command || 'command');
                 }
 
                 messageElement = document.createElement('div');
@@ -757,6 +769,8 @@
             } else if (eventType === 'channel.channel_points_custom_reward_redemption') {
                 message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
                 message = message.replace('{cost}', eventData.reward?.cost || '0');
+            } else if (eventType === 'channel.chat_command') {
+                message = message.replace('{command}', eventData.command || 'command');
             }
 
             console.log(`Showing alert: ${message} (${eventType})`);

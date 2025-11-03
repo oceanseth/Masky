@@ -242,6 +242,17 @@ class TwitchInitializer {
 
       const db = admin.firestore();
       
+      // Chat message subscriptions require WebSocket transport, not webhooks
+      if (type === 'channel.chat.message') {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            error: 'Twitch chat message subscriptions require WebSocket transport, not webhooks.',
+            code: 'TWITCH_CHAT_WEBSOCKET_REQUIRED'
+          })
+        };
+      }
+
       // Check if subscription already exists for this user and event type
       const subscriptionKey = `twitch_${type}`;
       const userSubscriptionsRef = db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey);
@@ -258,10 +269,10 @@ class TwitchInitializer {
         // Initialize Twitch credentials from SSM
         const { clientId, clientSecret } = await this.initialize();
         
-        // Always use app access token for EventSub creation
-        const appAccessToken = await this.getAppAccessToken();
-        console.log('App access token obtained:', appAccessToken ? 'SUCCESS' : 'FAILED');
-        console.log('App access token length:', appAccessToken ? appAccessToken.length : 0);
+        // Prefer the user's access token for subscriptions that require user context
+        const userAccessToken = customClaims.twitchAccessToken;
+        const tokenToUse = userAccessToken || (await this.getAppAccessToken());
+        console.log('Using token for EventSub creation. Source:', userAccessToken ? 'USER' : 'APP');
         
         // For channel.follow events, we need to add moderator_user_id to the condition
         let requestBody = {
@@ -280,11 +291,20 @@ class TwitchInitializer {
           requestBody.condition.moderator_user_id = customClaims.twitchId;
         }
         
+        // For chat message subscriptions, Twitch requires user_id in condition
+        if (type === 'channel.chat.message') {
+          // Limit to broadcaster messages to satisfy API validation
+          // Note: This will only receive messages from the broadcaster
+          if (!requestBody.condition.user_id) {
+            requestBody.condition.user_id = customClaims.twitchId;
+          }
+        }
+        
         // Create EventSub subscription using app access token
         const twitchResponse = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${appAccessToken}`,
+            'Authorization': `Bearer ${tokenToUse}`,
             'Client-Id': clientId,
             'Content-Type': 'application/json'
           },

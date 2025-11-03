@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vocabulator Trainer (German → English)</title>
+<style>
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #111; background: #fafafa; }
+h1 { font-size: 20px; margin: 0 0 12px; }
+section { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+label { font-weight: 600; display: block; margin-bottom: 8px; }
+textarea { width: 100%; min-height: 120px; padding: 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 14px; }
+button { background: #111; color: #fff; border: none; border-radius: 8px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+button[disabled] { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: #eef1f5; color: #111; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hint { color: #555; font-size: 12px; }
+.progress { height: 10px; background: #f0f0f0; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4f46e5, #06b6d4); transition: width 0.2s ease; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.pill { background: #f5f7fb; border: 1px solid #e5e7eb; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+.card { border: 1px solid #e5e5e5; border-radius: 12px; padding: 16px; background: #fff; }
+.big { font-size: 28px; font-weight: 700; margin: 4px 0; }
+.sub { font-size: 16px; color: #333; margin: 0 0 8px; }
+.controls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.muted { color: #666; }
+input[type="text"] { padding: 10px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 14px; }
+.divider { height: 1px; background: #eee; margin: 12px 0; }
+.counts { display: flex; gap: 8px; flex-wrap: wrap; }
+.count { background: #f5f7fb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 600; }
+.success { color: #0a7a28; }
+.error { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>Vocabulator Trainer (German → English)</h1>
+
+<section id="input-section">
+  <label for="sourceText">Paste German text</label>
+  <textarea id="sourceText" placeholder="Füge hier deutschen Text ein..."></textarea>
+  <div class="row" style="margin-top:8px; gap:12px;">
+    <button id="buildBtn">Build deck</button>
+    <label class="row" style="gap:6px;">
+      <input type="checkbox" id="identityTranslate"> Skip translation (keep German as English, you can edit later)
+    </label>
+  </div>
+  <div id="translateProgress" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <div class="hint">Translating unique words…</div>
+      <div class="hint" id="progressText">0 / 0</div>
+    </div>
+    <div class="progress"><div class="bar" id="progressBar"></div></div>
+  </div>
+  <div id="preview" style="display:none; margin-top:10px;">
+    <div class="hint">Translations (click any English word to edit):</div>
+    <div class="grid" id="previewGrid"></div>
+    <div class="row" style="margin-top:10px; gap:12px;">
+      <button id="startTrainingBtn">Start training</button>
+      <div class="hint">5 words per round → then quick test.</div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="counts">
+    <div class="count">Unlearned: <span id="countUnlearned">0</span></div>
+    <div class="count">Training: <span id="countTraining">0</span></div>
+    <div class="count">Learned: <span id="countLearned">0</span></div>
+  </div>
+  <div class="hint" style="margin-top:6px;">Tip: Speech uses your browser's voices. If German voice is missing, install one in OS settings.</div>
+</section>
+
+<section id="train-section" style="display:none;">
+  <div class="row" style="justify-content:space-between; align-items:center;">
+    <div class="hint">Training: familiarize with pronunciation and meaning</div>
+    <div class="counts"><div class="count">Card <span id="trainIdx">0</span> / <span id="trainTotal">0</span></div></div>
+  </div>
+  <div class="card" id="trainCard">
+    <div class="sub">German</div>
+    <div class="big" id="trainGerman">—</div>
+    <div class="sub">English</div>
+    <div class="big" id="trainEnglish">—</div>
+    <div class="controls">
+      <button class="btn-secondary" id="playDeBtn">Play German</button>
+      <button class="btn-secondary" id="playEnBtn">Play English</button>
+      <button id="nextTrainBtn">Next</button>
+    </div>
+  </div>
+</section>
+
+<section id="test-section" style="display:none;">
+  <div class="row" style="justify-content:space-between; align-items:center;">
+    <div class="hint">Test: type the English translation</div>
+    <div class="counts"><div class="count">Remaining in round: <span id="testRemaining">0</span></div></div>
+  </div>
+  <div class="card">
+    <div class="sub">German</div>
+    <div class="big" id="testGerman">—</div>
+    <div class="controls">
+      <button class="btn-secondary" id="testPlayDe">Play German</button>
+    </div>
+    <div class="divider"></div>
+    <div class="sub">Your answer (English)</div>
+    <div class="row" style="gap:8px;">
+      <input id="testAnswer" type="text" placeholder="Type English" autocomplete="off">
+      <button id="checkBtn">Check</button>
+    </div>
+    <div id="testFeedback" class="hint" style="margin-top:8px;"></div>
+  </div>
+</section>
+
+<section id="done-section" style="display:none;">
+  <div class="card">
+    <div class="big success">All words learned! 🎉</div>
+    <div class="hint">Paste more text above to continue training.</div>
+  </div>
+  <div style="margin-top:10px;" class="grid" id="learnedGrid"></div>
+  <div class="row" style="margin-top:10px;">
+    <button id="restartBtn">Restart</button>
+  </div>
+</section>
+
+<script>
+const sourceTextEl = document.getElementById('sourceText');
+const buildBtn = document.getElementById('buildBtn');
+const identityTranslateEl = document.getElementById('identityTranslate');
+const translateProgress = document.getElementById('translateProgress');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+const preview = document.getElementById('preview');
+const previewGrid = document.getElementById('previewGrid');
+const startTrainingBtn = document.getElementById('startTrainingBtn');
+
+const countUnlearnedEl = document.getElementById('countUnlearned');
+const countTrainingEl = document.getElementById('countTraining');
+const countLearnedEl = document.getElementById('countLearned');
+
+const trainSection = document.getElementById('train-section');
+const trainGermanEl = document.getElementById('trainGerman');
+const trainEnglishEl = document.getElementById('trainEnglish');
+const playDeBtn = document.getElementById('playDeBtn');
+const playEnBtn = document.getElementById('playEnBtn');
+const nextTrainBtn = document.getElementById('nextTrainBtn');
+const trainIdxEl = document.getElementById('trainIdx');
+const trainTotalEl = document.getElementById('trainTotal');
+
+const testSection = document.getElementById('test-section');
+const testGermanEl = document.getElementById('testGerman');
+const testPlayDeBtn = document.getElementById('testPlayDe');
+const testAnswerEl = document.getElementById('testAnswer');
+const checkBtn = document.getElementById('checkBtn');
+const testRemainingEl = document.getElementById('testRemaining');
+const testFeedbackEl = document.getElementById('testFeedback');
+
+const doneSection = document.getElementById('done-section');
+const learnedGrid = document.getElementById('learnedGrid');
+const restartBtn = document.getElementById('restartBtn');
+
+let vocab = []; // {wordDe, wordEn}
+let unlearnedStack = []; // stack (end is top)
+let training = []; // up to 5
+let learned = [];
+
+let currentTrainIndex = 0;
+let testQueue = []; // words currently under test
+let voices = [];
+
+function normalizeWord(w) {
+  return w.toLowerCase();
+}
+
+function parseWordsFromText(text) {
+  const pattern = /\p{L}+/gu; // letters only (unicode)
+  const result = [];
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    result.push(m[0]);
+  }
+  return result;
+}
+
+function uniqueByNormalizedPreserveFirst(words) {
+  const seen = new Set();
+  const out = [];
+  for (const w of words) {
+    const key = normalizeWord(w);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(w);
+    }
+  }
+  return out;
+}
+
+function updateCounts() {
+  countUnlearnedEl.textContent = String(unlearnedStack.length);
+  countTrainingEl.textContent = String(training.length);
+  countLearnedEl.textContent = String(learned.length);
+}
+
+function setSections({ input=true, train=false, test=false, done=false }) {
+  document.getElementById('input-section').style.display = input ? '' : 'none';
+  trainSection.style.display = train ? '' : 'none';
+  testSection.style.display = test ? '' : 'none';
+  doneSection.style.display = done ? '' : 'none';
+}
+
+function renderPreviewGrid() {
+  previewGrid.innerHTML = '';
+  for (const item of vocab) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pill';
+    const enSpan = document.createElement('span');
+    enSpan.style.fontWeight = '700';
+    enSpan.style.cursor = 'pointer';
+    enSpan.title = 'Click to edit English translation';
+    enSpan.textContent = item.wordEn || '—';
+    enSpan.addEventListener('click', () => {
+      const val = prompt(`Edit English for: ${item.wordDe}`, item.wordEn || '');
+      if (val !== null) {
+        item.wordEn = val.trim();
+        enSpan.textContent = item.wordEn || '—';
+      }
+    });
+    wrap.innerHTML = `<span>${item.wordDe}</span> → `;
+    wrap.appendChild(enSpan);
+    previewGrid.appendChild(wrap);
+  }
+}
+
+function pickNextTrainingBatch() {
+  training = [];
+  for (let i = 0; i < 5; i++) {
+    if (unlearnedStack.length === 0) break;
+    training.push(unlearnedStack.pop());
+  }
+  currentTrainIndex = 0;
+  trainTotalEl.textContent = String(training.length);
+  trainIdxEl.textContent = training.length ? '1' : '0';
+  updateCounts();
+}
+
+function startTrainingPhase() {
+  if (training.length === 0) {
+    // no words: either done or nothing parsed
+    if (unlearnedStack.length === 0 && learned.length > 0) {
+      return showDone();
+    }
+    pickNextTrainingBatch();
+  }
+  if (training.length === 0) {
+    showDone();
+    return;
+  }
+  setSections({ input: true, train: true, test: false, done: false });
+  renderTrainingCard();
+}
+
+function renderTrainingCard() {
+  if (currentTrainIndex >= training.length) {
+    // switch to test
+    startTestPhase();
+    return;
+  }
+  const item = training[currentTrainIndex];
+  trainGermanEl.textContent = item.wordDe;
+  trainEnglishEl.textContent = item.wordEn || '—';
+  trainIdxEl.textContent = String(currentTrainIndex + 1);
+}
+
+function startTestPhase() {
+  if (training.length === 0) {
+    // nothing to test
+    if (unlearnedStack.length === 0) {
+      showDone();
+      return;
+    }
+    pickNextTrainingBatch();
+    startTrainingPhase();
+    return;
+  }
+  setSections({ input: true, train: false, test: true, done: false });
+  testQueue = [...training];
+  showNextTestItem();
+}
+
+function showNextTestItem() {
+  if (testQueue.length === 0) {
+    // round finished; refill from unlearned
+    training = [];
+    updateCounts();
+    if (unlearnedStack.length === 0) {
+      showDone();
+      return;
+    }
+    pickNextTrainingBatch();
+    startTrainingPhase();
+    return;
+  }
+  // pick random index
+  const idx = Math.floor(Math.random() * testQueue.length);
+  const [item] = testQueue.splice(idx, 1);
+  testGermanEl.textContent = item.wordDe;
+  testGermanEl.dataset.wordEn = item.wordEn || '';
+  testGermanEl.dataset.wordDe = item.wordDe;
+  testRemainingEl.textContent = String(testQueue.length + 1);
+  testAnswerEl.value = '';
+  testAnswerEl.focus();
+  testFeedbackEl.textContent = '';
+}
+
+function showDone() {
+  setSections({ input: true, train: false, test: false, done: true });
+  learnedGrid.innerHTML = '';
+  for (const item of learned) {
+    const d = document.createElement('div');
+    d.className = 'pill';
+    d.textContent = `${item.wordDe} → ${item.wordEn}`;
+    learnedGrid.appendChild(d);
+  }
+}
+
+function speak(text, langHint) {
+  if (!('speechSynthesis' in window)) {
+    alert('Speech Synthesis not supported in this browser.');
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  // choose a voice by language preference
+  const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(langHint.toLowerCase()));
+  if (preferred) utter.voice = preferred;
+  utter.lang = preferred?.lang || langHint;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+function refreshVoices() {
+  voices = speechSynthesis.getVoices();
+}
+if ('speechSynthesis' in window) {
+  refreshVoices();
+  window.speechSynthesis.onvoiceschanged = refreshVoices;
+}
+
+async function translateWordDeToEn(word) {
+  if (identityTranslateEl.checked) return word;
+  // Free, public endpoint (rate limited). Fallback to identity on failure.
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=de|en`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error('Bad response');
+    const data = await res.json();
+    const out = data?.responseData?.translatedText;
+    return (typeof out === 'string' && out.trim()) ? out.trim() : word;
+  } catch {
+    return word;
+  }
+}
+
+async function translateAllUnique(words) {
+  const unique = uniqueByNormalizedPreserveFirst(words);
+  // Build vocab objects initial
+  vocab = unique.map(w => ({ wordDe: w, wordEn: '' }));
+  translateProgress.style.display = '';
+  progressBar.style.width = '0%';
+  progressText.textContent = `0 / ${vocab.length}`;
+
+  // modest concurrency to avoid throttling
+  const concurrency = 5;
+  let inFlight = 0;
+  let index = 0;
+  let completed = 0;
+
+  await new Promise((resolve) => {
+    const tick = () => {
+      while (inFlight < concurrency && index < vocab.length) {
+        const i = index++;
+        inFlight++;
+        translateWordDeToEn(vocab[i].wordDe).then(t => {
+          vocab[i].wordEn = t;
+        }).catch(() => {
+          vocab[i].wordEn = vocab[i].wordDe;
+        }).finally(() => {
+          inFlight--;
+          completed++;
+          const pct = vocab.length ? Math.round((completed / vocab.length) * 100) : 100;
+          progressBar.style.width = pct + '%';
+          progressText.textContent = `${completed} / ${vocab.length}`;
+          if (completed === vocab.length) resolve();
+          else tick();
+        });
+      }
+    };
+    tick();
+  });
+
+  translateProgress.style.display = 'none';
+  // Build stacks: unlearned as a stack with last element top; preserve order of appearance
+  unlearnedStack = vocab.map(v => ({ wordDe: v.wordDe, wordEn: v.wordEn }));
+  // Make it a stack: top at end, so reverse to have first words end up deeper
+  // Keep as-is so the last words are top; it's okay either way for learning.
+  training = [];
+  learned = [];
+  updateCounts();
+  preview.style.display = '';
+  renderPreviewGrid();
+}
+
+buildBtn.addEventListener('click', async () => {
+  const text = sourceTextEl.value.trim();
+  if (!text) { alert('Please paste some German text.'); return; }
+  preview.style.display = 'none';
+  doneSection.style.display = 'none';
+  await translateAllUnique(parseWordsFromText(text));
+});
+
+startTrainingBtn.addEventListener('click', () => {
+  pickNextTrainingBatch();
+  startTrainingPhase();
+});
+
+nextTrainBtn.addEventListener('click', () => {
+  if (currentTrainIndex < training.length - 1) {
+    currentTrainIndex++;
+    renderTrainingCard();
+  } else {
+    // end of training round → go to test
+    startTestPhase();
+  }
+});
+
+playDeBtn.addEventListener('click', () => {
+  const item = training[currentTrainIndex];
+  if (item) speak(item.wordDe, 'de-DE');
+});
+
+playEnBtn.addEventListener('click', () => {
+  const item = training[currentTrainIndex];
+  if (item) speak(item.wordEn || '', 'en-US');
+});
+
+testPlayDeBtn.addEventListener('click', () => {
+  const word = testGermanEl.dataset.wordDe || testGermanEl.textContent || '';
+  speak(word, 'de-DE');
+});
+
+checkBtn.addEventListener('click', () => {
+  const correct = (testGermanEl.dataset.wordEn || '').trim().toLowerCase();
+  const guess = (testAnswerEl.value || '').trim().toLowerCase();
+  const de = testGermanEl.dataset.wordDe || '';
+  if (!correct) return;
+  if (guess === correct) {
+    testFeedbackEl.textContent = 'Correct!';
+    testFeedbackEl.className = 'hint success';
+    // move this item to learned, remove from training fully
+    const idx = training.findIndex(x => x.wordDe === de);
+    if (idx !== -1) {
+      learned.push(training[idx]);
+      training.splice(idx, 1);
+      updateCounts();
+    }
+  } else {
+    testFeedbackEl.textContent = `Wrong. Correct: ${correct}`;
+    testFeedbackEl.className = 'hint error';
+    // put back on top of unlearned stack
+    const idx = training.findIndex(x => x.wordDe === de);
+    if (idx !== -1) {
+      unlearnedStack.push(training[idx]);
+      training.splice(idx, 1);
+      updateCounts();
+    }
+  }
+  // next after brief pause
+  setTimeout(() => {
+    showNextTestItem();
+  }, 350);
+});
+
+restartBtn.addEventListener('click', () => {
+  sourceTextEl.value = '';
+  vocab = [];
+  unlearnedStack = [];
+  training = [];
+  learned = [];
+  previewGrid.innerHTML = '';
+  learnedGrid.innerHTML = '';
+  updateCounts();
+  setSections({ input: true, train: false, test: false, done: false });
+});
+
+// Keyboard helpers
+document.addEventListener('keydown', (e) => {
+  if (trainSection.style.display !== 'none') {
+    if (e.key === 'ArrowRight' || e.key === 'Enter') {
+      nextTrainBtn.click();
+    }
+    if (e.key.toLowerCase() === 'd') playDeBtn.click();
+    if (e.key.toLowerCase() === 'e') playEnBtn.click();
+  }
+  if (testSection.style.display !== 'none') {
+    if (e.key === 'Enter') checkBtn.click();
+  }
+});
+</script>
+</body>
+</html>
+
+

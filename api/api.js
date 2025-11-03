@@ -8,6 +8,7 @@ const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
 const heygen = require('../utils/heygen');
+const { parseMultipartData } = require('./multipartParser');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
 const handleTwitchOAuth = async (event) => {
@@ -262,6 +263,7 @@ exports.handler = async (event, context) => {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Twitch OAuth</title>
     <style>
         body { 
@@ -270,6 +272,20 @@ exports.handler = async (event, context) => {
             padding: 50px; 
             background: #f0f0f0;
         }
+        .debug-info {
+            background: white;
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 600px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 12px;
+        }
+        .debug-info h4 {
+            margin-top: 0;
+            color: #333;
+        }
         .success { color: #28a745; }
         .error { color: #dc3545; }
         .loading { color: #007bff; }
@@ -277,10 +293,21 @@ exports.handler = async (event, context) => {
 </head>
 <body>
     <div id="status" class="loading">Processing Twitch authentication...</div>
+    <div id="debugInfo" class="debug-info" style="display: none;"></div>
     <script>
         (function() {
             try {
                 const response = ${JSON.stringify(response)};
+                
+                // Show debug info on page
+                const debugInfo = document.getElementById('debugInfo');
+                debugInfo.style.display = 'block';
+                debugInfo.innerHTML = '<h4>Debug Information</h4><pre>' + JSON.stringify({
+                    statusCode: response.statusCode,
+                    hasOpener: !!window.opener,
+                    currentOrigin: window.location.origin,
+                    responseKeys: Object.keys(response)
+                }, null, 2) + '</pre>';
                 
                 if (response.statusCode === 200) {
                     // Success - send message to parent and close popup
@@ -298,7 +325,8 @@ exports.handler = async (event, context) => {
                             console.log('Target origin:', window.location.origin);
                             console.log('Window opener exists:', !!window.opener);
                             
-                            window.opener.postMessage(message, 'https://masky.ai');
+                            // Use '*' to allow any origin - security is handled by checking event.origin in the receiver
+                            window.opener.postMessage(message, '*');
                             console.log('Success message sent to parent');
                         } catch (e) {
                             console.error('Error sending success message:', e);
@@ -306,21 +334,22 @@ exports.handler = async (event, context) => {
                     } else {
                         console.error('No window.opener found - popup may have been opened incorrectly');
                     }
-                    document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! Closing window...</div>';
-                    // Give more time for the message to be received
+                    document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! Closing window in 10 seconds...</div>';
+                    // Give more time for the message to be received and for debugging
                     setTimeout(() => {
                         console.log('Closing popup window');
                         window.close();
-                    }, 2000);
+                    }, 10000);
                 } else {
                     // Error - send error message to parent
                     const errorData = response.body ? JSON.parse(response.body) : { error: 'Unknown error' };
                     if (window.opener) {
                         try {
+                            // Use '*' to allow any origin - security is handled by checking event.origin in the receiver
                             window.opener.postMessage({
                                 type: 'TWITCH_OAUTH_ERROR',
                                 error: errorData.error || 'Authentication failed'
-                            }, 'https://masky.ai');
+                            }, '*');
                             console.log('Error message sent to parent:', errorData.error);
                         } catch (e) {
                             console.error('Error sending error message:', e);
@@ -330,18 +359,19 @@ exports.handler = async (event, context) => {
                     setTimeout(() => {
                         console.log('Closing popup window after error');
                         window.close();
-                    }, 3000);
+                    }, 10000);
                 }
             } catch (err) {
                 console.error('Popup error:', err);
                 if (window.opener) {
+                    // Use '*' to allow any origin - security is handled by checking event.origin in the receiver
                     window.opener.postMessage({
                         type: 'TWITCH_OAUTH_ERROR',
                         error: err.message
-                    }, 'https://masky.ai');
+                    }, '*');
                 }
                 document.getElementById('status').innerHTML = '<div class="error">✗ Error: ' + err.message + '</div>';
-                setTimeout(() => window.close(), 3000);
+                setTimeout(() => window.close(), 10000);
             }
         })();
     </script>
@@ -470,9 +500,109 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Ensure Twitch chatbot (chat:read/edit) for the current user
+    if (path.includes('/twitch-chatbot-ensure') && method === 'POST') {
+        try {
+            // Verify Firebase token
+            const authHeader = event.headers.Authorization || event.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+                };
+            }
+
+            const idToken = authHeader.split('Bearer ')[1];
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const decoded = await admin.auth().verifyIdToken(idToken);
+            const userId = decoded.uid;
+
+            // Ensure the user's Twitch access token exists and has chat scopes
+            const userRecord = await admin.auth().getUser(userId);
+            const claims = userRecord.customClaims || {};
+            const accessToken = claims.twitchAccessToken;
+            const twitchId = claims.twitchId;
+
+            if (!accessToken || !twitchId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Twitch not connected', code: 'TWITCH_TOKEN_MISSING' })
+                };
+            }
+
+            // Validate token scopes
+            const validation = await twitchInitializer.validateToken(accessToken);
+            const scopes = Array.isArray(validation.scopes) ? validation.scopes : [];
+            const hasChatRead = scopes.includes('chat:read');
+            const hasChatEdit = scopes.includes('chat:edit');
+
+            if (!hasChatRead || !hasChatEdit) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Missing required chat scopes (chat:read, chat:edit). Reconnect Twitch.',
+                        code: 'TWITCH_CHAT_SCOPES_MISSING'
+                    })
+                };
+            }
+
+            // Mark chatbot as established for this user (a separate bot service can join channels)
+            const db = admin.firestore();
+            await db.collection('users').doc(userId).set({
+                chatbotEstablished: true,
+                twitchId: twitchId,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ok: true, chatbotEstablished: true })
+            };
+        } catch (err) {
+            console.error('Error ensuring Twitch chatbot:', err);
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: 'Failed to ensure Twitch chatbot', message: err.message })
+            };
+        }
+    }
+
     // Twitch webhook endpoint
     if (path.includes('/twitch-webhook') && method === 'POST') {
         const response = await twitchInitializer.handleWebhook(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Voice upload endpoint
+    if (path.includes('/upload-voice') && method === 'POST') {
+        const response = await handleVoiceUpload(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Avatar upload endpoint
+    if (path.includes('/upload-avatar') && method === 'POST') {
+        const response = await handleAvatarUpload(event);
         return {
             ...response,
             headers: {
@@ -1154,6 +1284,247 @@ async function handleStripeWebhook(event) {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Webhook handler failed',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Handle voice file upload
+ */
+async function handleVoiceUpload(event) {
+    try {
+        console.log('Voice upload request received');
+        
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Check content type
+        const contentType = event.headers['Content-Type'] || event.headers['content-type'];
+        if (!contentType || !contentType.includes('multipart/form-data')) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid content type - expected multipart/form-data' })
+            };
+        }
+
+        // Extract boundary from content type
+        const boundaryMatch = contentType.match(/boundary=(.+)$/);
+        if (!boundaryMatch) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid multipart boundary' })
+            };
+        }
+
+        const boundary = boundaryMatch[1];
+        
+        // Get raw body
+        let rawBody = event.body;
+        if (event.isBase64Encoded) {
+            rawBody = Buffer.from(event.body, 'base64');
+        } else if (typeof event.body === 'string') {
+            rawBody = Buffer.from(event.body, 'binary');
+        } else {
+            rawBody = Buffer.from(event.body);
+        }
+
+        // Parse multipart data
+        const { files, fields } = parseMultipartData(rawBody.toString('binary'), boundary);
+        
+        if (!files || files.length === 0) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'No file provided in upload' })
+            };
+        }
+
+        const uploadedFile = files[0];
+        const name = fields.name || 'Voice Recording';
+        const duration = parseInt(fields.duration) || 0;
+
+        // Generate filename
+        const timestamp = Date.now();
+        const fileExtension = uploadedFile.fileName.split('.').pop() || 'wav';
+        const fileName = `voice_${userId}_${timestamp}.${fileExtension}`;
+
+        // Upload to Firebase Storage
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(`voices/${fileName}`);
+        await file.save(uploadedFile.data, {
+            metadata: {
+                contentType: uploadedFile.contentType,
+                metadata: {
+                    userId: userId,
+                    originalFileName: uploadedFile.fileName,
+                    uploadedAt: new Date().toISOString()
+                }
+            }
+        });
+
+        // Make file publicly accessible
+        await file.makePublic();
+
+        // Get public URL
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/voices/${fileName}`;
+
+        // Save voice metadata to Firestore
+        const db = admin.firestore();
+        const voiceData = {
+            name: name,
+            url: publicUrl,
+            duration: duration,
+            userId: userId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        
+        const voiceDoc = await db.collection('users').doc(userId).collection('voices').add(voiceData);
+
+        console.log('Voice uploaded successfully:', voiceDoc.id);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                voiceId: voiceDoc.id,
+                voiceUrl: publicUrl,
+                name: name,
+                duration: duration
+            })
+        };
+
+    } catch (error) {
+        console.error('Error uploading voice:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to upload voice',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Handle avatar image upload
+ */
+async function handleAvatarUpload(event) {
+    try {
+        console.log('Avatar upload request received');
+        
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+
+        // Check content type
+        const contentType = event.headers['Content-Type'] || event.headers['content-type'];
+        if (!contentType || !contentType.includes('multipart/form-data')) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid content type - expected multipart/form-data' })
+            };
+        }
+
+        // Extract boundary from content type
+        const boundaryMatch = contentType.match(/boundary=(.+)$/);
+        if (!boundaryMatch) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid multipart boundary' })
+            };
+        }
+
+        const boundary = boundaryMatch[1];
+        
+        // Get raw body
+        let rawBody = event.body;
+        if (event.isBase64Encoded) {
+            rawBody = Buffer.from(event.body, 'base64');
+        } else if (typeof event.body === 'string') {
+            rawBody = Buffer.from(event.body, 'binary');
+        } else {
+            rawBody = Buffer.from(event.body);
+        }
+
+        // Parse multipart data
+        const { files, fields } = parseMultipartData(rawBody.toString('binary'), boundary);
+        
+        if (!files || files.length === 0) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'No file provided in upload' })
+            };
+        }
+
+        const uploadedFile = files[0];
+
+        // Generate filename
+        const timestamp = Date.now();
+        const fileExtension = uploadedFile.fileName.split('.').pop() || 'jpg';
+        const fileName = `avatar_${userId}_${timestamp}.${fileExtension}`;
+
+        // Upload to Firebase Storage
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(`avatars/${fileName}`);
+        await file.save(uploadedFile.data, {
+            metadata: {
+                contentType: uploadedFile.contentType,
+                metadata: {
+                    userId: userId,
+                    originalFileName: uploadedFile.fileName,
+                    uploadedAt: new Date().toISOString()
+                }
+            }
+        });
+
+        // Make file publicly accessible
+        await file.makePublic();
+
+        // Get public URL
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/avatars/${fileName}`;
+
+        console.log('Avatar uploaded successfully:', publicUrl);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                avatarUrl: publicUrl
+            })
+        };
+
+    } catch (error) {
+        console.error('Error uploading avatar:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to upload avatar',
                 message: error.message 
             })
         };

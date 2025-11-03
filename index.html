@@ -410,6 +410,17 @@
                         </div>
                         <div class="step-content">
                             <div class="twitch-connection">
+                                <div class="chat-bot-info" id="chatBotInfo" style="display: none;">
+                                    <div class="info-box">
+                                        <div class="info-icon">ℹ️</div>
+                                        <div class="info-content">
+                                            <h4>Chat Command Setup</h4>
+                                            <p>To use chat commands, you'll need to authorize <strong>Masky</strong> to access your channel's chat during the Twitch login process.</p>
+                                            <p>The <strong>channel:bot</strong> permission allows Masky to read all chat messages and send responses when users type commands like <code>!maskyai</code>.</p>
+                                            <p class="note">Note: This authorization is requested during the Twitch login step. If you've already logged in, you may need to reconnect your Twitch account.</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="connection-status" id="connectionStatus">
                                     <div class="status-icon">🔗</div>
                                     <p>Setting up Twitch EventSub subscription...</p>
@@ -485,7 +496,7 @@
 
     <script type="module">
         import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
-        import { auth, onAuthChange, getCurrentUser } from '/src/firebase.js';
+        import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
         
         // Render the header
@@ -501,21 +512,10 @@
             updateHeaderAuthState(user);
         });
         
-        // Initialize project wizard when user is authenticated
-        onAuthChange((user) => {
+        // Initialize dashboard when user is authenticated
+        onAuthChange(async (user) => {
             if (user) {
-                showProjectWizard({
-                    containerId: 'projectWizard',
-                    mode: 'create',
-                    onComplete: (projectData) => {
-                        // Hide wizard and show recent projects
-                        document.getElementById('projectWizard').style.display = 'none';
-                        document.getElementById('recentProjects').style.display = 'block';
-                        
-                        // Load recent projects
-                        loadRecentProjects();
-                    }
-                });
+                await loadRecentProjects();
             }
         });
         
@@ -525,17 +525,29 @@
                 const user = auth.currentUser;
                 if (!user) return;
 
-                const idToken = await user.getIdToken();
-                const response = await fetch('/api/recent-projects', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    renderRecentProjects(data.projects);
+                const projectsRef = collection(db, 'projects');
+                const q = query(projectsRef, where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+                const snapshot = await getDocs(q);
+                const projects = snapshot.docs.map(doc => ({ projectId: doc.id, ...doc.data() }));
+                if (projects.length > 0) {
+                    // Show recent projects section
+                    document.getElementById('recentProjects').style.display = 'block';
+                    document.getElementById('projectWizard').style.display = 'none';
+                    renderRecentProjects(projects);
+                } else {
+                    // No projects yet; show new project wizard
+                    document.getElementById('recentProjects').style.display = 'none';
+                    document.getElementById('projectWizard').style.display = 'block';
+                    showProjectWizard({
+                        containerId: 'projectWizard',
+                        mode: 'create',
+                        onComplete: () => {
+                            // After creating, return to recent projects view
+                            document.getElementById('projectWizard').style.display = 'none';
+                            document.getElementById('recentProjects').style.display = 'block';
+                            loadRecentProjects();
+                        }
+                    });
                 }
             } catch (error) {
                 console.error('Error loading recent projects:', error);
@@ -556,15 +568,31 @@
             }
 
             projectsGrid.innerHTML = projects.map(project => `
-                <div class="project-card">
+                <div class="project-card" onclick='openProjectEditor(${JSON.stringify(project)})' style="cursor: pointer;">
                     <div class="project-name">${project.projectName}</div>
-                    <div class="project-platform">${project.platform.charAt(0).toUpperCase() + project.platform.slice(1)} - ${project.eventType}</div>
-                    <div class="project-actions">
-                        <button class="btn btn-primary" onclick="openProject('${project.projectId}')">Open</button>
-                        <button class="btn btn-secondary" onclick="copyProjectUrl('${project.projectId}')">Copy URL</button>
+                    <div class="project-platform">${project.platform?.charAt(0).toUpperCase() + project.platform?.slice(1) || ''} - ${project.eventType || ''}</div>
+                    <div class="project-preview" style="position: relative; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.03);">
+                        ${project.videoUrl ? `
+                        <video src="${project.videoUrl}" preload="metadata" style="width: 100%; display: block; max-height: 200px; object-fit: cover;" muted></video>
+                        <button class="btn btn-secondary" style="position: absolute; left: 12px; bottom: 12px;" onclick="event.stopPropagation(); this.previousElementSibling.play();">▶ Play</button>
+                        ` : `
+                        <div style="padding: 24px; color: rgba(255,255,255,0.6);">No video saved yet</div>
+                        `}
                     </div>
                 </div>
             `).join('');
+        }
+
+        // Open project in editor (wizard) for editing
+        window.openProjectEditor = function(project) {
+            // Hide recent projects, show wizard in edit mode with preloaded data
+            document.getElementById('recentProjects').style.display = 'none';
+            document.getElementById('projectWizard').style.display = 'block';
+            showProjectWizard({
+                containerId: 'projectWizard',
+                mode: 'edit',
+                projectData: project
+            });
         }
 
         // Global functions for project actions

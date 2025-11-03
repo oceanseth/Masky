@@ -81,11 +81,44 @@ class ProjectWizard {
         this.setDefaultValues();
         this.updateNavigationButtons();
         
-        // No need to check for OAuth resume with popup flow
-        
-        // Add global message listener for debugging
+        // Resume wizard state after Twitch OAuth popup
+        const storedStateRaw = sessionStorage.getItem('projectWizardState');
+        if (storedStateRaw) {
+            try {
+                const stored = JSON.parse(storedStateRaw);
+                if (stored && stored.projectData) {
+                    this.projectData = stored.projectData;
+                    this.currentStep = stored.currentStep || this.currentStep;
+                    this.showStep(this.currentStep);
+                    this.updateNavigationButtons();
+                }
+            } catch (e) {
+                console.error('Failed to parse stored wizard state:', e);
+            }
+        }
+
+        // Listen for OAuth popup success and resume Step 4 seamlessly
         window.addEventListener('message', (event) => {
-            console.log('Global message listener received:', event.data);
+            if (!event || !event.data) return;
+            if (event.data.type === 'TWITCH_OAUTH_SUCCESS') {
+                // Restore saved state
+                const stateRaw = sessionStorage.getItem('projectWizardState');
+                if (stateRaw) {
+                    try {
+                        const saved = JSON.parse(stateRaw);
+                        if (saved && saved.projectData) {
+                            this.projectData = saved.projectData;
+                            this.currentStep = saved.currentStep || 4;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse saved wizard state after OAuth:', e);
+                    }
+                }
+                this.showStep(4);
+                this.updateNavigationButtons();
+                sessionStorage.removeItem('projectWizardState');
+                this.connectToTwitch();
+            }
         });
         
         if (this.options.mode === 'edit' && this.projectData.projectId) {
@@ -141,7 +174,13 @@ class ProjectWizard {
                                     <option value="channel.subscribe">New Subscriber</option>
                                     <option value="channel.cheer">New Cheer</option>
                                     <option value="channel.raid">New Raid</option>
+                                    <option value="channel.channel_points_custom_reward_redemption">Channel Points Redeem</option>
+                                    <option value="channel.chat_command">Chat Command</option>
                                 </select>
+                            </div>
+                            <div class="form-group" id="commandTriggerGroup" style="display: none;">
+                                <label for="commandTriggerInput">Command Trigger (text after !maskyai):</label>
+                                <input type="text" id="commandTriggerInput" class="form-input" placeholder="e.g., bacon">
                             </div>
                         </div>
                     </div>
@@ -373,6 +412,21 @@ class ProjectWizard {
                     this.projectData.projectName = defaultName;
                 }
                 
+                // Show/hide command trigger field for chat commands
+                const cmdGroup = document.getElementById('commandTriggerGroup');
+                if (cmdGroup) {
+                    cmdGroup.style.display = (e.target.value === 'channel.chat_command') ? 'block' : 'none';
+                }
+                
+                this.validateStep1();
+            });
+        }
+
+        // Command trigger input
+        const commandTriggerInput = document.getElementById('commandTriggerInput');
+        if (commandTriggerInput) {
+            commandTriggerInput.addEventListener('input', (e) => {
+                this.projectData.commandTrigger = e.target.value.trim();
                 this.validateStep1();
             });
         }
@@ -408,14 +462,22 @@ class ProjectWizard {
         const projectName = document.getElementById('projectName');
         const eventType = document.getElementById('eventType');
         const videoUrl = document.getElementById('videoUrl');
+        const commandTriggerInput = document.getElementById('commandTriggerInput');
 
         if (platformSelect) platformSelect.value = this.projectData.platform || '';
         if (projectName) projectName.value = this.projectData.projectName || '';
         if (eventType) eventType.value = this.projectData.eventType || 'channel.follow';
         if (videoUrl) videoUrl.value = this.projectData.videoUrl || '';
+        if (commandTriggerInput) commandTriggerInput.value = this.projectData.commandTrigger || '';
         
         // Ensure projectData has the correct values
         this.projectData.eventType = this.projectData.eventType || 'channel.follow';
+
+        // Ensure command trigger group visibility matches current event type
+        const cmdGroup = document.getElementById('commandTriggerGroup');
+        if (cmdGroup) {
+            cmdGroup.style.display = (this.projectData.eventType === 'channel.chat_command') ? 'block' : 'none';
+        }
 
         // Validate step 1
         this.validateStep1();
@@ -465,6 +527,13 @@ class ProjectWizard {
         if (stepNumber === 2) {
             // Ensure voice management is properly initialized for step 2
             this.initializeVoiceManagement();
+        } else if (stepNumber === 4) {
+            // Show chat bot info box if event type is chat command
+            const chatBotInfo = document.getElementById('chatBotInfo');
+            const isChatCommand = this.projectData.eventType === 'channel.chat_command';
+            if (chatBotInfo) {
+                chatBotInfo.style.display = isChatCommand ? 'block' : 'none';
+            }
         }
     }
 
@@ -540,9 +609,10 @@ class ProjectWizard {
         const platform = this.projectData.platform;
         const projectName = this.projectData.projectName ? this.projectData.projectName.trim() : '';
         const eventType = this.projectData.eventType;
+        const commandOk = (eventType !== 'channel.chat_command') || (this.projectData.commandTrigger && this.projectData.commandTrigger.trim().length > 0);
 
         // All three fields are required for step 1
-        const isValid = platform && projectName && eventType;
+        const isValid = platform && projectName && eventType && commandOk;
         
         // Update next button state
         const nextBtn = document.getElementById('nextBtn');
@@ -982,11 +1052,64 @@ class ProjectWizard {
                 }
             }
 
-            // Create EventSub subscription
+            // For chat commands, ensure chatbot instead of EventSub
             const currentUser = getCurrentUser();
             if (!currentUser) throw new Error('User not authenticated');
             
             const idToken = await currentUser.getIdToken();
+            if (this.projectData.eventType === 'channel.chat_command') {
+                // Ensure chatbot via user token
+                const response = await fetch(`${config.api.baseUrl}/api/twitch-chatbot-ensure`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    // Treat as connected
+                    if (connectionStatus) connectionStatus.style.display = 'none';
+                    if (connectionResult) connectionResult.style.display = 'block';
+                    const subscriptionDetails = document.getElementById('subscriptionDetails');
+                    if (subscriptionDetails) {
+                        subscriptionDetails.innerHTML = `
+                            <h4>Chat Bot Status:</h4>
+                            <p><strong>Established:</strong> ${result.chatbotEstablished ? 'Yes' : 'No'}</p>
+                            <p><strong>Note:</strong> Chat commands are handled via the chat bot connection.</p>
+                        `;
+                    }
+                    return;
+                } else {
+                    const errorData = await response.json();
+                    // If missing chat scopes, prompt re-auth with Twitch to grant chat scopes
+                    if (errorData.code === 'TWITCH_CHAT_SCOPES_MISSING' || errorData.code === 'TWITCH_TOKEN_MISSING') {
+                        // Save current wizard state so we can resume after OAuth
+                        sessionStorage.setItem('projectWizardState', JSON.stringify({
+                            currentStep: this.currentStep,
+                            projectData: this.projectData,
+                            wizardId: this.wizardId
+                        }));
+                        const { signInWithTwitch } = await import('./firebase.js');
+                        if (connectionStatus) {
+                            connectionStatus.innerHTML = `
+                                <div class="status-icon">🔗</div>
+                                <p>Requesting Twitch chat permissions...</p>
+                            `;
+                        }
+                        await signInWithTwitch();
+                        return; // Popup will send a message; we'll resume on receipt
+                    }
+                    // Bubble other errors to standard handler below
+                    throw new Error(errorData.error || 'Failed to ensure chat bot');
+                }
+            }
+
+            // Determine EventSub type based on selected event
+            const eventsubType = this.projectData.eventType;
+
             const response = await fetch(`${config.api.baseUrl}/api/twitch-eventsub`, {
                 method: 'POST',
                 headers: {
@@ -994,12 +1117,11 @@ class ProjectWizard {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    type: this.projectData.eventType,
+                    type: eventsubType,
                     version: '2',
                     condition: {
                         broadcaster_user_id: currentUser.uid.replace('twitch:', '')
                     }
-                    // Note: projectId will be associated when the project is saved
                 })
             });
 
@@ -1025,6 +1147,21 @@ class ProjectWizard {
             } else {
                 const errorData = await response.json();
                 
+                // Special handling: treat websocket-required for chat messages as connected guidance
+                if (errorData.code === 'TWITCH_CHAT_WEBSOCKET_REQUIRED') {
+                    if (connectionStatus) connectionStatus.style.display = 'none';
+                    if (connectionResult) connectionResult.style.display = 'block';
+                    const subscriptionDetails = document.getElementById('subscriptionDetails');
+                    if (subscriptionDetails) {
+                        subscriptionDetails.innerHTML = `
+                            <h4>Chat Bot Required:</h4>
+                            <p><strong>Status:</strong> WebSocket required by Twitch for chat messages.</p>
+                            <p><strong>Action:</strong> Chat bot will handle commands using your user token.</p>
+                        `;
+                    }
+                    return;
+                }
+
                 // Handle specific case where Twitch token is missing
                 if (errorData.code === 'TWITCH_TOKEN_MISSING') {
                     // User needs to reconnect their Twitch account
@@ -1089,8 +1226,8 @@ class ProjectWizard {
             // Import Firestore functions from our firebase module
             const { db, collection, query, where, getDocs } = await import('./firebase.js');
             
-            // Query voices collection directly
-            const voicesRef = collection(db, 'voices');
+            // Query user's voices subcollection
+            const voicesRef = collection(db, 'users', user.uid, 'voices');
             const q = query(voicesRef, where('userId', '==', user.uid));
             const snapshot = await getDocs(q);
 
@@ -1537,7 +1674,9 @@ class ProjectWizard {
             'channel.subscribe': 'Subscribe',
             'channel.cheer': 'Cheer',
             'channel.bits.use': 'Bits Use',
-            'channel.raid': 'Raid'
+            'channel.raid': 'Raid',
+            'channel.channel_points_custom_reward_redemption': 'Channel Points',
+            'channel.chat_command': 'Chat Command'
         };
         
         const eventName = eventNames[eventType] || eventType.replace('channel.', '').replace('_', ' ');
@@ -1638,10 +1777,10 @@ class ProjectWizard {
                 platform: this.projectData.platform,
                 projectName: this.projectData.projectName,
                 eventType: this.projectData.eventType,
+                commandTrigger: this.projectData.commandTrigger || null,
                 voiceUrl: this.projectData.voiceUrl || null,
                 voiceId: this.projectData.voiceId || null,
                 voiceName: this.projectData.voiceName || null,
-                avatarFile: this.projectData.avatarFile || null,
                 avatarUrl: this.projectData.avatarUrl || null,
                 videoUrl: this.projectData.videoUrl || null,
                 alertConfig: this.projectData.alertConfig || {},
@@ -1753,18 +1892,14 @@ async function loadRecentProjects() {
         const user = getCurrentUser();
         if (!user) return;
 
-        const idToken = await user.getIdToken();
-        const response = await fetch(`${config.api.baseUrl}/api/recent-projects`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${idToken}`
-            }
-        });
+        // Query Firestore directly for the user's projects
+        const { db, collection, query, where, orderBy, getDocs } = await import('./firebase.js');
+        const projectsRef = collection(db, 'projects');
+        const q = query(projectsRef, where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
 
-        if (response.ok) {
-            const data = await response.json();
-            renderRecentProjects(data.projects);
-        }
+        const projects = snapshot.docs.map(doc => ({ projectId: doc.id, ...doc.data() }));
+        renderRecentProjects(projects);
     } catch (error) {
         console.error('Error loading recent projects:', error);
     }
@@ -1784,15 +1919,37 @@ function renderRecentProjects(projects) {
     }
 
     projectsGrid.innerHTML = projects.map(project => `
-        <div class="project-card">
+        <div class="project-card" onclick='openProjectEditor(${JSON.stringify(project)})' style="cursor: pointer;">
             <div class="project-name">${project.projectName}</div>
-            <div class="project-platform">${project.platform.charAt(0).toUpperCase() + project.platform.slice(1)} - ${project.eventType}</div>
-            <div class="project-actions">
-                <button class="btn btn-primary" onclick="openProject('${project.projectId}')">Open</button>
-                <button class="btn btn-secondary" onclick="copyProjectUrl('${project.projectId}')">Copy URL</button>
+            <div class="project-platform">${project.platform?.charAt(0).toUpperCase() + project.platform?.slice(1) || ''} - ${project.eventType || ''}</div>
+            <div class="project-preview" style="position: relative; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.03);">
+                ${project.videoUrl ? `
+                <video src="${project.videoUrl}" preload="metadata" style="width: 100%; display: block; max-height: 200px; object-fit: cover;" muted></video>
+                <button class="btn btn-secondary" style="position: absolute; left: 12px; bottom: 12px;" onclick="event.stopPropagation(); this.previousElementSibling.play();">▶ Play</button>
+                ` : `
+                <div style=\"padding: 24px; color: rgba(255,255,255,0.6);\">No video saved yet</div>
+                `}
             </div>
         </div>
     `).join('');
+}
+
+// Open project in editor
+window.openProjectEditor = function(project) {
+    // Destroy any existing wizard instance cleanly
+    if (projectWizard) {
+        projectWizard.destroy();
+    }
+    // Show wizard and hide recent projects
+    const wiz = document.getElementById('projectWizard');
+    const recent = document.getElementById('recentProjects');
+    if (wiz) wiz.style.display = 'block';
+    if (recent) recent.style.display = 'none';
+    showProjectWizard({
+        containerId: 'projectWizard',
+        mode: 'edit',
+        projectData: project
+    });
 }
 
 // Start New Project

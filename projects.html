@@ -1030,7 +1030,9 @@
                 'channel.follow': 'New Follower',
                 'channel.subscribe': 'New Subscriber',
                 'channel.cheer': 'New Cheer',
-                'channel.raid': 'New Raid'
+                'channel.raid': 'New Raid',
+                'channel.channel_points_custom_reward_redemption': 'Channel Points Redeem',
+                'channel.chat_command': 'Chat Command'
             };
             return names[eventType] || eventType;
         }
@@ -1344,6 +1346,16 @@
                     duration: 5000,
                     position: 'bottom'
                 },
+                'channel.chat_command': {
+                    enabled: true,
+                    message: 'Playing {command}!',
+                    backgroundColor: '#0ea5e9',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
+                },
                 'channel.subscribe': {
                     enabled: true,
                     message: '{username} just subscribed!',
@@ -1373,6 +1385,16 @@
                     fontWeight: '700',
                     duration: 5000,
                     position: 'bottom'
+                },
+                'channel.channel_points_custom_reward_redemption': {
+                    enabled: true,
+                    message: '{username} redeemed {reward} for {cost} points!',
+                    backgroundColor: '#8b5cf6',
+                    textColor: '#ffffff',
+                    fontSize: '2rem',
+                    fontWeight: '700',
+                    duration: 5000,
+                    position: 'bottom'
                 }
             };
         }
@@ -1386,7 +1408,9 @@
                 { key: 'channel.follow', label: 'Follows', icon: '👤' },
                 { key: 'channel.subscribe', label: 'Subscriptions', icon: '⭐' },
                 { key: 'channel.cheer', label: 'Cheers/Bits', icon: '💎' },
-                { key: 'channel.raid', label: 'Raids', icon: '⚔️' }
+                { key: 'channel.raid', label: 'Raids', icon: '⚔️' },
+                { key: 'channel.channel_points_custom_reward_redemption', label: 'Channel Points', icon: '🎯' },
+                { key: 'channel.chat_command', label: 'Chat Commands', icon: '💬' }
             ];
             
             eventConfigs.innerHTML = eventTypes.map(eventType => {
@@ -1408,7 +1432,7 @@
                                 <input type="text" class="form-input" value="${config.message}" 
                                        onchange="updateEventConfig('${eventType.key}', 'message', this.value)"
                                        placeholder="Use {username}, {bits}, {viewers} as placeholders">
-                                <small>Available placeholders: {username}${eventType.key === 'channel.cheer' ? ', {bits}' : ''}${eventType.key === 'channel.raid' ? ', {viewers}' : ''}</small>
+                                <small>Available placeholders: {username}${eventType.key === 'channel.cheer' ? ', {bits}' : ''}${eventType.key === 'channel.raid' ? ', {viewers}' : ''}${eventType.key === 'channel.channel_points_custom_reward_redemption' ? ', {reward}, {cost}' : ''}${eventType.key === 'channel.chat_command' ? ', {command}' : ''}</small>
                             </div>
                             
                             <div class="setting-row">

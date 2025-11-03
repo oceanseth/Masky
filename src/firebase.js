@@ -98,8 +98,9 @@ export async function signInWithTwitch() {
           type: event.data?.type
         });
         
-        // Accept messages from masky.ai domain only
-        if (event.origin !== 'https://masky.ai') {
+        // Accept messages from masky.ai domain or localhost (for development)
+        const allowedOrigins = ['https://masky.ai', 'http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
+        if (!allowedOrigins.includes(event.origin)) {
           console.log('Ignoring message from non-whitelisted origin:', event.origin);
           return;
         }
@@ -115,9 +116,25 @@ export async function signInWithTwitch() {
           clearInterval(checkClosed);
           window.removeEventListener('message', messageHandler);
           
-          // Don't close popup here, let it close itself
-          console.log('OAuth success, resolving with user:', event.data.user);
-          resolve(event.data.user);
+          // Sign into Firebase with the custom token so onAuthChange triggers and dashboard shows
+          const payload = event.data.user || {};
+          const token = payload.firebaseToken;
+          if (!token) {
+            console.error('Missing firebaseToken in OAuth success payload');
+            reject(new Error('Missing firebase token from OAuth response'));
+            return;
+          }
+          
+          signInWithCustomToken(auth, token)
+            .then((userCredential) => {
+              console.log('Signed into Firebase with custom token');
+              // Let popup close itself; resolve with user info
+              resolve({ ...payload, firebaseUser: userCredential.user });
+            })
+            .catch((e) => {
+              console.error('Failed to sign into Firebase with custom token:', e);
+              reject(new Error('Failed to complete sign-in'));
+            });
         } else if (event.data.type === 'TWITCH_OAUTH_ERROR') {
           console.log('Processing OAuth error message...');
           messageReceived = true;

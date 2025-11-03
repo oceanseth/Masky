@@ -43,6 +43,7 @@ provider:
     apiKeys: []  # Disable API key requirement
     minimumCompressionSize: 1024
     binaryMediaTypes:
+      - 'multipart/form-data'
       - 'image/*'
       - 'application/pdf'
       - 'application/octet-stream'
@@ -63,7 +64,12 @@ custom:
     target: node18
     platform: node
     concurrency: 10
-    external: []
+    external:
+      - firebase-admin
+      - '@google-cloud/storage'
+      - '@google-cloud/firestore'
+      - '@google-cloud/common'
+      - aws-sdk
     exclude: []
   prune:
     automatic: true

@@ -47,6 +47,12 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
       }
+
+      // User avatars subcollection - users can only access their own avatars
+      match /avatars/{avatarId} {
+        allow read, write: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      }
     }
     
     // Projects collection - users can only access their own projects

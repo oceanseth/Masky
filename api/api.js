@@ -168,6 +168,54 @@ exports.handler = async (event, context) => {
         }
     }
 
+    // HeyGen: list avatars
+    if (path.includes('/heygen/avatars') && method === 'GET') {
+        try {
+            const data = await heygen.listAvatars();
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ avatars: data })
+            };
+        } catch (err) {
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: 'Failed to list HeyGen avatars', message: err.message })
+            };
+        }
+    }
+
+    // HeyGen: list voices
+    if (path.includes('/heygen/voices') && method === 'GET') {
+        try {
+            const data = await heygen.listVoices();
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ voices: data })
+            };
+        } catch (err) {
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: 'Failed to list HeyGen voices', message: err.message })
+            };
+        }
+    }
+
+    // HeyGen: generate video (audio source as voice)
+    if (path.includes('/heygen/generate') && method === 'POST') {
+        const response = await handleHeygenGenerate(event, headers);
+        return response;
+    }
+
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
         const response = await handleTwitchOAuth(event);
@@ -620,6 +668,199 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({ error: 'Route not found' })
     };
+}
+
+/**
+ * Generate HeyGen video using audio_url. Optionally records avatar mapping.
+ */
+async function handleHeygenGenerate(event, headers) {
+    try {
+        // Verify Firebase token
+        const authHeader = event.headers.Authorization || event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                headers,
+                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const userId = decoded.uid;
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const {
+            projectId,
+            voiceUrl: voiceUrlInput,
+            heygenAvatarId,
+            userAvatarUrl: userAvatarUrlInput,
+            width = 1280,
+            height = 720,
+            avatarStyle = 'normal'
+        } = body;
+
+        if (!projectId) {
+            return { statusCode: 400, headers, body: JSON.stringify({ error: 'projectId is required' }) };
+        }
+        // Load project to get defaults (projectName, urls) if not provided
+        const db = admin.firestore();
+        const projectDoc = await db.collection('projects').doc(projectId).get();
+        const projectData = projectDoc.exists ? projectDoc.data() : {};
+        const projectName = projectData?.projectName || 'Masky Video';
+        const voiceUrl = voiceUrlInput || projectData?.voiceUrl;
+        const userAvatarUrl = userAvatarUrlInput || projectData?.avatarUrl;
+
+        if (!voiceUrl) {
+            return { statusCode: 400, headers, body: JSON.stringify({ error: 'voiceUrl is required' }) };
+        }
+
+        // Ensure per-user folder exists in HeyGen
+        let folderId = null;
+        const userRef = db.collection('users').doc(userId);
+        const userSnap = await userRef.get();
+        const userRec = userSnap.exists ? userSnap.data() : {};
+        if (userRec.heygenFolderId) {
+            folderId = userRec.heygenFolderId;
+        } else {
+            try {
+                folderId = await heygen.createFolder(`masky_${userId}`);
+                await userRef.set({ heygenFolderId: folderId, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            } catch (e) {
+                console.warn('Failed to create HeyGen folder; proceeding without folder:', e.message);
+            }
+        }
+
+        // If client passed both mapping parts, persist mapping for future use
+        if (heygenAvatarId && userAvatarUrl) {
+            await db.collection('users').doc(userId).collection('heygenAvatars').add({
+                userId,
+                avatarUrl: userAvatarUrl,
+                heygenAvatarId,
+                name: `masky_${userId}_${Math.abs([...userAvatarUrl].reduce((h, c) => ((h<<5)-h + c.charCodeAt(0))|0, 0))}`,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        let resolvedAvatarId = heygenAvatarId || null;
+
+        // If no HeyGen avatar id provided, try to find an existing mapping by avatarUrl
+        if (!resolvedAvatarId && userAvatarUrl) {
+            // Use avatar groups flow
+            // 1) lookup group for this asset
+            const groupsRef = userRef.collection('heygenAvatarGroups');
+            const existing = await groupsRef.where('avatarUrl', '==', userAvatarUrl).limit(1).get();
+            let groupId = null;
+            if (!existing.empty) {
+                groupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
+            } else {
+                // create group (name per user once) and add look for this asset
+                const groupName = `masky_${userId}`;
+                groupId = await heygen.createPhotoAvatarGroup(groupName);
+                await groupsRef.add({
+                    userId,
+                    avatarUrl: userAvatarUrl,
+                    avatar_group_id: groupId,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+            }
+
+            // Ensure the asset look exists in the group (idempotent add)
+            try {
+                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+            } catch {}
+
+            // 2) list avatars in the group and pick one
+            const groupAvatars = await heygen.listAvatarsInAvatarGroup(groupId);
+            if (groupAvatars && groupAvatars.length > 0) {
+                // choose most recent if timestamps available; else first
+                const selected = groupAvatars[0];
+                resolvedAvatarId = selected.avatar_id || selected.id;
+            }
+        }
+
+        // If still no avatar id, fallback to a public avatar to avoid blocking first run
+        let fallbackUsed = false;
+        if (!resolvedAvatarId) {
+            try {
+                const avatars = await heygen.listAvatars();
+                if (Array.isArray(avatars) && avatars.length > 0) {
+                    // Prefer obviously public avatars if fields exist; otherwise use first
+                    const preferred = avatars.find(a => (a.avatar_id || '').includes('public')) || avatars[0];
+                    resolvedAvatarId = preferred.avatar_id || preferred.id;
+                    fallbackUsed = true;
+                    console.log('HeyGen: using fallback public avatar:', resolvedAvatarId);
+                }
+            } catch (e) {
+                // ignore and keep unresolved
+            }
+        }
+
+        if (!resolvedAvatarId) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({
+                    error: 'HEYGEN_AVATAR_REQUIRED',
+                    message: 'Provide heygenAvatarId or pre-associate your image with a HeyGen avatar.',
+                    hint: 'Use GET /api/heygen/avatars to choose a public avatar, or save a mapping in Firestore.'
+                })
+            };
+        }
+
+        // Upload audio asset to HeyGen to get audio_asset_id
+        const audioAssetId = await heygen.uploadAssetFromUrl(voiceUrl);
+
+        // Request generation with audio_asset_id and folder
+        const videoId = await heygen.generateVideoWithAudioAsset({
+            avatarId: resolvedAvatarId,
+            audioAssetId,
+            width,
+            height,
+            avatarStyle,
+            title: projectName,
+            callbackId: projectId,
+            folderId
+        });
+
+        // Persist to project
+        const projectRef = db.collection('projects').doc(projectId);
+        await projectRef.set({
+            heygenVideoId: videoId,
+            heygenStatus: 'pending',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        return {
+            statusCode: 200,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ videoId, fallbackAvatarUsed: fallbackUsed })
+        };
+    } catch (err) {
+        console.error('HeyGen generate error:', err);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: 'Failed to generate HeyGen video', message: err.message })
+        };
+    }
 }
 
     
@@ -1511,11 +1752,22 @@ async function handleAvatarUpload(event) {
 
         console.log('Avatar uploaded successfully:', publicUrl);
 
+        // Save avatar metadata to Firestore under user's avatars subcollection
+        const db = admin.firestore();
+        const avatarData = {
+            url: publicUrl,
+            fileName: uploadedFile.fileName,
+            userId: userId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        const avatarDoc = await db.collection('users').doc(userId).collection('avatars').add(avatarData);
+
         return {
             statusCode: 200,
             body: JSON.stringify({
                 success: true,
-                avatarUrl: publicUrl
+                avatarUrl: publicUrl,
+                avatarId: avatarDoc.id
             })
         };
 

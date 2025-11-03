@@ -25,7 +25,7 @@ export function createHeader(options = {}) {
         <div class="nav-links">
             <!-- Auth buttons for logged out state -->
             <button class="btn btn-secondary" id="navSignIn" onclick="showLogin()" style="display: none;">Sign In</button>
-            <button class="btn btn-primary" id="navSignUp" onclick="showSignup()" style="display: none;">Start Creating</button>            
+            <button class="btn btn-primary" id="navSignUp" onclick="showSignup()" style="display: none;">Start Creating</button>
         </div>
         <!-- Menu Button (always visible) -->
         <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()">
@@ -56,6 +56,10 @@ export function createHeader(options = {}) {
             <button class="mobile-menu-item" id="mobileHelp" onclick="showHelp(); closeMobileMenu()" title="Show Tutorial" style="display: none;">
                 <span class="icon">?</span>
                 Help
+            </button>
+            <button class="mobile-menu-item" id="mobileAbout" onclick="window.location.href='/about.html'; closeMobileMenu()">
+                <span class="icon">ℹ</span>
+                About
             </button>
             ${showMembershipLink ? `
             <button class="mobile-menu-item" id="mobileMembership" onclick="window.location.href='/membership.html'; closeMobileMenu()" style="display: none;">
@@ -119,6 +123,7 @@ export function updateHeaderAuthState(user) {
     const mobileDashboard = document.getElementById('mobileDashboard');
     const mobileProjects = document.getElementById('mobileProjects');
     const mobileHelp = document.getElementById('mobileHelp');
+    const mobileAbout = document.getElementById('mobileAbout');
     const mobileMembership = document.getElementById('mobileMembership');
     const mobileSignOut = document.getElementById('mobileSignOut');
     

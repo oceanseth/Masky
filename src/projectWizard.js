@@ -70,6 +70,7 @@ class ProjectWizard {
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.userVoices = [];
+        this.userAvatars = [];
     }
 
     /**
@@ -260,6 +261,10 @@ class ProjectWizard {
                         </div>
                         <div class="step-content">
                             <div class="avatar-upload">
+                                <div class="avatar-library" id="avatarLibrary" style="margin-bottom: 16px;">
+                                    <h4>Your Avatars</h4>
+                                    <div id="avatarList" class="avatar-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px;"></div>
+                                </div>
                                 <div class="upload-area" id="uploadArea">
                                     <div class="upload-icon">📷</div>
                                     <p>Drag & drop an image here or click to browse</p>
@@ -268,7 +273,6 @@ class ProjectWizard {
                                 <div class="image-preview" id="imagePreview" style="display: none;">
                                     <img id="previewImg" alt="Avatar preview">
                                     <div class="image-actions">
-                                        <button class="btn btn-primary" onclick="projectWizard.saveAvatar()">Use This Image</button>
                                         <button class="btn btn-secondary" onclick="projectWizard.retryUpload()">Choose Different</button>
                                     </div>
                                 </div>
@@ -527,6 +531,9 @@ class ProjectWizard {
         if (stepNumber === 2) {
             // Ensure voice management is properly initialized for step 2
             this.initializeVoiceManagement();
+        } else if (stepNumber === 3) {
+            // Load user's existing avatars when entering step 3
+            this.loadUserAvatars();
         } else if (stepNumber === 4) {
             // Show chat bot info box if event type is chat command
             const chatBotInfo = document.getElementById('chatBotInfo');
@@ -940,6 +947,9 @@ class ProjectWizard {
             if (previewImg) previewImg.src = e.target.result;
             if (imagePreview) imagePreview.style.display = 'block';
             if (uploadArea) uploadArea.style.display = 'none';
+
+            // Immediately upload and save the avatar; no separate confirmation button
+            this.saveAvatar();
         };
         reader.readAsDataURL(file);
         
@@ -970,6 +980,24 @@ class ProjectWizard {
                     const result = await response.json();
                     this.projectData.avatarUrl = result.avatarUrl;
                     console.log('Avatar saved:', result.avatarUrl);
+                    // Ensure an avatar metadata doc exists (write client-side for immediate availability)
+                    try {
+                        const { db, collection, addDoc } = await import('./firebase.js');
+                        const avatarsCol = collection(db, 'users', user.uid, 'avatars');
+                        await addDoc(avatarsCol, {
+                            url: result.avatarUrl,
+                            fileName: this.projectData.avatarFile?.name || result.avatarId || 'avatar',
+                            userId: user.uid,
+                            createdAt: new Date()
+                        });
+                    } catch (metaErr) {
+                        console.warn('Avatar metadata write (client) failed; may already exist via backend:', metaErr);
+                    }
+                    // Reload avatars and auto-select the newly uploaded
+                    await this.loadUserAvatars();
+                    if (result.avatarUrl) {
+                        this.selectAvatarByUrl(result.avatarUrl);
+                    }
                 }
             } catch (error) {
                 console.error('Error saving avatar:', error);
@@ -1263,6 +1291,94 @@ class ProjectWizard {
     }
 
     /**
+     * Load user's avatars directly from Firestore
+     */
+    async loadUserAvatars() {
+        try {
+            const user = getCurrentUser();
+            if (!user) return;
+
+            console.log('Loading avatars for user:', user.uid);
+            const { db, collection, getDocs } = await import('./firebase.js');
+            const avatarsRef = collection(db, 'users', user.uid, 'avatars');
+            const snapshot = await getDocs(avatarsRef);
+
+            console.log('Avatar query snapshot size:', snapshot.size);
+            this.userAvatars = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => {
+                    if (!a.createdAt || !b.createdAt) return 0;
+                    try {
+                        return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
+                    } catch {
+                        return 0;
+                    }
+                });
+            console.log('User Avatars:', this.userAvatars.map(a => a.url));
+            this.renderAvatarList(this.userAvatars);
+        } catch (e) {
+            console.error('Error loading avatars:', e);
+            this.userAvatars = [];
+            this.renderAvatarList([]);
+        }
+    }
+
+    renderAvatarList(avatars) {
+        const avatarList = document.getElementById('avatarList');
+        if (!avatarList) return;
+        if (!avatars || avatars.length === 0) {
+            avatarList.innerHTML = '<div style="color: rgba(255,255,255,0.6);">No saved avatars yet</div>';
+            return;
+        }
+        const selectedUrl = this.projectData.avatarUrl;
+        avatarList.innerHTML = avatars.map(a => `
+            <div class="avatar-card${selectedUrl && a.url === selectedUrl ? ' selected' : ''}" data-avatar-id="${a.id}" style="position: relative;">
+                <img src="${a.url}" alt="avatar" style="width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);" onclick="projectWizard.selectAvatar('${a.id}', '${a.url}')" />
+                ${selectedUrl && a.url === selectedUrl ? '<div class="voice-selected" style="position:absolute;top:6px;right:6px;background:#16a34a;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;">✓</div>' : ''}
+            </div>
+        `).join('');
+        // If a selection exists, also update the preview
+        if (selectedUrl) {
+            this.selectAvatarByUrl(selectedUrl);
+        }
+    }
+
+    selectAvatar(avatarId, url) {
+        this.projectData.avatarUrl = url;
+        // Show preview section
+        const imagePreview = document.getElementById('imagePreview');
+        const uploadArea = document.getElementById('uploadArea');
+        const previewImg = document.getElementById('previewImg');
+        if (previewImg) previewImg.src = url;
+        if (imagePreview) imagePreview.style.display = 'block';
+        if (uploadArea) uploadArea.style.display = 'none';
+        // Update selection classes in the list
+        document.querySelectorAll('#avatarList .avatar-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        const selectedCard = document.querySelector(`#avatarList .avatar-card img[src='${url}']`)?.parentElement;
+        if (selectedCard) selectedCard.classList.add('selected');
+        this.validateStep3();
+
+        // If editing an existing project, persist immediately
+        if (this.options.mode === 'edit' && this.projectData.projectId) {
+            (async () => {
+                try {
+                    const { db, doc, updateDoc } = await import('./firebase.js');
+                    const projectRef = doc(db, 'projects', this.projectData.projectId);
+                    await updateDoc(projectRef, { avatarUrl: url, updatedAt: new Date() });
+                } catch (err) {
+                    console.warn('Failed to persist avatar selection to project:', err);
+                }
+            })();
+        }
+    }
+
+    selectAvatarByUrl(url) {
+        this.selectAvatar('', url);
+    }
+
+    /**
      * Render the voice list
      */
     renderVoiceList() {
@@ -1318,6 +1434,15 @@ class ProjectWizard {
                 </div>
             </div>
         `).join('');
+
+        // Auto-select if project already has a voice set (edit mode)
+        if (this.projectData && (this.projectData.voiceId || this.projectData.voiceUrl)) {
+            const target = this.userVoices.find(v => v.id === this.projectData.voiceId) ||
+                           this.userVoices.find(v => v.url === this.projectData.voiceUrl);
+            if (target) {
+                this.loadAndShowSelectedVoice(target);
+            }
+        }
     }
 
     /**
@@ -1691,8 +1816,36 @@ class ProjectWizard {
         const generationResult = document.getElementById('generationResult');
         
         try {
-            // Simulate content generation
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // If we don't yet have a HeyGen video for this project, request generation
+            const user = getCurrentUser();
+            if (user && this.projectData.projectId && this.projectData.voiceUrl && !this.projectData.heygenVideoId) {
+                const idToken = await user.getIdToken();
+                const resp = await fetch(`${config.api.baseUrl}/api/heygen/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        projectId: this.projectData.projectId,
+                        voiceUrl: this.projectData.voiceUrl,
+                        // If client already knows the mapped HeyGen avatar id, pass it
+                        heygenAvatarId: this.projectData.heygenAvatarId || null,
+                        userAvatarUrl: this.projectData.avatarUrl || null,
+                        width: 1280,
+                        height: 720
+                    })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.projectData.heygenVideoId = data.videoId;
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    console.warn('HeyGen generate failed:', err);
+                }
+            }
+            // Simulate minimal delay then show UI
+            await new Promise(resolve => setTimeout(resolve, 1200));
             
             // Show result
             if (generationStatus) generationStatus.style.display = 'none';

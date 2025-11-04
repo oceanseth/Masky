@@ -5,7 +5,20 @@ export const config = {
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
     redirectUri: window.location.origin + window.location.pathname,
-    scopes: ['user:read:email', 'channel:manage:videos', 'user:read:broadcast', 'moderator:read:followers', 'user:read:chat', 'chat:read', 'chat:edit', 'channel:bot']
+    scopes: [
+      'user:read:email',
+      'channel:manage:videos',
+      'user:read:broadcast',
+      'moderator:read:followers',
+      'user:read:chat',
+      'chat:read',
+      'chat:edit',
+      'channel:bot',
+      // Added to support EventSub types
+      'channel:read:subscriptions',
+      'bits:read',
+      'channel:read:redemptions'
+    ]
   },
   
   // API Configuration  

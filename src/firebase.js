@@ -46,7 +46,7 @@ const googleProvider = new GoogleAuthProvider();
 /**
  * Sign in with Twitch using popup OAuth flow
  */
-export async function signInWithTwitch() {
+export async function signInWithTwitch(extraScopes = []) {
   try {
     // Generate state for CSRF protection
     const state = generateRandomState();
@@ -56,11 +56,12 @@ export async function signInWithTwitch() {
     const redirectUri = `${config.api.baseUrl}/api/twitch_oauth`;
     
     // Build authorization URL
+    const mergedScopes = Array.from(new Set([...(config.twitch.scopes || []), ...(extraScopes || [])]));
     const authUrl = new URL('https://id.twitch.tv/oauth2/authorize');
     authUrl.searchParams.append('client_id', config.twitch.clientId);
     authUrl.searchParams.append('redirect_uri', redirectUri);
     authUrl.searchParams.append('response_type', 'code'); // Use code response type for server-side flow
-    authUrl.searchParams.append('scope', config.twitch.scopes.join(' '));
+    authUrl.searchParams.append('scope', mergedScopes.join(' '));
     authUrl.searchParams.append('state', state);
     authUrl.searchParams.append('popup', 'true'); // Indicate this is a popup request
     

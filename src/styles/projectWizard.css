@@ -9,8 +9,48 @@
 }
 
 .wizard-header {
-    text-align: center;
     margin-bottom: 2rem;
+    position: relative;
+}
+
+.wizard-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.wizard-header-content > div:first-child {
+    text-align: center;
+    flex: 1;
+}
+
+.wizard-close-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.5rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.wizard-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    transform: scale(1.1);
+}
+
+.wizard-close-btn:active {
+    transform: scale(0.95);
 }
 
 .wizard-subtitle {

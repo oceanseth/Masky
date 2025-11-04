@@ -216,13 +216,23 @@ function initializeMobileMenu() {
     // Global avatar manager launcher
     window.showAvatars = function() {
         import('/src/avatars.js').then(({ renderAvatars }) => {
+            // Close project wizard if open
+            if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+                try {
+                    window.projectWizard.close();
+                } catch (e) {
+                    console.warn('Error closing wizard:', e);
+                }
+            }
             // Hide project UI if present
             const wiz = document.getElementById('projectWizard');
             const recent = document.getElementById('recentProjects');
             const about = document.getElementById('aboutSection');
+            const dashboard = document.getElementById('dashboard');
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (about) about.style.display = 'none';
+            if (dashboard) dashboard.style.display = 'block';
             // Render avatar manager
             renderAvatars('#dashboard .dashboard-container');
         }).catch(err => {
@@ -232,17 +242,31 @@ function initializeMobileMenu() {
 
     // Global projects manager launcher
     window.showProjects = function() {
+        console.log('[Header] showProjects clicked');
         import('/src/projects.js').then(({ renderProjectsManager }) => {
+            console.log('[Header] projects.js loaded, rendering Projects Manager');
+            // Close project wizard if open
+            if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+                try {
+                    window.projectWizard.close();
+                } catch (e) {
+                    console.warn('Error closing wizard:', e);
+                }
+            }
             // Hide wizard/avatars if visible
             const wiz = document.getElementById('projectWizard');
             const recent = document.getElementById('recentProjects');
             const avatars = document.getElementById('avatarsManager');
             const about = document.getElementById('aboutSection');
+            const dashboard = document.getElementById('dashboard');
+            console.log('[Header] toggling views', { hasWiz: !!wiz, hasRecent: !!recent, hasAvatars: !!avatars, hasAbout: !!about, hasDashboard: !!dashboard });
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (avatars) avatars.remove();
             if (about) about.style.display = 'none';
+            if (dashboard) dashboard.style.display = 'block';
             // Render projects manager
+            console.log('[Header] calling renderProjectsManager on selector #dashboard .dashboard-container');
             renderProjectsManager('#dashboard .dashboard-container');
         }).catch(err => {
             console.error('Failed to load projects manager:', err);
@@ -251,10 +275,22 @@ function initializeMobileMenu() {
 
     // Global About page toggler
     window.showAbout = function() {
+        // Close project wizard if open
+        if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+            try {
+                window.projectWizard.close();
+            } catch (e) {
+                console.warn('Error closing wizard:', e);
+            }
+        }
         const dashboard = document.getElementById('dashboard');
         const about = document.getElementById('aboutSection');
         const avatars = document.getElementById('avatarsManager');
+        const wiz = document.getElementById('projectWizard');
+        const recent = document.getElementById('recentProjects');
         if (avatars) avatars.remove();
+        if (wiz) wiz.style.display = 'none';
+        if (recent) recent.style.display = 'none';
         if (dashboard) dashboard.style.display = 'none';
         if (about) about.style.display = 'block';
         // Scroll to top for a clean view

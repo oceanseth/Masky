@@ -71,6 +71,13 @@ class ProjectWizard {
         this.audioChunks = [];
         this.userVoices = [];
         this.userAvatars = [];
+        
+        // Dirty flags to track changes that need to be persisted
+        this.dirtyFlags = {
+            commandTrigger: false,
+            voice: false,
+            avatar: false
+        };
     }
 
     /**
@@ -140,8 +147,13 @@ class ProjectWizard {
         container.innerHTML = `
             <div class="project-wizard" id="projectWizard">
                 <div class="wizard-header">
-                    <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Project' : 'New Project Wizard'}</h2>
-                    <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your project settings' : 'Create your first AI-powered stream alert in 5 simple steps'}</p>
+                    <div class="wizard-header-content">
+                        <div>
+                            <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Project' : 'New Project Wizard'}</h2>
+                            <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your project settings' : 'Create your first AI-powered stream alert in 5 simple steps'}</p>
+                        </div>
+                        <button class="wizard-close-btn" onclick="projectWizard.close()" title="Close Wizard">×</button>
+                    </div>
                 </div>
 
                 <div class="wizard-steps">
@@ -345,7 +357,6 @@ class ProjectWizard {
                     <button class="btn btn-secondary" id="prevBtn" onclick="projectWizard.previousStep()" style="display: none;">Previous</button>
                     <button class="btn btn-primary" id="nextBtn" onclick="projectWizard.nextStep()">Next</button>
                     <button class="btn btn-primary" id="finishBtn" onclick="projectWizard.finishWizard()" style="display: none;">Finish</button>
-                    ${this.options.mode === 'edit' ? '<button class="btn btn-secondary" id="cancelBtn" onclick="projectWizard.cancel()">Cancel</button>' : ''}
                 </div>
             </div>
         `;
@@ -431,6 +442,7 @@ class ProjectWizard {
         if (commandTriggerInput) {
             commandTriggerInput.addEventListener('input', (e) => {
                 this.projectData.commandTrigger = e.target.value.trim();
+                this.dirtyFlags.commandTrigger = true;
                 this.validateStep1();
             });
         }
@@ -483,15 +495,73 @@ class ProjectWizard {
             cmdGroup.style.display = (this.projectData.eventType === 'channel.chat_command') ? 'block' : 'none';
         }
 
+        // Reset dirty flags when loading existing data
+        this.dirtyFlags.commandTrigger = false;
+        this.dirtyFlags.voice = false;
+        this.dirtyFlags.avatar = false;
+
         // Validate step 1
         this.validateStep1();
     }
 
     /**
+     * Persist dirty fields to Firestore if in edit mode
+     */
+    async persistDirtyFields() {
+        // Only persist if we're in edit mode and have a project ID
+        if (this.options.mode !== 'edit' || !this.projectData.projectId) {
+            return;
+        }
+
+        // Build update object with only dirty fields
+        const updates = { updatedAt: new Date() };
+        let hasUpdates = false;
+
+        if (this.dirtyFlags.commandTrigger) {
+            updates.commandTrigger = this.projectData.commandTrigger || null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.voice) {
+            updates.voiceUrl = this.projectData.voiceUrl || null;
+            updates.voiceId = this.projectData.voiceId || null;
+            updates.voiceName = this.projectData.voiceName || null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.avatar) {
+            updates.avatarUrl = this.projectData.avatarUrl || null;
+            hasUpdates = true;
+        }
+
+        // Only update if there are dirty fields
+        if (hasUpdates) {
+            try {
+                const { db, doc, updateDoc } = await import('./firebase.js');
+                const projectRef = doc(db, 'projects', this.projectData.projectId);
+                await updateDoc(projectRef, updates);
+                
+                // Clear dirty flags after successful persistence
+                if (this.dirtyFlags.commandTrigger) this.dirtyFlags.commandTrigger = false;
+                if (this.dirtyFlags.voice) this.dirtyFlags.voice = false;
+                if (this.dirtyFlags.avatar) this.dirtyFlags.avatar = false;
+                
+                console.log('Persisted dirty fields to project:', updates);
+            } catch (error) {
+                console.error('Error persisting dirty fields:', error);
+                // Don't throw - allow navigation to continue
+            }
+        }
+    }
+
+    /**
      * Step Navigation
      */
-    nextStep() {
+    async nextStep() {
         if (this.validateCurrentStep()) {
+            // Persist dirty fields before moving to next step
+            await this.persistDirtyFields();
+            
             if (this.currentStep < 5) {
                 this.currentStep++;
                 this.showStep(this.currentStep);
@@ -860,6 +930,7 @@ class ProjectWizard {
                 this.projectData.voiceUrl = result.voiceUrl;
                 this.projectData.voiceId = result.voiceId;
                 this.projectData.voiceName = result.name;
+                this.dirtyFlags.voice = true;
 
                 // Reload voices list to include the new voice
                 await this.loadUserVoices();
@@ -1087,6 +1158,7 @@ class ProjectWizard {
             const idToken = await currentUser.getIdToken();
             if (this.projectData.eventType === 'channel.chat_command') {
                 // Ensure chatbot via user token
+                const connectionError = document.getElementById('connectionError');
                 const response = await fetch(`${config.api.baseUrl}/api/twitch-chatbot-ensure`, {
                     method: 'POST',
                     headers: {
@@ -1098,22 +1170,63 @@ class ProjectWizard {
 
                 if (response.ok) {
                     const result = await response.json();
+                    // Hide any previous error messages
+                    if (connectionError) connectionError.style.display = 'none';
+                    
                     // Treat as connected
                     if (connectionStatus) connectionStatus.style.display = 'none';
                     if (connectionResult) connectionResult.style.display = 'block';
                     const subscriptionDetails = document.getElementById('subscriptionDetails');
                     if (subscriptionDetails) {
-                        subscriptionDetails.innerHTML = `
+                        let detailsHtml = `
                             <h4>Chat Bot Status:</h4>
                             <p><strong>Established:</strong> ${result.chatbotEstablished ? 'Yes' : 'No'}</p>
-                            <p><strong>Note:</strong> Chat commands are handled via the chat bot connection.</p>
                         `;
+                        if (result.subscription) {
+                            detailsHtml += `
+                                <p><strong>Subscription ID:</strong> ${result.subscription.id}</p>
+                                <p><strong>Status:</strong> ${result.subscription.status}</p>
+                            `;
+                        }
+                        detailsHtml += `<p><strong>Note:</strong> Chat commands are handled via the chat bot connection.</p>`;
+                        subscriptionDetails.innerHTML = detailsHtml;
                     }
                     return;
                 } else {
                     const errorData = await response.json();
-                    // If missing chat scopes, prompt re-auth with Twitch to grant chat scopes
-                    if (errorData.code === 'TWITCH_CHAT_SCOPES_MISSING' || errorData.code === 'TWITCH_TOKEN_MISSING') {
+                    
+                    // Handle bot account authorization error
+                    if (errorData.code === 'BOT_ACCOUNT_NOT_AUTHORIZED') {
+                        if (connectionStatus) connectionStatus.style.display = 'none';
+                        if (connectionResult) connectionResult.style.display = 'none';
+                        if (connectionError) {
+                            connectionError.style.display = 'block';
+                            const errorMessage = document.querySelector('.error-message');
+                            if (errorMessage && errorData.botAuthUrl) {
+                                errorMessage.innerHTML = `
+                                    <p><strong>${errorData.error}</strong></p>
+                                    <p>${errorData.message}</p>
+                                    <div style="margin-top: 1rem;">
+                                        <p><strong>Instructions:</strong></p>
+                                        <ol style="text-align: left; margin: 0.5rem 0;">
+                                            ${errorData.instructions?.map(inst => `<li>${inst}</li>`).join('') || ''}
+                                        </ol>
+                                        <a href="${errorData.botAuthUrl}" target="_blank" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">
+                                            Authorize Bot Account
+                                        </a>
+                                    </div>
+                                `;
+                            } else if (errorMessage) {
+                                errorMessage.textContent = errorData.message || errorData.error;
+                            }
+                        }
+                        return; // Don't throw - we've handled the error
+                    }
+                    
+                    // If missing chat scopes or channel:bot scope, prompt re-auth with Twitch to grant required scopes
+                    if (errorData.code === 'TWITCH_CHAT_SCOPES_MISSING' || 
+                        errorData.code === 'TWITCH_TOKEN_MISSING' || 
+                        errorData.code === 'TWITCH_CHANNEL_BOT_SCOPE_MISSING') {
                         // Save current wizard state so we can resume after OAuth
                         sessionStorage.setItem('projectWizardState', JSON.stringify({
                             currentStep: this.currentStep,
@@ -1381,6 +1494,7 @@ class ProjectWizard {
 
     selectAvatar(avatarId, url) {
         this.projectData.avatarUrl = url;
+        this.dirtyFlags.avatar = true;
         // Show preview section
         const imagePreview = document.getElementById('imagePreview');
         const uploadArea = document.getElementById('uploadArea');
@@ -1395,19 +1509,6 @@ class ProjectWizard {
         const selectedCard = document.querySelector(`#avatarList .avatar-card img[src='${url}']`)?.parentElement;
         if (selectedCard) selectedCard.classList.add('selected');
         this.validateStep3();
-
-        // If editing an existing project, persist immediately
-        if (this.options.mode === 'edit' && this.projectData.projectId) {
-            (async () => {
-                try {
-                    const { db, doc, updateDoc } = await import('./firebase.js');
-                    const projectRef = doc(db, 'projects', this.projectData.projectId);
-                    await updateDoc(projectRef, { avatarUrl: url, updatedAt: new Date() });
-                } catch (err) {
-                    console.warn('Failed to persist avatar selection to project:', err);
-                }
-            })();
-        }
     }
 
     selectAvatarByUrl(url) {
@@ -1495,6 +1596,7 @@ class ProjectWizard {
         this.projectData.voiceUrl = voice.url;
         this.projectData.voiceId = voice.id;
         this.projectData.voiceName = voice.name;
+        this.dirtyFlags.voice = true;
 
         // Load and show the selected voice with audio player
         await this.loadAndShowSelectedVoice(voice);
@@ -1845,6 +1947,25 @@ class ProjectWizard {
     }
 
     /**
+     * Retry content generation
+     */
+    async retryGeneration() {
+        const generationStatus = document.getElementById('generationStatus');
+        const generationResult = document.getElementById('generationResult');
+        if (generationStatus) {
+            generationStatus.innerHTML = `
+                <div class="loading-spinner"></div>
+                <p>Generating your AI avatar video...</p>
+            `;
+            generationStatus.style.display = 'block';
+        }
+        if (generationResult) {
+            generationResult.style.display = 'none';
+        }
+        await this.generateContent();
+    }
+
+    /**
      * Step 5: Content Generation
      */
     async generateContent() {
@@ -1876,9 +1997,29 @@ class ProjectWizard {
                     const data = await resp.json();
                     this.projectData.heygenVideoId = data.videoId;
                 } else {
-                const err = await resp.json().catch(() => ({}));
-                const msg = typeof err?.message === 'string' ? err.message : JSON.stringify(err?.message || err || {});
-                console.warn('HeyGen generate failed:', { error: err?.error, message: msg, details: err?.details });
+                    const err = await resp.json().catch(() => ({}));
+                    console.error('HeyGen generate failed:', err);
+                    
+                    // Display error to user
+                    const errorMessage = err.message || err.error || 'Failed to generate video';
+                    const errorDetails = err.details ? JSON.stringify(err.details, null, 2) : '';
+                    
+                    // Show error in generation status
+                    if (generationStatus) {
+                        generationStatus.innerHTML = `
+                            <div class="result-icon error">❌</div>
+                            <p class="error-message"><strong>Error:</strong> ${errorMessage}</p>
+                            ${errorDetails ? `<pre style="font-size: 0.8rem; text-align: left; background: rgba(255,0,0,0.1); padding: 0.5rem; border-radius: 4px; overflow: auto; max-height: 200px;">${errorDetails}</pre>` : ''}
+                            <button class="btn btn-primary" onclick="projectWizard.retryGeneration()">Retry</button>
+                        `;
+                        generationStatus.style.display = 'block';
+                    }
+                    
+                    if (generationResult) {
+                        generationResult.style.display = 'none';
+                    }
+                    
+                    return; // Don't continue to show success UI
                 }
             }
             // Simulate minimal delay then show UI
@@ -1960,29 +2101,53 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            // Create project directly in Firestore
-            const { db, addDoc, collection } = await import('./firebase.js');
-            const projectData = {
-                userId: user.uid,
-                platform: this.projectData.platform,
-                projectName: this.projectData.projectName,
-                eventType: this.projectData.eventType,
-                commandTrigger: this.projectData.commandTrigger || null,
-                voiceUrl: this.projectData.voiceUrl || null,
-                voiceId: this.projectData.voiceId || null,
-                voiceName: this.projectData.voiceName || null,
-                avatarUrl: this.projectData.avatarUrl || null,
-                videoUrl: this.projectData.videoUrl || null,
-                alertConfig: this.projectData.alertConfig || {},
-                twitchSubscription: this.projectData.twitchSubscription || null,
-                isActive: true,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            };
+            // Persist any dirty fields before finishing (for edit mode)
+            await this.persistDirtyFields();
 
-            const projectsRef = collection(db, 'projects');
-            const createdRef = await addDoc(projectsRef, projectData);
-            this.projectData.projectId = createdRef.id;
+            const { db, addDoc, collection, doc, updateDoc } = await import('./firebase.js');
+            
+            if (this.options.mode === 'edit' && this.projectData.projectId) {
+                // Update existing project
+                const projectRef = doc(db, 'projects', this.projectData.projectId);
+                const projectData = {
+                    platform: this.projectData.platform,
+                    projectName: this.projectData.projectName,
+                    eventType: this.projectData.eventType,
+                    commandTrigger: this.projectData.commandTrigger || null,
+                    voiceUrl: this.projectData.voiceUrl || null,
+                    voiceId: this.projectData.voiceId || null,
+                    voiceName: this.projectData.voiceName || null,
+                    avatarUrl: this.projectData.avatarUrl || null,
+                    videoUrl: this.projectData.videoUrl || null,
+                    alertConfig: this.projectData.alertConfig || {},
+                    twitchSubscription: this.projectData.twitchSubscription || null,
+                    updatedAt: new Date()
+                };
+                await updateDoc(projectRef, projectData);
+            } else {
+                // Create new project
+                const projectData = {
+                    userId: user.uid,
+                    platform: this.projectData.platform,
+                    projectName: this.projectData.projectName,
+                    eventType: this.projectData.eventType,
+                    commandTrigger: this.projectData.commandTrigger || null,
+                    voiceUrl: this.projectData.voiceUrl || null,
+                    voiceId: this.projectData.voiceId || null,
+                    voiceName: this.projectData.voiceName || null,
+                    avatarUrl: this.projectData.avatarUrl || null,
+                    videoUrl: this.projectData.videoUrl || null,
+                    alertConfig: this.projectData.alertConfig || {},
+                    twitchSubscription: this.projectData.twitchSubscription || null,
+                    isActive: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                };
+
+                const projectsRef = collection(db, 'projects');
+                const createdRef = await addDoc(projectsRef, projectData);
+                this.projectData.projectId = createdRef.id;
+            }
 
             // Update the project URL with the user's UID (not project ID)
             const projectUrl = document.getElementById('projectUrl');
@@ -2005,12 +2170,54 @@ class ProjectWizard {
     }
 
     /**
-     * Cancel wizard
+     * Close wizard
      */
-    cancel() {
+    close() {
+        // Hide the wizard
+        const container = document.getElementById(this.options.containerId);
+        if (container) {
+            container.style.display = 'none';
+        }
+        
+        // Show projects view (dashboard and projects manager)
+        const dashboard = document.getElementById('dashboard');
+        const projectsManager = document.getElementById('projectsManager');
+        const recentProjects = document.getElementById('recentProjects');
+        
+        // If projects manager exists, show it; otherwise try to show recent projects or dashboard
+        if (projectsManager) {
+            if (dashboard) dashboard.style.display = 'block';
+            // Projects manager should already be visible if it exists
+        } else if (recentProjects) {
+            if (dashboard) dashboard.style.display = 'block';
+            recentProjects.style.display = 'block';
+        } else if (dashboard) {
+            dashboard.style.display = 'block';
+            // Try to render projects manager if dashboard is available
+            const dashboardContainer = dashboard.querySelector('.dashboard-container');
+            if (dashboardContainer) {
+                import('./projects.js').then(({ renderProjectsManager }) => {
+                    renderProjectsManager('#dashboard .dashboard-container');
+                }).catch(err => {
+                    console.warn('Failed to load projects manager on close:', err);
+                });
+            }
+        }
+        
+        // Call cancel callback if provided
         if (this.options.onCancel) {
             this.options.onCancel();
         }
+        
+        // Destroy the wizard instance
+        this.destroy();
+    }
+
+    /**
+     * Cancel wizard (kept for backward compatibility)
+     */
+    cancel() {
+        this.close();
     }
 
     /**
@@ -2022,9 +2229,14 @@ class ProjectWizard {
             container.innerHTML = '';
         }
         
-        // Clean up global reference
+        // Clean up global references
         if (window.projectWizard === this) {
             delete window.projectWizard;
+        }
+        
+        // Clean up module-level reference
+        if (projectWizard === this) {
+            projectWizard = null;
         }
     }
 }

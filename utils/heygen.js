@@ -151,6 +151,20 @@ class HeygenClient {
         return json?.data || json;
     }
 
+    async removeLookFromPhotoAvatarGroup(groupId, lookUrl) {
+        // Remove a look from photo avatar group by URL
+        // Note: HeyGen may not have a direct remove endpoint, so we'll use the delete method
+        // If the API requires look_id instead of URL, we'll need to list looks first and match by URL
+        const json = await this.requestJson('/v2/photo_avatar/avatar_group/remove', { 
+            method: 'POST', 
+            body: { 
+                avatar_group_id: groupId, 
+                looks: [{ url: lookUrl }]
+            } 
+        });
+        return json?.data || json;
+    }
+
     async listAvatarsInAvatarGroup(groupId) {
         const path = `/v2/photo_avatar/avatar_group/avatars?avatar_group_id=${encodeURIComponent(groupId)}`;
         const json = await this.requestJson(path, { method: 'GET' });

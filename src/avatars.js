@@ -173,6 +173,12 @@ export async function renderAvatars(container) {
             grid.innerHTML = items.map(a => `
                 <div class="asset-thumb" data-id="${a.id}" data-url="${a.url}" style="position:relative; border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow:hidden;">
                     <img src="${a.url}" alt="asset" style="width:100%; height:100px; object-fit:cover;">
+                    <button class="asset-delete-btn" data-asset-id="${a.id}" data-group-id="${groupId}" data-image-url="${escapeHtml(a.url)}" 
+                            onclick="deleteAsset('${groupId}', '${a.id}', '${escapeHtml(a.url)}')" 
+                            style="position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; background:#ef4444; color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; line-height:1; padding:0; box-shadow:0 2px 4px rgba(0,0,0,0.3);" 
+                            title="Delete image">
+                        ×
+                    </button>
                 </div>
             `).join('');
         } catch (e) {
@@ -270,9 +276,63 @@ export async function renderAvatars(container) {
 }
 
 function escapeHtml(str) {
-    return String(str).replace(/[&<>"]/+g, s => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
+    return String(str).replace(/[&<>"']/g, s => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[s]);
 }
+
+async function deleteAsset(groupId, assetId, imageUrl) {
+    if (!confirm('Are you sure you want to delete this image from the avatar group?')) {
+        return;
+    }
+
+    try {
+        const user = getCurrentUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const idToken = await user.getIdToken();
+        const resp = await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/remove-look`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupDocId: groupId, assetId: assetId, imageUrl: imageUrl })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const msg = err?.message || err?.error || 'Failed to delete image';
+            throw new Error(msg);
+        }
+
+        // Reload assets for this group to update UI
+        const { db, collection, getDocs } = await getFirestore();
+        const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets');
+        const snap = await getDocs(assetsRef);
+        const items = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+        const grid = document.getElementById(`assets-${groupId}`);
+        if (grid) {
+            if (!items || items.length === 0) {
+                grid.innerHTML = '<div style="grid-column: span 3; color: rgba(255,255,255,0.6);">No assets yet</div>';
+            } else {
+                grid.innerHTML = items.map(a => `
+                    <div class="asset-thumb" data-id="${a.id}" data-url="${a.url}" style="position:relative; border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow:hidden;">
+                        <img src="${a.url}" alt="asset" style="width:100%; height:100px; object-fit:cover;">
+                        <button class="asset-delete-btn" data-asset-id="${a.id}" data-group-id="${groupId}" data-image-url="${escapeHtml(a.url)}" 
+                                onclick="deleteAsset('${groupId}', '${a.id}', '${escapeHtml(a.url)}')" 
+                                style="position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; background:#ef4444; color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; line-height:1; padding:0; box-shadow:0 2px 4px rgba(0,0,0,0.3);" 
+                                title="Delete image">
+                            ×
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (err) {
+        console.error('Error deleting asset:', err);
+        alert(`Failed to delete image: ${err.message || err}`);
+    }
+}
+
+// Make deleteAsset globally available for onclick handlers
+window.deleteAsset = deleteAsset;
 
 

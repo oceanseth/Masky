@@ -275,12 +275,13 @@
                 cleanup();
 
                 // Query active Twitch projects
+                // Include projects with twitchSubscription OR chat command projects (which use chatbot subscription)
                 const projectsRef = collection(db, 'projects');
                 const q = query(
                     projectsRef,
                     where('userId', '==', currentUserId),
                     where('platform', '==', 'twitch'),
-                    where('twitchSubscription', '==', true)
+                    where('isActive', '==', true)
                 );
 
                 const snapshot = await getDocs(q);
@@ -491,15 +492,18 @@
         function setupEventListener(eventType) {
             const eventsRef = collection(db, 'users', currentUserId, 'events', `twitch_${eventType}`, 'alerts');
             
-            // Query only events after current timestamp
-            const now = new Date();
-            const q = query(eventsRef, where('timestamp', '>', now));
+            // Listen to all new documents - don't filter by timestamp to avoid missing events
+            // that arrive just before the listener starts. onSnapshot with docChanges() 
+            // will only fire for new documents added after the listener is established.
+            const q = query(eventsRef);
+            
+            console.log(`Setting up listener for event type: ${eventType} at path: users/${currentUserId}/events/twitch_${eventType}/alerts`);
             
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added') {
                         const alertData = change.doc.data();
-                        console.log('New alert received:', alertData);
+                        console.log(`New alert received for ${eventType}:`, alertData);
                         // Try to play Heygen video for this event; fallback to text alert
                         const played = playHeygenVideoForEvent(eventType, alertData.eventData);
                         if (!played) {
@@ -508,7 +512,7 @@
                     }
                 });
             }, (error) => {
-                console.error('Error listening to events:', error);
+                console.error(`Error listening to events for ${eventType}:`, error);
             });
 
             // Store unsubscribe function for cleanup

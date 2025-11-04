@@ -4,6 +4,7 @@ export const config = {
   // Twitch OAuth Configuration
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
+    botUserId: '1386063343', // maskyai chatbot account user ID
     redirectUri: window.location.origin + window.location.pathname,
     scopes: [
       'user:read:email',

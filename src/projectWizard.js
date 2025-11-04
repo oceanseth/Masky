@@ -1146,7 +1146,7 @@ class ProjectWizard {
                 },
                 body: JSON.stringify({
                     type: eventsubType,
-                    version: '2',
+                    version: this.getEventSubVersionForType(eventsubType),
                     condition: {
                         broadcaster_user_id: currentUser.uid.replace('twitch:', '')
                     }
@@ -1190,19 +1190,27 @@ class ProjectWizard {
                     return;
                 }
 
-                // Handle specific case where Twitch token is missing
-                if (errorData.code === 'TWITCH_TOKEN_MISSING') {
-                    // User needs to reconnect their Twitch account
-                    // Store current wizard state so we can resume after OAuth
+                // If required Twitch scopes are missing (or token missing), re-request with the right scopes for this event
+                if (errorData.code === 'TWITCH_SCOPES_MISSING' || errorData.code === 'TWITCH_TOKEN_MISSING') {
+                    // Save current wizard state so we can resume after OAuth
                     sessionStorage.setItem('projectWizardState', JSON.stringify({
                         currentStep: this.currentStep,
                         projectData: this.projectData,
                         wizardId: this.wizardId
                     }));
-                    
+
+                    // Determine extra scopes needed for the selected event type
+                    const extraScopes = this.getRequiredTwitchScopesForEvent(this.projectData.eventType);
+
                     const { signInWithTwitch } = await import('./firebase.js');
-                    await signInWithTwitch();
-                    return; // This will redirect to Twitch, so we return here
+                    if (connectionStatus) {
+                        connectionStatus.innerHTML = `
+                            <div class="status-icon">🔗</div>
+                            <p>Requesting required Twitch permissions...</p>
+                        `;
+                    }
+                    await signInWithTwitch(extraScopes);
+                    return; // Popup will handle and we'll resume on message
                 }
                 
                 throw new Error(errorData.error || 'Failed to create Twitch subscription');
@@ -1217,6 +1225,34 @@ class ProjectWizard {
             const errorMessage = document.querySelector('.error-message');
             if (errorMessage) errorMessage.textContent = error.message;
         }
+    }
+
+    /**
+     * Map event types to required Twitch OAuth scopes
+     */
+    getRequiredTwitchScopesForEvent(eventType) {
+        const map = {
+            'channel.subscribe': ['channel:read:subscriptions'],
+            'channel.cheer': ['bits:read'],
+            'channel.channel_points_custom_reward_redemption': ['channel:read:redemptions'],
+            // channel.follow handled by moderator:read:followers which is already in base scopes
+            'channel.follow': ['moderator:read:followers']
+        };
+        return map[eventType] || [];
+    }
+
+    /**
+     * Map event types to the correct EventSub version
+     */
+    getEventSubVersionForType(eventType) {
+        const versions = {
+            'channel.follow': '2',
+            'channel.subscribe': '1',
+            'channel.cheer': '1',
+            'channel.raid': '1',
+            'channel.channel_points_custom_reward_redemption': '1'
+        };
+        return versions[eventType] || '1';
     }
 
     retryConnection() {

@@ -582,7 +582,20 @@ exports.handler = async (event, context) => {
             }
 
             // Validate token scopes
-            const validation = await twitchInitializer.validateToken(accessToken);
+            let validation;
+            try {
+                validation = await twitchInitializer.validateToken(accessToken);
+            } catch (e) {
+                // Map invalid/expired token to actionable error for client
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Twitch token invalid or expired. Please reconnect Twitch.',
+                        code: 'TWITCH_TOKEN_MISSING'
+                    })
+                };
+            }
             const scopes = Array.isArray(validation.scopes) ? validation.scopes : [];
             const hasChatRead = scopes.includes('chat:read');
             const hasChatEdit = scopes.includes('chat:edit');

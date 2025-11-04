@@ -257,22 +257,29 @@ class TwitchInitializer {
       const subscriptionKey = `twitch_${type}`;
       const userSubscriptionsRef = db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey);
       const existingSubscription = await userSubscriptionsRef.get();
-      
+
       let subscription;
-      
+
       if (existingSubscription.exists) {
-        // Subscription already exists, return it
         const existingData = existingSubscription.data();
-        subscription = existingData.twitchSubscription;
-        console.log('Using existing subscription:', subscription.id);
-      } else {
+        const existing = existingData.twitchSubscription || {};
+        // Reuse only if same type and currently enabled
+        if (existing.type === type && existing.status === 'enabled') {
+          subscription = existing;
+          console.log('Using existing enabled subscription:', subscription.id);
+        } else {
+          console.log('Existing subscription not enabled or mismatched; will (re)create');
+        }
+      }
+
+      if (!subscription) {
         // Initialize Twitch credentials from SSM
         const { clientId, clientSecret } = await this.initialize();
         
-        // Prefer the user's access token for subscriptions that require user context
-        const userAccessToken = customClaims.twitchAccessToken;
-        const tokenToUse = userAccessToken || (await this.getAppAccessToken());
-        console.log('Using token for EventSub creation. Source:', userAccessToken ? 'USER' : 'APP');
+        // Webhooks MUST use an app access token per Twitch docs
+        // https://dev.twitch.tv/docs/eventsub/manage-subscriptions/
+        const appToken = await this.getAppAccessToken();
+        console.log('Using APP token for EventSub creation');
         
         // For channel.follow events, we need to add moderator_user_id to the condition
         let requestBody = {
@@ -290,13 +297,30 @@ class TwitchInitializer {
         if (type === 'channel.follow') {
           requestBody.condition.moderator_user_id = customClaims.twitchId;
         }
-        
-        // For chat message subscriptions, Twitch requires user_id in condition
-        if (type === 'channel.chat.message') {
-          // Limit to broadcaster messages to satisfy API validation
-          // Note: This will only receive messages from the broadcaster
-          if (!requestBody.condition.user_id) {
-            requestBody.condition.user_id = customClaims.twitchId;
+
+        // Validate that the user granted required scopes for scoped events
+        // Note: Even though the create call uses an app token, Twitch requires the user to have authorized the scopes to your client ID
+        const requiredScopesByType = {
+          'channel.subscribe': ['channel:read:subscriptions'],
+          'channel.cheer': ['bits:read']
+        };
+        const requiredScopes = requiredScopesByType[type] || [];
+        if (requiredScopes.length > 0) {
+          try {
+            const validation = await this.validateToken(customClaims.twitchAccessToken);
+            const granted = Array.isArray(validation.scopes) ? validation.scopes : [];
+            const missing = requiredScopes.filter(s => !granted.includes(s));
+            if (missing.length > 0) {
+              return {
+                statusCode: 400,
+                body: JSON.stringify({
+                  error: `Missing required Twitch scopes: ${missing.join(', ')}`,
+                  code: 'TWITCH_SCOPES_MISSING'
+                })
+              };
+            }
+          } catch (e) {
+            console.warn('Failed to validate user token scopes; proceeding may fail:', e.message);
           }
         }
         
@@ -304,7 +328,7 @@ class TwitchInitializer {
         const twitchResponse = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${tokenToUse}`,
+            'Authorization': `Bearer ${appToken}`,
             'Client-Id': clientId,
             'Content-Type': 'application/json'
           },

@@ -82,7 +82,9 @@ class HeygenClient {
                         try {
                             const json = JSON.parse(body || '{}');
                             if (res.statusCode && res.statusCode >= 400) {
-                                reject(new Error(json?.message || json?.error || `HeyGen request failed (${res.statusCode})`));
+                                const err = new Error(json?.message || json?.error || `HeyGen request failed (${res.statusCode})`);
+                                try { err.details = json; } catch {}
+                                reject(err);
                                 return;
                             }
                             resolve(json);
@@ -153,6 +155,23 @@ class HeygenClient {
         const path = `/v2/photo_avatar/avatar_group/avatars?avatar_group_id=${encodeURIComponent(groupId)}`;
         const json = await this.requestJson(path, { method: 'GET' });
         return json?.data?.avatars || [];
+    }
+
+    async trainPhotoAvatarGroup(groupId) {
+        if (!groupId) throw new Error('groupId is required for training');
+        const json = await this.requestJson('/v2/photo_avatar/train', {
+            method: 'POST',
+            body: { avatar_group_id: groupId }
+        });
+        // API may return various identifiers; surface the whole data for debugging
+        return json?.data || json;
+    }
+
+    async getTrainingJobStatus(groupId) {
+        if (!groupId) throw new Error('groupId is required for training status');
+        const path = `/v2/photo_avatar/train/status/${encodeURIComponent(groupId)}`;
+        const json = await this.requestJson(path, { method: 'GET' });
+        return json?.data || json;
     }
 
     async generateVideoWithAudio(params) {

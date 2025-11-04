@@ -1876,8 +1876,9 @@ class ProjectWizard {
                     const data = await resp.json();
                     this.projectData.heygenVideoId = data.videoId;
                 } else {
-                    const err = await resp.json().catch(() => ({}));
-                    console.warn('HeyGen generate failed:', err);
+                const err = await resp.json().catch(() => ({}));
+                const msg = typeof err?.message === 'string' ? err.message : JSON.stringify(err?.message || err || {});
+                console.warn('HeyGen generate failed:', { error: err?.error, message: msg, details: err?.details });
                 }
             }
             // Simulate minimal delay then show UI

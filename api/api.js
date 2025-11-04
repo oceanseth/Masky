@@ -216,6 +216,140 @@ exports.handler = async (event, context) => {
         return response;
     }
 
+    // HeyGen: initialize avatar group for a user's logical avatar (avatars manager)
+    if (path.includes('/heygen/avatar-group/init') && method === 'POST') {
+        try {
+            // Auth
+            const authHeader = event.headers.Authorization || event.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
+            }
+            const idToken = authHeader.split('Bearer ')[1];
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const decoded = await admin.auth().verifyIdToken(idToken);
+            const userId = decoded.uid;
+
+            // Body
+            const body = typeof event.body === 'string'
+                ? JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf-8') : event.body || '{}')
+                : (event.body || {});
+            const { groupDocId, displayName } = body;
+            if (!groupDocId) {
+                return { statusCode: 400, headers, body: JSON.stringify({ error: 'groupDocId is required' }) };
+            }
+
+            // Create HeyGen group if missing
+            const db = admin.firestore();
+            const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
+            const snap = await groupRef.get();
+            if (!snap.exists) {
+                return { statusCode: 404, headers, body: JSON.stringify({ error: 'Group doc not found' }) };
+            }
+            const current = snap.data() || {};
+            let avatarGroupId = current.avatar_group_id;
+            if (!avatarGroupId) {
+                const groupName = displayName || current.displayName || `masky_${userId}`;
+                avatarGroupId = await heygen.createPhotoAvatarGroup(groupName);
+                await groupRef.set({ avatar_group_id: avatarGroupId, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            }
+
+            return {
+                statusCode: 200,
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ok: true, avatar_group_id: avatarGroupId })
+            };
+        } catch (err) {
+            console.error('Avatar group init error:', err);
+            return { statusCode: 500, headers, body: JSON.stringify({ error: 'Failed to init avatar group', message: err.message }) };
+        }
+    }
+
+    // HeyGen: add look to avatar group and train
+    if (path.includes('/heygen/avatar-group/add-look') && method === 'POST') {
+        try {
+            // Auth
+            const authHeader = event.headers.Authorization || event.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return { statusCode: 401, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Unauthorized' }) };
+            }
+            const idToken = authHeader.split('Bearer ')[1];
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const decoded = await admin.auth().verifyIdToken(idToken);
+            const userId = decoded.uid;
+
+            // Body
+            const body = typeof event.body === 'string'
+                ? JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf-8') : event.body || '{}')
+                : (event.body || {});
+            const { groupDocId, imageUrl } = body;
+            if (!groupDocId || !imageUrl) {
+                return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'INVALID_REQUEST', message: 'groupDocId and imageUrl are required' }) };
+            }
+
+            const db = admin.firestore();
+            const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
+            const snap = await groupRef.get();
+            if (!snap.exists) {
+                return { statusCode: 404, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'NOT_FOUND', message: 'Avatar group document not found' }) };
+            }
+            const data = snap.data() || {};
+            let groupId = data.avatar_group_id;
+            if (!groupId) {
+                try {
+                    const groupName = data.displayName || `masky_${userId}`;
+                    groupId = await heygen.createPhotoAvatarGroup(groupName);
+                    await groupRef.set({ avatar_group_id: groupId }, { merge: true });
+                } catch (e) {
+                    return { statusCode: 502, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'HEYGEN_GROUP_CREATE_FAILED', message: e?.message || String(e), details: e?.details || null }) };
+                }
+            }
+
+            // Add look (idempotent), then train and poll as in generation
+            try {
+                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: imageUrl }]);
+            } catch (e) {
+                return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'HEYGEN_ADD_LOOK_FAILED', message: e?.message || String(e), details: e?.details || null }) };
+            }
+            try {
+                await heygen.trainPhotoAvatarGroup(groupId);
+            } catch (e) {
+                // Non-fatal; proceed to poll and return best-effort
+                console.warn('HeyGen training start failed:', e?.message || e);
+            }
+
+            const start = Date.now();
+            let status = null;
+            while (Date.now() - start < 60000) {
+                try { status = await heygen.getTrainingJobStatus(groupId); } catch {}
+                const s = (status?.status || status?.state || '').toLowerCase();
+                if (['completed','succeeded','success','ready'].includes(s)) break;
+                if (['failed','error'].includes(s)) {
+                    return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'HEYGEN_TRAINING_FAILED', message: 'HeyGen training reported failure', details: status || null }) };
+                }
+                await new Promise(r => setTimeout(r, 3000));
+            }
+            // If still not ready after timeout, return 202 to indicate in-progress
+            const finalState = (status?.status || status?.state || '').toLowerCase();
+            if (!['completed','succeeded','success','ready'].includes(finalState)) {
+                return { statusCode: 202, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, avatar_group_id: groupId, trained: false, status: status || null }) };
+            }
+
+            // Update Firestore: avatarUrl (primary) and timestamp
+            await groupRef.set({ avatarUrl: imageUrl, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+            return {
+                statusCode: 200,
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ok: true, avatar_group_id: groupId, trained: true })
+            };
+        } catch (err) {
+            console.error('Avatar group add-look error:', err?.message || err, err?.details || '');
+            return { statusCode: 500, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'INTERNAL', message: err?.message || String(err), details: err?.details || null }) };
+        }
+    }
+
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
         const response = await handleTwitchOAuth(event);
@@ -797,7 +931,45 @@ async function handleHeygenGenerate(event, headers) {
                 await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
             } catch {}
 
-            // 2) list avatars in the group and pick one
+            // 2) train the avatar group and wait until ready before listing avatars
+            try {
+                await heygen.trainPhotoAvatarGroup(groupId);
+            } catch (trainErr) {
+                console.warn('HeyGen trainPhotoAvatarGroup failed (continuing to poll):', trainErr?.message || trainErr);
+            }
+
+            // Poll training status up to ~60s
+            const startTime = Date.now();
+            const maxWaitMs = 60000;
+            const pollIntervalMs = 3000;
+            let status = null;
+            try {
+                /* eslint-disable no-constant-condition */
+                while (true) {
+                    try {
+                        status = await heygen.getTrainingJobStatus(groupId);
+                    } catch (statusErr) {
+                        console.warn('HeyGen getTrainingJobStatus error:', statusErr?.message || statusErr);
+                    }
+
+                    const s = (status?.status || status?.state || '').toLowerCase();
+                    if (s === 'completed' || s === 'succeeded' || s === 'success' || s === 'ready') break;
+                    if (s === 'failed' || s === 'error') {
+                        console.warn('HeyGen training reported failure; proceeding to list avatars anyway');
+                        break;
+                    }
+
+                    if (Date.now() - startTime > maxWaitMs) {
+                        console.warn('HeyGen training status poll timed out; proceeding to list avatars');
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, pollIntervalMs));
+                }
+            } catch (pollErr) {
+                console.warn('HeyGen training status polling error:', pollErr?.message || pollErr);
+            }
+
+            // 3) list avatars in the group and pick one
             const groupAvatars = await heygen.listAvatarsInAvatarGroup(groupId);
             if (groupAvatars && groupAvatars.length > 0) {
                 // choose most recent if timestamps available; else first
@@ -871,7 +1043,11 @@ async function handleHeygenGenerate(event, headers) {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: 'Failed to generate HeyGen video', message: err.message })
+            body: JSON.stringify({ 
+                error: 'Failed to generate HeyGen video', 
+                message: typeof err?.message === 'string' ? err.message : JSON.stringify(err?.message || {}),
+                details: typeof err === 'object' ? JSON.stringify(err) : String(err)
+            })
         };
     }
 }
@@ -1663,11 +1839,13 @@ async function handleVoiceUpload(event) {
 
     } catch (error) {
         console.error('Error uploading voice:', error);
+        let message = error && error.message ? error.message : 'Upload failed';
+        try { message = JSON.parse(message); } catch {}
         return {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Failed to upload voice',
-                message: error.message 
+                message
             })
         };
     }
@@ -1786,11 +1964,13 @@ async function handleAvatarUpload(event) {
 
     } catch (error) {
         console.error('Error uploading avatar:', error);
+        let message = error && error.message ? error.message : 'Upload failed';
+        try { message = JSON.parse(message); } catch {}
         return {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Failed to upload avatar',
-                message: error.message 
+                message
             })
         };
     }

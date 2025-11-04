@@ -29,7 +29,7 @@ class FirebaseInitializer {
       this.firebaseApp = admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         databaseURL: 'https://maskydotnet-default-rtdb.firebaseio.com',
-        storageBucket: 'maskydotnet.firebasestorage.app'
+        storageBucket: 'maskydotnet.appspot.com'
       });
 
       return this.firebaseApp;

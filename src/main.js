@@ -484,7 +484,7 @@ if (urlParams.has('access_token') && urlParams.has('state')) {
   });
 }
 
-// Initialize Voice Cloner when page loads
+/*Initialize Voice Cloner when page loads
 document.addEventListener('DOMContentLoaded', () => {
   // Import and initialize voice cloner
   import('./voiceCloner.js').then(module => {
@@ -502,3 +502,4 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+*/

@@ -311,7 +311,7 @@ export {
   collection, 
   query, 
   where, 
-  getDocs, 
+  getDocs,
   orderBy,
   onSnapshot,
   doc,
@@ -319,4 +319,111 @@ export {
   addDoc,
   deleteDoc
 };
+
+// Expose Firebase to window for debugging in browser console
+if (typeof window !== 'undefined') {
+  // Expose the Firebase app and services
+  window.firebase = {
+    app,
+    auth,
+    db,
+    storage,
+    // Expose Firebase SDK modules for convenience
+    firestore: {
+      collection,
+      query,
+      where,
+      getDocs,
+      orderBy,
+      onSnapshot,
+      doc,
+      updateDoc,
+      addDoc,
+      deleteDoc,
+      getFirestore
+    },
+    // Helper function to check avatar groups
+    checkAvatarGroups: async function() {
+      const user = auth.currentUser;
+      if (!user) {
+        console.log('No user signed in');
+        return;
+      }
+      
+      const groupsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups');
+      const snap = await getDocs(groupsRef);
+      
+      console.log(`\n=== Avatar Groups for ${user.uid} ===`);
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        const hasId = !!data.avatar_group_id;
+        console.log(
+          `${hasId ? '✓' : '✗'} ${doc.id}: "${data.displayName || 'no name'}"`,
+          hasId ? `\n   avatar_group_id: ${data.avatar_group_id}` : '\n   avatar_group_id: MISSING'
+        );
+      });
+      
+      const withId = snap.docs.filter(d => !!d.data().avatar_group_id).length;
+      const withoutId = snap.docs.length - withId;
+      console.log(`\nSummary: ${snap.docs.length} total, ${withId} with ID, ${withoutId} without ID`);
+    },
+    // Claim an existing HeyGen avatar group by ID
+    claimHeyGenAvatarGroup: async function(heygenGroupId, displayName) {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No user signed in');
+        return { error: 'Not authenticated' };
+      }
+      
+      if (!heygenGroupId) {
+        console.error('HeyGen avatar group ID is required');
+        return { error: 'heygenGroupId is required' };
+      }
+      
+      try {
+        const idToken = await user.getIdToken();
+        // Use the same API base URL as the rest of the app
+        const apiBaseUrl = window.location.origin.includes('localhost') 
+          ? 'https://masky.ai' 
+          : window.location.origin;
+        const response = await fetch(`${apiBaseUrl}/api/heygen/avatar-group/claim`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            heygenGroupId: heygenGroupId,
+            displayName: displayName || `HeyGen Avatar ${Date.now()}`
+          })
+        });
+        
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          console.error('Failed to claim avatar group:', error);
+          return { error: error.message || error.error || 'Failed to claim avatar group' };
+        }
+        
+        const result = await response.json();
+        console.log('Successfully claimed HeyGen avatar group:', result);
+        console.log('Group ID:', result.groupDocId);
+        console.log('HeyGen avatar_group_id:', result.avatar_group_id);
+        
+        // Refresh the avatar groups list
+        if (window.firebase.checkAvatarGroups) {
+          await window.firebase.checkAvatarGroups();
+        }
+        
+        return result;
+      } catch (err) {
+        console.error('Error claiming avatar group:', err);
+        return { error: err.message || 'Unknown error' };
+      }
+    }
+  };
+  
+  console.log('Firebase exposed to window.firebase for debugging');
+  console.log('Try: window.firebase.checkAvatarGroups()');
+  console.log('Or: window.firebase.claimHeyGenAvatarGroup("heygen_group_id", "Display Name")');
+}
 

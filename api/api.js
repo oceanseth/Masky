@@ -8,6 +8,14 @@ const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
 const heygen = require('../utils/heygen');
+const {
+    handleHeygenAvatarGroupInit,
+    handleHeygenAvatarGroupAddLook,
+    handleHeygenAvatarGroupRemoveLook,
+    handleHeygenAvatarGroupSync,
+    handleHeygenAvatarGroupDelete,
+    handleHeygenAvatarGroupClaim
+} = require('../utils/heygen');
 const { parseMultipartData } = require('./multipartParser');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
@@ -103,13 +111,14 @@ exports.handler = async (event, context) => {
         headers: event.headers 
     }));
     
+    // CORS: Allow requests from any origin (including localhost)
     const requestOrigin = event.headers?.origin || event.headers?.Origin || '*';
     const headers = {
-        'Access-Control-Allow-Origin': requestOrigin,
+        'Access-Control-Allow-Origin': requestOrigin === '*' ? '*' : requestOrigin,
         'Vary': 'Origin',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': '*',
-        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Credentials': requestOrigin !== '*' ? 'true' : 'false',
         'Access-Control-Max-Age': '86400'
     };
 
@@ -123,7 +132,16 @@ exports.handler = async (event, context) => {
     }
 
     // Route handling
-    const path = event.path || event.rawPath || '';
+    let path = event.path || event.rawPath || '';
+    // Normalize path: ensure it starts with / and remove /api prefix if present
+    // API Gateway proxy integration may include or exclude /api prefix
+    if (path && !path.startsWith('/')) {
+        path = '/' + path;
+    }
+    // Remove /api prefix if present for consistent matching
+    if (path.startsWith('/api/')) {
+        path = path.substring(4); // Remove '/api'
+    }
     const method = event.httpMethod || event.requestContext?.http?.method;
 
     // Handle Twitch OAuth callback (authorization code exchange)
@@ -218,21 +236,31 @@ exports.handler = async (event, context) => {
 
     // HeyGen: initialize avatar group
     if (path.includes('/heygen/avatar-group/init') && method === 'POST') {
-        const response = await handleHeygenAvatarGroupInit(event, headers);
-        return response;
+        return await handleHeygenAvatarGroupInit(event, headers);
     }
 
     // HeyGen: add look to avatar group
     if (path.includes('/heygen/avatar-group/add-look') && method === 'POST') {
-        const response = await handleHeygenAvatarGroupAddLook(event, headers);
-        return response;
+        return await handleHeygenAvatarGroupAddLook(event, headers);
     }
 
     // HeyGen: remove look from avatar group
     if (path.includes('/heygen/avatar-group/remove-look') && method === 'POST') {
-        const response = await handleHeygenAvatarGroupRemoveLook(event, headers);
-        return response;
+        return await handleHeygenAvatarGroupRemoveLook(event, headers);
     }
+
+    // HeyGen: sync assets between Firestore and HeyGen
+        if (path.includes('/heygen/avatar-group/sync') && method === 'POST') {
+            return await handleHeygenAvatarGroupSync(event, headers);
+        }
+        
+        if (path.includes('/heygen/avatar-group/delete') && method === 'POST') {
+            return await handleHeygenAvatarGroupDelete(event, headers);
+        }
+        
+        if (path.includes('/heygen/avatar-group/claim') && method === 'POST') {
+            return await handleHeygenAvatarGroupClaim(event, headers);
+        }
 
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
@@ -1286,360 +1314,6 @@ async function handleHeygenGenerate(event, headers) {
     }
 }
 
-/**
- * Initialize HeyGen avatar group
- */
-async function handleHeygenAvatarGroupInit(event, headers) {
-    try {
-        // Verify Firebase token
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return {
-                statusCode: 401,
-                headers,
-                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
-            };
-        }
-
-        const idToken = authHeader.split('Bearer ')[1];
-        await firebaseInitializer.initialize();
-        const admin = require('firebase-admin');
-        const decoded = await admin.auth().verifyIdToken(idToken);
-        const userId = decoded.uid;
-
-        // Parse request body
-        let body;
-        if (typeof event.body === 'string') {
-            let bodyString = event.body;
-            if (event.isBase64Encoded) {
-                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
-            }
-            body = JSON.parse(bodyString || '{}');
-        } else {
-            body = event.body || {};
-        }
-
-        const { groupDocId, displayName } = body;
-
-        if (!groupDocId || !displayName) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ error: 'groupDocId and displayName are required' })
-            };
-        }
-
-        const db = admin.firestore();
-        const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
-        const groupDoc = await groupRef.get();
-
-        if (!groupDoc.exists) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ error: 'Avatar group not found' })
-            };
-        }
-
-        const groupData = groupDoc.data();
-        
-        // If group already has avatar_group_id, return it
-        if (groupData.avatar_group_id) {
-            return {
-                statusCode: 200,
-                headers: {
-                    ...headers,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    success: true,
-                    avatar_group_id: groupData.avatar_group_id,
-                    message: 'Avatar group already initialized'
-                })
-            };
-        }
-
-        // Create HeyGen photo avatar group
-        const groupName = displayName || `masky_${userId}`;
-        const avatarGroupId = await heygen.createPhotoAvatarGroup(groupName);
-
-        // Update Firestore with the HeyGen group ID
-        await groupRef.update({
-            avatar_group_id: avatarGroupId,
-            displayName: displayName,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-            statusCode: 200,
-            headers: {
-                ...headers,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                success: true,
-                avatar_group_id: avatarGroupId,
-                message: 'Avatar group initialized successfully'
-            })
-        };
-    } catch (err) {
-        console.error('HeyGen avatar group init error:', err);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: 'Failed to initialize HeyGen avatar group',
-                message: err.message
-            })
-        };
-    }
-}
-
-/**
- * Add look to HeyGen avatar group
- */
-async function handleHeygenAvatarGroupAddLook(event, headers) {
-    try {
-        // Verify Firebase token
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return {
-                statusCode: 401,
-                headers,
-                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
-            };
-        }
-
-        const idToken = authHeader.split('Bearer ')[1];
-        await firebaseInitializer.initialize();
-        const admin = require('firebase-admin');
-        const decoded = await admin.auth().verifyIdToken(idToken);
-        const userId = decoded.uid;
-
-        // Parse request body
-        let body;
-        if (typeof event.body === 'string') {
-            let bodyString = event.body;
-            if (event.isBase64Encoded) {
-                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
-            }
-            body = JSON.parse(bodyString || '{}');
-        } else {
-            body = event.body || {};
-        }
-
-        const { groupDocId, imageUrl } = body;
-
-        if (!groupDocId || !imageUrl) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ error: 'groupDocId and imageUrl are required' })
-            };
-        }
-
-        const db = admin.firestore();
-        const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
-        const groupDoc = await groupRef.get();
-
-        if (!groupDoc.exists) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ error: 'Avatar group not found' })
-            };
-        }
-
-        const groupData = groupDoc.data();
-        let avatarGroupId = groupData.avatar_group_id;
-
-        // If group doesn't have avatar_group_id yet, create it
-        if (!avatarGroupId) {
-            const groupName = groupData.displayName || `masky_${userId}`;
-            avatarGroupId = await heygen.createPhotoAvatarGroup(groupName);
-            await groupRef.update({
-                avatar_group_id: avatarGroupId,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-
-        // Add look to the HeyGen avatar group
-        await heygen.addLooksToPhotoAvatarGroup(avatarGroupId, [{ url: imageUrl }]);
-
-        // Start training if not already trained (check training status first)
-        let trainingStatus = null;
-        let trainingStarted = false;
-        try {
-            trainingStatus = await heygen.getTrainingJobStatus(avatarGroupId);
-            
-            // If training is not completed, we might want to start it
-            if (!trainingStatus || trainingStatus.status !== 'completed') {
-                // Try to start training (idempotent - if already training, this will just return)
-                try {
-                    await heygen.trainPhotoAvatarGroup(avatarGroupId);
-                    trainingStarted = true;
-                    console.log('Training started for avatar group:', avatarGroupId);
-                } catch (trainErr) {
-                    // Training might already be in progress
-                    console.log('Training may already be in progress:', trainErr.message);
-                }
-            }
-        } catch (statusErr) {
-            // If we can't get status, try to start training anyway
-            console.log('Could not get training status, attempting to start training:', statusErr.message);
-            try {
-                await heygen.trainPhotoAvatarGroup(avatarGroupId);
-                trainingStarted = true;
-            } catch (trainErr) {
-                console.warn('Could not start training:', trainErr.message);
-            }
-        }
-
-        // Return 202 if training is in progress, 200 if completed
-        const statusCode = (trainingStatus && trainingStatus.status === 'completed') ? 200 : 202;
-        
-        return {
-            statusCode: statusCode,
-            headers: {
-                ...headers,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                success: true,
-                avatar_group_id: avatarGroupId,
-                trainingStatus: trainingStatus?.status || 'pending',
-                trainingStarted: trainingStarted,
-                message: statusCode === 202 
-                    ? 'Look added and training in progress' 
-                    : 'Look added successfully'
-            })
-        };
-    } catch (err) {
-        console.error('HeyGen avatar group add-look error:', err);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: 'Failed to add look to HeyGen avatar group',
-                message: err.message
-            })
-        };
-    }
-}
-
-/**
- * Remove look from HeyGen avatar group
- */
-async function handleHeygenAvatarGroupRemoveLook(event, headers) {
-    try {
-        // Verify Firebase token
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return {
-                statusCode: 401,
-                headers,
-                body: JSON.stringify({ error: 'Unauthorized - No token provided' })
-            };
-        }
-
-        const idToken = authHeader.split('Bearer ')[1];
-        await firebaseInitializer.initialize();
-        const admin = require('firebase-admin');
-        const decoded = await admin.auth().verifyIdToken(idToken);
-        const userId = decoded.uid;
-
-        // Parse request body
-        let body;
-        if (typeof event.body === 'string') {
-            let bodyString = event.body;
-            if (event.isBase64Encoded) {
-                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
-            }
-            body = JSON.parse(bodyString || '{}');
-        } else {
-            body = event.body || {};
-        }
-
-        const { groupDocId, imageUrl, assetId } = body;
-
-        if (!groupDocId || !imageUrl) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ error: 'groupDocId and imageUrl are required' })
-            };
-        }
-
-        const db = admin.firestore();
-        const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
-        const groupDoc = await groupRef.get();
-
-        if (!groupDoc.exists) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ error: 'Avatar group not found' })
-            };
-        }
-
-        const groupData = groupDoc.data();
-        const avatarGroupId = groupData.avatar_group_id;
-
-        if (!avatarGroupId) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ error: 'Avatar group not initialized in HeyGen' })
-            };
-        }
-
-        // Remove look from HeyGen avatar group
-        try {
-            await heygen.removeLookFromPhotoAvatarGroup(avatarGroupId, imageUrl);
-        } catch (heygenErr) {
-            // If HeyGen API doesn't support remove or returns an error, log but continue
-            // We'll still remove from Firestore
-            console.warn('HeyGen remove look failed (will still remove from Firestore):', heygenErr.message);
-        }
-
-        // Remove asset from Firestore if assetId is provided
-        if (assetId) {
-            const assetRef = db.collection('users').doc(userId)
-                .collection('heygenAvatarGroups').doc(groupDocId)
-                .collection('assets').doc(assetId);
-            const assetDoc = await assetRef.get();
-            
-            if (assetDoc.exists) {
-                await assetRef.delete();
-                console.log('Removed asset from Firestore:', assetId);
-            }
-        }
-
-        return {
-            statusCode: 200,
-            headers: {
-                ...headers,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                success: true,
-                message: 'Look removed successfully'
-            })
-        };
-    } catch (err) {
-        console.error('HeyGen avatar group remove-look error:', err);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: 'Failed to remove look from HeyGen avatar group',
-                message: err.message
-            })
-        };
-    }
-}
-
-    
 
 /**
  * Get subscription status for a user

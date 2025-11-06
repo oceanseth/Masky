@@ -120,9 +120,9 @@ export async function renderAvatars(container) {
         }
         grid.innerHTML = groups.map(g => `
             <div class="avatar-card" data-id="${g.id}" style="border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px; background: rgba(255,255,255,0.03);">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                    <input class="form-input" value="${escapeHtml(g.displayName || 'Untitled Avatar')}" data-role="avatar-name" style="flex:1;">
-                    <button class="btn btn-secondary" data-role="save-name">Save</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px;">
+                    <h3 style="margin:0; flex:1; font-size:1.1rem; color:rgba(255,255,255,0.9);">${escapeHtml(g.displayName || 'Untitled Avatar')}</h3>
+                    <button class="btn btn-danger" data-role="delete-group" style="background:#ef4444; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:0.9rem;">Delete Group</button>
                 </div>
                 <div style="margin-top:12px; display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;" id="assets-${g.id}"></div>
                 <div style="margin-top:12px; display:flex; gap:8px;">
@@ -135,25 +135,66 @@ export async function renderAvatars(container) {
         groups.forEach(g => {
             const card = grid.querySelector(`.avatar-card[data-id="${g.id}"]`);
             if (!card) return;
-            const saveBtn = card.querySelector('[data-role="save-name"]');
-            const nameInput = card.querySelector('[data-role="avatar-name"]');
+            const deleteBtn = card.querySelector('[data-role="delete-group"]');
             const addBtn = card.querySelector('[data-role="upload-to-group"]');
-            saveBtn.onclick = () => saveName(g.id, nameInput.value.trim());
+            deleteBtn.onclick = () => deleteGroup(g.id, g.displayName || 'Untitled Avatar');
             addBtn.onclick = () => openUploadForGroup(g.id);
-            // Load assets
-            loadAssets(g.id);
+            // Sync and load assets
+            syncAndLoadAssets(g.id);
         });
     }
 
-    async function saveName(groupId, displayName) {
-        if (!displayName) return;
-        const user = getCurrentUser();
-        if (!user) return;
-        const { db, doc, updateDoc } = await getFirestore();
-        await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), {
-            displayName,
-            updatedAt: new Date()
-        });
+    async function deleteGroup(groupId, displayName) {
+        if (!confirm(`Are you sure you want to delete the "${displayName}" avatar?`)) {
+            return;
+        }
+        
+        try {
+            const user = getCurrentUser();
+            if (!user) throw new Error('Not authenticated');
+            
+            const idToken = await user.getIdToken();
+            const resp = await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/delete`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupDocId: groupId })
+            });
+            
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                const msg = err?.message || err?.error || 'Failed to delete avatar group';
+                throw new Error(msg);
+            }
+            
+            // Reload avatars to reflect the deletion
+            await loadAvatars();
+        } catch (err) {
+            console.error('Failed to delete avatar group:', err);
+            alert(`Failed to delete avatar group: ${err.message || err}`);
+        }
+    }
+
+    async function syncAndLoadAssets(groupId) {
+        try {
+            const user = getCurrentUser();
+            if (!user) return;
+            const idToken = await user.getIdToken();
+            // Sync with HeyGen first
+            try {
+                await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/sync`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ groupDocId: groupId })
+                });
+            } catch (syncErr) {
+                console.warn('Sync failed (non-critical):', syncErr);
+            }
+            // Then load assets
+            await loadAssets(groupId);
+        } catch (err) {
+            console.error('Sync and load failed:', err);
+            await loadAssets(groupId); // Fallback to just loading
+        }
     }
 
     async function loadAssets(groupId) {
@@ -198,6 +239,45 @@ export async function renderAvatars(container) {
         return i >= 0 ? name.slice(i + 1).toLowerCase() : 'jpg';
     }
 
+    /**
+     * Convert image file to JPEG format using canvas API
+     * Handles WebP, PNG, and other formats
+     */
+    async function convertImageToJpeg(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Create canvas and draw image
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Convert to JPEG blob
+                    canvas.toBlob((blob) => {
+                        if (!blob) {
+                            reject(new Error('Failed to convert image to JPEG'));
+                            return;
+                        }
+                        // Create a new File object with JPEG extension
+                        const jpegFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                            type: 'image/jpeg',
+                            lastModified: Date.now()
+                        });
+                        resolve(jpegFile);
+                    }, 'image/jpeg', 0.9); // 90% quality
+                };
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    }
+
     async function openUploadForGroup(groupId) {
         const input = document.getElementById('avatarUploadInput');
         if (!input) return;
@@ -208,25 +288,60 @@ export async function renderAvatars(container) {
                 const user = getCurrentUser();
                 if (!user) throw new Error('Not authenticated');
 
+                // Convert image to JPEG if needed (especially for WebP)
+                let fileToUpload = file;
+                const fileType = file.type.toLowerCase();
+                const fileName = file.name.toLowerCase();
+                
+                // Convert WebP or other unsupported formats to JPEG
+                if (fileType.includes('webp') || fileName.endsWith('.webp') ||
+                    (!fileType.includes('jpeg') && !fileType.includes('jpg') && !fileType.includes('png'))) {
+                    console.log('Converting image to JPEG format...');
+                    try {
+                        fileToUpload = await convertImageToJpeg(file);
+                        console.log('Image converted to JPEG successfully');
+                    } catch (convertErr) {
+                        console.error('Failed to convert image:', convertErr);
+                        throw new Error(`Failed to convert image: ${convertErr.message}. Please upload a JPEG or PNG image.`);
+                    }
+                }
+
                 // Upload directly to Firebase Storage
                 const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
                 const storage = getStorage();
-                const suffix = extFromFile(file.name);
+                const suffix = extFromFile(fileToUpload.name);
                 const objectPath = `avatars/avatar_${user.uid}_${Date.now()}.${suffix}`;
                 const storageRef = ref(storage, objectPath);
-                await uploadBytes(storageRef, file, { contentType: file.type || 'application/octet-stream' });
+                await uploadBytes(storageRef, fileToUpload, { 
+                    contentType: fileToUpload.type || 'image/jpeg' 
+                });
                 const imageUrl = await getDownloadURL(storageRef);
 
-                // Save asset locally for immediate UI
-                await addAssetToGroup(groupId, imageUrl, file.name);
-                await loadAssets(groupId);
+                // Save asset to Firestore and get the asset ID
+                const { db, collection, addDoc, doc, updateDoc, serverTimestamp } = await getFirestore();
+                const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets');
+                const assetDocRef = await addDoc(assetsRef, {
+                    url: imageUrl,
+                    fileName: fileToUpload.name,
+                    userId: user.uid,
+                    createdAt: serverTimestamp ? serverTimestamp() : new Date()
+                });
+                const assetId = assetDocRef.id;
+                
+                // Also set avatarUrl on the group (acts as primary for now)
+                await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), { 
+                    avatarUrl: imageUrl, 
+                    updatedAt: new Date() 
+                });
 
-                // Ensure HeyGen association and training
+                // IMPORTANT: Call add-look FIRST to create HeyGen group and add the image
+                // This must happen before sync, otherwise sync might delete the asset
                 const idToken = await user.getIdToken();
+                console.log('Calling add-look endpoint with assetId:', assetId);
                 const resp = await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/add-look`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ groupDocId: groupId, imageUrl })
+                    body: JSON.stringify({ groupDocId: groupId, assetId })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
@@ -237,6 +352,10 @@ export async function renderAvatars(container) {
                 if (resp.status === 202) {
                     console.warn('HeyGen training in progress:', result);
                 }
+                console.log('Successfully added look to HeyGen, now refreshing UI');
+                
+                // Refresh UI after HeyGen operations complete
+                await loadAssets(groupId);
             } catch (err) {
                 console.error('Avatar upload error:', err);
                 alert(`Failed to upload and train avatar: ${err?.message || err}`);
@@ -303,7 +422,14 @@ async function deleteAsset(groupId, assetId, imageUrl) {
             throw new Error(msg);
         }
 
-        // Reload assets for this group to update UI
+        // Sync and reload assets for this group to update UI
+        // Note: syncAndLoadAssets is defined in the same module, so we can call it directly
+        // But since deleteAsset is a global function, we need to trigger a reload
+        // The best approach is to reload the page or trigger a custom event
+        window.dispatchEvent(new CustomEvent('avatar-assets-changed', { detail: { groupId } }));
+        
+        // Also try to sync and reload directly if we can access the function
+        // For now, just reload the assets manually
         const { db, collection, getDocs } = await getFirestore();
         const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets');
         const snap = await getDocs(assetsRef);

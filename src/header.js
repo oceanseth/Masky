@@ -23,6 +23,9 @@ export function createHeader(options = {}) {
             <span class="logo-text">MASKY</span>
         </div>
         <div class="nav-links">
+            <a class="nav-link" id="navProjects" onclick="showProjects()" style="display: none;">Projects</a>
+            <a class="nav-link" id="navAvatars" onclick="showAvatars()" style="display: none;">Avatars</a>
+            <a class="nav-link" id="navAbout" onclick="showAbout()">About</a>
             <!-- Auth buttons for logged out state -->
             <button class="btn btn-secondary" id="navSignIn" onclick="showLogin()" style="display: none;">Sign In</button>
             <button class="btn btn-primary" id="navSignUp" onclick="showSignup()" style="display: none;">Start Creating</button>
@@ -49,15 +52,19 @@ export function createHeader(options = {}) {
                 <span class="icon">🏠</span>
                 Dashboard
             </button>
-            <button class="mobile-menu-item" id="mobileProjects" onclick="window.location.href='/projects.html'; closeMobileMenu()" style="display: none;">
+            <button class="mobile-menu-item" id="mobileProjects" onclick="showProjects(); closeMobileMenu()" style="display: none;">
                 <span class="icon">📁</span>
                 Projects
+            </button>
+            <button class="mobile-menu-item" id="mobileAvatars" onclick="showAvatars(); closeMobileMenu()" style="display: none;">
+                <span class="icon">🧑‍🎨</span>
+                Avatars
             </button>
             <button class="mobile-menu-item" id="mobileHelp" onclick="showHelp(); closeMobileMenu()" title="Show Tutorial" style="display: none;">
                 <span class="icon">?</span>
                 Help
             </button>
-            <button class="mobile-menu-item" id="mobileAbout" onclick="window.location.href='/about.html'; closeMobileMenu()">
+            <button class="mobile-menu-item" id="mobileAbout" onclick="showAbout(); closeMobileMenu()">
                 <span class="icon">ℹ</span>
                 About
             </button>
@@ -116,12 +123,15 @@ export function updateHeaderAuthState(user) {
     const navHelp = document.getElementById('navHelp');
     const navMembership = document.getElementById('navMembership');
     const navSignOut = document.getElementById('navSignOut');
+    const navProjects = document.getElementById('navProjects');
+    const navAvatars = document.getElementById('navAvatars');
     
     // Mobile navigation
     const mobileSignInBtn = document.getElementById('mobileSignInBtn');
     const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
     const mobileDashboard = document.getElementById('mobileDashboard');
     const mobileProjects = document.getElementById('mobileProjects');
+    const mobileAvatars = document.getElementById('mobileAvatars');
     const mobileHelp = document.getElementById('mobileHelp');
     const mobileAbout = document.getElementById('mobileAbout');
     const mobileMembership = document.getElementById('mobileMembership');
@@ -134,11 +144,14 @@ export function updateHeaderAuthState(user) {
         if (navHelp) navHelp.style.display = 'inline-block';
         if (navMembership) navMembership.style.display = 'inline-block';
         if (navSignOut) navSignOut.style.display = 'inline-block';
+        if (navProjects) navProjects.style.display = 'inline-block';
+        if (navAvatars) navAvatars.style.display = 'inline-block';
         
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'none';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'none';
         if (mobileDashboard) mobileDashboard.style.display = 'block';
         if (mobileProjects) mobileProjects.style.display = 'block';
+        if (mobileAvatars) mobileAvatars.style.display = 'block';
         if (mobileHelp) mobileHelp.style.display = 'block';
         if (mobileMembership) mobileMembership.style.display = 'block';
         if (mobileSignOut) mobileSignOut.style.display = 'block';
@@ -149,11 +162,14 @@ export function updateHeaderAuthState(user) {
         if (navHelp) navHelp.style.display = 'none';
         if (navMembership) navMembership.style.display = 'none';
         if (navSignOut) navSignOut.style.display = 'none';
+        if (navProjects) navProjects.style.display = 'none';
+        if (navAvatars) navAvatars.style.display = 'none';
         
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'block';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'block';
         if (mobileDashboard) mobileDashboard.style.display = 'none';
         if (mobileProjects) mobileProjects.style.display = 'none';
+        if (mobileAvatars) mobileAvatars.style.display = 'none';
         if (mobileHelp) mobileHelp.style.display = 'none';
         if (mobileMembership) mobileMembership.style.display = 'none';
         if (mobileSignOut) mobileSignOut.style.display = 'none';
@@ -195,6 +211,92 @@ function initializeMobileMenu() {
                 window.location.href = '/?help=true';
             });
         }
+    };
+
+    // Global avatar manager launcher
+    window.showAvatars = function() {
+        import('/src/avatars.js').then(({ renderAvatars }) => {
+            // Close project wizard if open
+            if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+                try {
+                    window.projectWizard.close();
+                } catch (e) {
+                    console.warn('Error closing wizard:', e);
+                }
+            }
+            // Hide project UI if present
+            const wiz = document.getElementById('projectWizard');
+            const recent = document.getElementById('recentProjects');
+            const about = document.getElementById('aboutSection');
+            const projectsManager = document.getElementById('projectsManager');
+            const dashboard = document.getElementById('dashboard');
+            if (wiz) wiz.style.display = 'none';
+            if (recent) recent.style.display = 'none';
+            if (about) about.style.display = 'none';
+            if (projectsManager) projectsManager.remove();
+            if (dashboard) dashboard.style.display = 'block';
+            // Render avatar manager
+            renderAvatars('#dashboard .dashboard-container');
+        }).catch(err => {
+            console.error('Failed to load avatars editor:', err);
+        });
+    };
+
+    // Global projects manager launcher
+    window.showProjects = function() {
+        console.log('[Header] showProjects clicked');
+        import('/src/projects.js').then(({ renderProjectsManager }) => {
+            console.log('[Header] projects.js loaded, rendering Projects Manager');
+            // Close project wizard if open
+            if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+                try {
+                    window.projectWizard.close();
+                } catch (e) {
+                    console.warn('Error closing wizard:', e);
+                }
+            }
+            // Hide wizard/avatars if visible
+            const wiz = document.getElementById('projectWizard');
+            const recent = document.getElementById('recentProjects');
+            const avatars = document.getElementById('avatarsManager');
+            const about = document.getElementById('aboutSection');
+            const dashboard = document.getElementById('dashboard');
+            console.log('[Header] toggling views', { hasWiz: !!wiz, hasRecent: !!recent, hasAvatars: !!avatars, hasAbout: !!about, hasDashboard: !!dashboard });
+            if (wiz) wiz.style.display = 'none';
+            if (recent) recent.style.display = 'none';
+            if (avatars) avatars.remove();
+            if (about) about.style.display = 'none';
+            if (dashboard) dashboard.style.display = 'block';
+            // Render projects manager
+            console.log('[Header] calling renderProjectsManager on selector #dashboard .dashboard-container');
+            renderProjectsManager('#dashboard .dashboard-container');
+        }).catch(err => {
+            console.error('Failed to load projects manager:', err);
+        });
+    };
+
+    // Global About page toggler
+    window.showAbout = function() {
+        // Close project wizard if open
+        if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+            try {
+                window.projectWizard.close();
+            } catch (e) {
+                console.warn('Error closing wizard:', e);
+            }
+        }
+        const dashboard = document.getElementById('dashboard');
+        const about = document.getElementById('aboutSection');
+        const avatars = document.getElementById('avatarsManager');
+        const wiz = document.getElementById('projectWizard');
+        const recent = document.getElementById('recentProjects');
+        if (avatars) avatars.remove();
+        if (wiz) wiz.style.display = 'none';
+        if (recent) recent.style.display = 'none';
+        if (dashboard) dashboard.style.display = 'none';
+        if (about) about.style.display = 'block';
+        // Scroll to top for a clean view
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     
     // Close mobile menu when clicking outside

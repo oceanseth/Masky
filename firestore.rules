@@ -53,6 +53,18 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
       }
+
+      // HeyGen avatar groups (user-facing "avatars")
+      match /heygenAvatarGroups/{groupId} {
+        allow read, write: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+
+        // Assets for a group (images the user uploaded/attached)
+        match /assets/{assetId} {
+          allow read, write: if isOwner(userId);
+          allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        }
+      }
     }
     
     // Projects collection - users can only access their own projects

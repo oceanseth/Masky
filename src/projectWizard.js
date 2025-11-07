@@ -57,7 +57,7 @@ class ProjectWizard {
         this.wizardId = `wizard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         this.currentStep = 1;
         this.projectData = this.options.projectData || {
-            platform: '',
+            platform: 'twitch', // Default to Twitch
             projectName: '',
             eventType: 'channel.follow', // Set default value
             voiceFile: null,
@@ -71,6 +71,14 @@ class ProjectWizard {
         this.audioChunks = [];
         this.userVoices = [];
         this.userAvatars = [];
+        this.avatarGroups = [];
+        
+        // Dirty flags to track changes that need to be persisted
+        this.dirtyFlags = {
+            commandTrigger: false,
+            voice: false,
+            avatar: false
+        };
     }
 
     /**
@@ -140,8 +148,13 @@ class ProjectWizard {
         container.innerHTML = `
             <div class="project-wizard" id="projectWizard">
                 <div class="wizard-header">
-                    <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Project' : 'New Project Wizard'}</h2>
-                    <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your project settings' : 'Create your first AI-powered stream alert in 5 simple steps'}</p>
+                    <div class="wizard-header-content">
+                        <div>
+                            <h2 class="section-title">${this.options.mode === 'edit' ? 'Edit Project' : 'New Project Wizard'}</h2>
+                            <p class="wizard-subtitle">${this.options.mode === 'edit' ? 'Update your project settings' : 'Create your first AI-powered stream alert in 5 simple steps'}</p>
+                        </div>
+                        <button class="wizard-close-btn" onclick="projectWizard.close()" title="Close Wizard">×</button>
+                    </div>
                 </div>
 
                 <div class="wizard-steps">
@@ -155,13 +168,12 @@ class ProjectWizard {
                             <div class="form-group">
                                 <label for="platformSelect">Select your streaming platform:</label>
                                 <select id="platformSelect" class="form-select">
-                                    <option value="">Choose a platform...</option>
-                                    <option value="twitch">Twitch</option>
-                                    <option value="youtube">YouTube</option>
-                                    <option value="facebook">Facebook</option>
-                                    <option value="instagram">Instagram</option>
-                                    <option value="tiktok">TikTok</option>
-                                    <option value="kick">Kick</option>
+                                    <option value="twitch" selected>Twitch</option>
+                                    <option value="youtube" disabled>YouTube (Coming Soon)</option>
+                                    <option value="facebook" disabled>Facebook (Coming Soon)</option>
+                                    <option value="instagram" disabled>Instagram (Coming Soon)</option>
+                                    <option value="tiktok" disabled>TikTok (Coming Soon)</option>
+                                    <option value="kick" disabled>Kick (Coming Soon)</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -320,13 +332,7 @@ class ProjectWizard {
                                 </div>
                                 <div class="generation-result" id="generationResult" style="display: none;">
                                     <div class="result-icon success">🎬</div>
-                                    <p class="result-message">Your AI avatar is ready!</p>
-                                    <div class="video-url-section">
-                                        <label for="videoUrl">Video URL (for testing):</label>
-                                        <input type="text" id="videoUrl" class="form-input" 
-                                               value="https://resource2.heygen.ai/video/transcode/db4d10b8bf02461386ac1a4c3b271ca0/vJLetG12gwT1WR81fVZ2VVsCnYQwyppLd/1080x1920.mp4?response-content-disposition=attachment%3B+filename%2A%3DUTF-8%27%27Untitled%2520Video.mp4%3B">
-                                        <button class="btn btn-primary" onclick="projectWizard.saveVideoUrl()">Save Video URL</button>
-                                    </div>
+                                    <p class="result-message">Your AI avatar video is ready!</p>
                                     <div class="project-url" id="projectUrl" style="display: none;">
                                         <h3>Your Project URL:</h3>
                                         <div class="url-display">
@@ -345,7 +351,6 @@ class ProjectWizard {
                     <button class="btn btn-secondary" id="prevBtn" onclick="projectWizard.previousStep()" style="display: none;">Previous</button>
                     <button class="btn btn-primary" id="nextBtn" onclick="projectWizard.nextStep()">Next</button>
                     <button class="btn btn-primary" id="finishBtn" onclick="projectWizard.finishWizard()" style="display: none;">Finish</button>
-                    ${this.options.mode === 'edit' ? '<button class="btn btn-secondary" id="cancelBtn" onclick="projectWizard.cancel()">Cancel</button>' : ''}
                 </div>
             </div>
         `;
@@ -359,6 +364,13 @@ class ProjectWizard {
      * Set default values for form fields
      */
     setDefaultValues() {
+        // Set default platform to Twitch
+        const platformSelect = document.getElementById('platformSelect');
+        if (platformSelect && !platformSelect.value) {
+            platformSelect.value = 'twitch';
+            this.projectData.platform = 'twitch';
+        }
+        
         // Set default event type
         const eventTypeSelect = document.getElementById('eventType');
         if (eventTypeSelect && !eventTypeSelect.value) {
@@ -431,6 +443,7 @@ class ProjectWizard {
         if (commandTriggerInput) {
             commandTriggerInput.addEventListener('input', (e) => {
                 this.projectData.commandTrigger = e.target.value.trim();
+                this.dirtyFlags.commandTrigger = true;
                 this.validateStep1();
             });
         }
@@ -483,15 +496,76 @@ class ProjectWizard {
             cmdGroup.style.display = (this.projectData.eventType === 'channel.chat_command') ? 'block' : 'none';
         }
 
+        // Reset dirty flags when loading existing data
+        this.dirtyFlags.commandTrigger = false;
+        this.dirtyFlags.voice = false;
+        this.dirtyFlags.avatar = false;
+
         // Validate step 1
         this.validateStep1();
     }
 
     /**
+     * Persist dirty fields to Firestore if in edit mode
+     */
+    async persistDirtyFields() {
+        // Only persist if we're in edit mode and have a project ID
+        if (this.options.mode !== 'edit' || !this.projectData.projectId) {
+            return;
+        }
+
+        // Build update object with only dirty fields
+        const updates = { updatedAt: new Date() };
+        let hasUpdates = false;
+
+        if (this.dirtyFlags.commandTrigger) {
+            updates.commandTrigger = this.projectData.commandTrigger || null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.voice) {
+            updates.voiceUrl = this.projectData.voiceUrl || null;
+            updates.voiceId = this.projectData.voiceId || null;
+            updates.voiceName = this.projectData.voiceName || null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.avatar) {
+            updates.avatarUrl = this.projectData.avatarUrl || null;
+            updates.avatarGroupId = this.projectData.avatarGroupId || null;
+            updates.avatarAssetId = this.projectData.avatarAssetId || null;
+            updates.avatarGroupName = this.projectData.avatarGroupName || null;
+            hasUpdates = true;
+        }
+
+        // Only update if there are dirty fields
+        if (hasUpdates) {
+            try {
+                const { db, doc, updateDoc } = await import('./firebase.js');
+                const projectRef = doc(db, 'projects', this.projectData.projectId);
+                await updateDoc(projectRef, updates);
+                
+                // Clear dirty flags after successful persistence
+                if (this.dirtyFlags.commandTrigger) this.dirtyFlags.commandTrigger = false;
+                if (this.dirtyFlags.voice) this.dirtyFlags.voice = false;
+                if (this.dirtyFlags.avatar) this.dirtyFlags.avatar = false;
+                
+                console.log('Persisted dirty fields to project:', updates);
+            } catch (error) {
+                console.error('Error persisting dirty fields:', error);
+                // Don't throw - allow navigation to continue
+            }
+        }
+    }
+
+    /**
      * Step Navigation
      */
-    nextStep() {
+    async nextStep() {
         if (this.validateCurrentStep()) {
+            // Persist dirty fields before moving to next step
+            await this.persistDirtyFields();
+            
             if (this.currentStep < 5) {
                 this.currentStep++;
                 this.showStep(this.currentStep);
@@ -860,6 +934,7 @@ class ProjectWizard {
                 this.projectData.voiceUrl = result.voiceUrl;
                 this.projectData.voiceId = result.voiceId;
                 this.projectData.voiceName = result.name;
+                this.dirtyFlags.voice = true;
 
                 // Reload voices list to include the new voice
                 await this.loadUserVoices();
@@ -957,52 +1032,187 @@ class ProjectWizard {
     }
 
     async saveAvatar() {
-        if (this.projectData.avatarFile) {
+        if (!this.projectData.avatarFile) return;
+        
+        try {
+            const user = getCurrentUser();
+            if (!user) throw new Error('User not authenticated');
+
+            // Ask user to select or create an avatar group
+            const groupId = await this.promptForAvatarGroup();
+            if (!groupId) {
+                // User cancelled
+                this.retryUpload();
+                return;
+            }
+
+            // Upload directly to Firebase Storage
+            const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+            const storage = getStorage();
+            const fileExt = this.projectData.avatarFile.name.split('.').pop() || 'jpg';
+            const objectPath = `avatars/avatar_${user.uid}_${Date.now()}.${fileExt}`;
+            const storageRef = ref(storage, objectPath);
+            await uploadBytes(storageRef, this.projectData.avatarFile, { 
+                contentType: this.projectData.avatarFile.type || 'image/jpeg' 
+            });
+            const imageUrl = await getDownloadURL(storageRef);
+
+            // Save asset to Firestore
+            const { db, collection, addDoc, doc, updateDoc } = await import('./firebase.js');
+            const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets');
+            const assetDocRef = await addDoc(assetsRef, {
+                url: imageUrl,
+                fileName: this.projectData.avatarFile.name,
+                userId: user.uid,
+                createdAt: new Date()
+            });
+            const assetId = assetDocRef.id;
+            
+            // Update the group's avatarUrl
+            await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), { 
+                avatarUrl: imageUrl, 
+                updatedAt: new Date() 
+            });
+
+            // Call HeyGen API to add the look to the avatar group
             try {
-                // Save avatar file to Firebase Storage
-                const user = getCurrentUser();
-                if (!user) throw new Error('User not authenticated');
-
                 const idToken = await user.getIdToken();
-                const formData = new FormData();
-                formData.append('avatar', this.projectData.avatarFile);
-                formData.append('projectId', this.projectData.projectId || 'temp');
-
-                const response = await fetch(`${config.api.baseUrl}/api/upload-avatar`, {
+                const resp = await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/add-look`, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    },
-                    body: formData
+                    headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ groupDocId: groupId, assetId })
                 });
+                
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    console.warn('HeyGen add-look failed (non-critical):', err);
+                }
+            } catch (heygenErr) {
+                console.warn('HeyGen integration failed (non-critical):', heygenErr);
+            }
 
-                if (response.ok) {
-                    const result = await response.json();
-                    this.projectData.avatarUrl = result.avatarUrl;
-                    console.log('Avatar saved:', result.avatarUrl);
-                    // Ensure an avatar metadata doc exists (write client-side for immediate availability)
+            // Reload avatars and auto-select the newly uploaded
+            await this.loadUserAvatars();
+            
+            // Find and select the newly created asset
+            const group = this.avatarGroups?.find(g => g.id === groupId);
+            if (group) {
+                const asset = group.assets.find(a => a.id === assetId);
+                if (asset) {
+                    this.selectAvatarAsset(groupId, assetId, imageUrl, group.displayName);
+                }
+            }
+            
+            console.log('Avatar uploaded successfully to group:', groupId);
+        } catch (error) {
+            console.error('Error saving avatar:', error);
+            alert('Failed to upload avatar: ' + error.message);
+            this.retryUpload();
+        }
+    }
+    
+    async promptForAvatarGroup() {
+        // Show a modal to select existing group or create new one
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:10000;';
+            
+            const content = document.createElement('div');
+            content.style.cssText = 'background:#1a1a1a;border-radius:12px;padding:2rem;max-width:500px;width:90%;border:1px solid rgba(255,255,255,0.1);';
+            
+            const existingGroups = this.avatarGroups || [];
+            
+            content.innerHTML = `
+                <h3 style="margin:0 0 1rem 0;color:#fff;">Select Avatar Group</h3>
+                <p style="color:rgba(255,255,255,0.7);margin:0 0 1rem 0;font-size:0.9rem;">Choose an existing avatar group or create a new one.</p>
+                
+                ${existingGroups.length > 0 ? `
+                    <div style="margin-bottom:1rem;">
+                        <label style="color:rgba(255,255,255,0.9);display:block;margin-bottom:0.5rem;">Existing Groups:</label>
+                        <select id="groupSelect" class="form-select" style="width:100%;padding:0.5rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;">
+                            <option value="">-- Create New Group --</option>
+                            ${existingGroups.map(g => `<option value="${g.id}">${this.escapeHtml(g.displayName)}</option>`).join('')}
+                        </select>
+                    </div>
+                ` : ''}
+                
+                <div id="newGroupSection" style="${existingGroups.length > 0 ? 'display:none;' : ''}">
+                    <label style="color:rgba(255,255,255,0.9);display:block;margin-bottom:0.5rem;">New Avatar Group Name:</label>
+                    <input type="text" id="newGroupName" class="form-input" placeholder="e.g., My Character" style="width:100%;padding:0.5rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;margin-bottom:1rem;">
+                </div>
+                
+                <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem;">
+                    <button class="btn btn-secondary" id="cancelBtn" style="padding:0.5rem 1rem;">Cancel</button>
+                    <button class="btn btn-primary" id="confirmBtn" style="padding:0.5rem 1rem;">Confirm</button>
+                </div>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            const groupSelect = content.querySelector('#groupSelect');
+            const newGroupSection = content.querySelector('#newGroupSection');
+            const newGroupInput = content.querySelector('#newGroupName');
+            const cancelBtn = content.querySelector('#cancelBtn');
+            const confirmBtn = content.querySelector('#confirmBtn');
+            
+            if (groupSelect) {
+                groupSelect.addEventListener('change', () => {
+                    if (newGroupSection) {
+                        newGroupSection.style.display = groupSelect.value ? 'none' : 'block';
+                    }
+                });
+            }
+            
+            cancelBtn.addEventListener('click', () => {
+                document.body.removeChild(modal);
+                resolve(null);
+            });
+            
+            confirmBtn.addEventListener('click', async () => {
+                let selectedGroupId = groupSelect?.value;
+                
+                if (!selectedGroupId) {
+                    // Create new group
+                    const groupName = newGroupInput?.value?.trim();
+                    if (!groupName) {
+                        alert('Please enter a name for the new avatar group');
+                        return;
+                    }
+                    
                     try {
+                        const user = getCurrentUser();
                         const { db, collection, addDoc } = await import('./firebase.js');
-                        const avatarsCol = collection(db, 'users', user.uid, 'avatars');
-                        await addDoc(avatarsCol, {
-                            url: result.avatarUrl,
-                            fileName: this.projectData.avatarFile?.name || result.avatarId || 'avatar',
+                        const groupsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups');
+                        const ref = await addDoc(groupsRef, {
                             userId: user.uid,
+                            displayName: groupName,
                             createdAt: new Date()
                         });
-                    } catch (metaErr) {
-                        console.warn('Avatar metadata write (client) failed; may already exist via backend:', metaErr);
-                    }
-                    // Reload avatars and auto-select the newly uploaded
-                    await this.loadUserAvatars();
-                    if (result.avatarUrl) {
-                        this.selectAvatarByUrl(result.avatarUrl);
+                        selectedGroupId = ref.id;
+                        
+                        // Initialize HeyGen group
+                        try {
+                            const idToken = await user.getIdToken();
+                            await fetch(`${config.api.baseUrl}/api/heygen/avatar-group/init`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ groupDocId: selectedGroupId, displayName: groupName })
+                            });
+                        } catch (e) {
+                            console.warn('Failed to init HeyGen group (non-critical):', e);
+                        }
+                    } catch (error) {
+                        console.error('Failed to create avatar group:', error);
+                        alert('Failed to create avatar group: ' + error.message);
+                        return;
                     }
                 }
-            } catch (error) {
-                console.error('Error saving avatar:', error);
-            }
-        }
+                
+                document.body.removeChild(modal);
+                resolve(selectedGroupId);
+            });
+        });
     }
 
     retryUpload() {
@@ -1087,6 +1297,7 @@ class ProjectWizard {
             const idToken = await currentUser.getIdToken();
             if (this.projectData.eventType === 'channel.chat_command') {
                 // Ensure chatbot via user token
+                const connectionError = document.getElementById('connectionError');
                 const response = await fetch(`${config.api.baseUrl}/api/twitch-chatbot-ensure`, {
                     method: 'POST',
                     headers: {
@@ -1098,22 +1309,63 @@ class ProjectWizard {
 
                 if (response.ok) {
                     const result = await response.json();
+                    // Hide any previous error messages
+                    if (connectionError) connectionError.style.display = 'none';
+                    
                     // Treat as connected
                     if (connectionStatus) connectionStatus.style.display = 'none';
                     if (connectionResult) connectionResult.style.display = 'block';
                     const subscriptionDetails = document.getElementById('subscriptionDetails');
                     if (subscriptionDetails) {
-                        subscriptionDetails.innerHTML = `
+                        let detailsHtml = `
                             <h4>Chat Bot Status:</h4>
                             <p><strong>Established:</strong> ${result.chatbotEstablished ? 'Yes' : 'No'}</p>
-                            <p><strong>Note:</strong> Chat commands are handled via the chat bot connection.</p>
                         `;
+                        if (result.subscription) {
+                            detailsHtml += `
+                                <p><strong>Subscription ID:</strong> ${result.subscription.id}</p>
+                                <p><strong>Status:</strong> ${result.subscription.status}</p>
+                            `;
+                        }
+                        detailsHtml += `<p><strong>Note:</strong> Chat commands are handled via the chat bot connection.</p>`;
+                        subscriptionDetails.innerHTML = detailsHtml;
                     }
                     return;
                 } else {
                     const errorData = await response.json();
-                    // If missing chat scopes, prompt re-auth with Twitch to grant chat scopes
-                    if (errorData.code === 'TWITCH_CHAT_SCOPES_MISSING' || errorData.code === 'TWITCH_TOKEN_MISSING') {
+                    
+                    // Handle bot account authorization error
+                    if (errorData.code === 'BOT_ACCOUNT_NOT_AUTHORIZED') {
+                        if (connectionStatus) connectionStatus.style.display = 'none';
+                        if (connectionResult) connectionResult.style.display = 'none';
+                        if (connectionError) {
+                            connectionError.style.display = 'block';
+                            const errorMessage = document.querySelector('.error-message');
+                            if (errorMessage && errorData.botAuthUrl) {
+                                errorMessage.innerHTML = `
+                                    <p><strong>${errorData.error}</strong></p>
+                                    <p>${errorData.message}</p>
+                                    <div style="margin-top: 1rem;">
+                                        <p><strong>Instructions:</strong></p>
+                                        <ol style="text-align: left; margin: 0.5rem 0;">
+                                            ${errorData.instructions?.map(inst => `<li>${inst}</li>`).join('') || ''}
+                                        </ol>
+                                        <a href="${errorData.botAuthUrl}" target="_blank" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">
+                                            Authorize Bot Account
+                                        </a>
+                                    </div>
+                                `;
+                            } else if (errorMessage) {
+                                errorMessage.textContent = errorData.message || errorData.error;
+                            }
+                        }
+                        return; // Don't throw - we've handled the error
+                    }
+                    
+                    // If missing chat scopes or channel:bot scope, prompt re-auth with Twitch to grant required scopes
+                    if (errorData.code === 'TWITCH_CHAT_SCOPES_MISSING' || 
+                        errorData.code === 'TWITCH_TOKEN_MISSING' || 
+                        errorData.code === 'TWITCH_CHANNEL_BOT_SCOPE_MISSING') {
                         // Save current wizard state so we can resume after OAuth
                         sessionStorage.setItem('projectWizardState', JSON.stringify({
                             currentStep: this.currentStep,
@@ -1174,6 +1426,26 @@ class ProjectWizard {
                 }
             } else {
                 const errorData = await response.json();
+                
+                // Handle "subscription already exists" as success
+                if (errorData.message && errorData.message.includes('subscription already exists')) {
+                    console.log('Subscription already exists, treating as success');
+                    
+                    // Show success
+                    if (connectionStatus) connectionStatus.style.display = 'none';
+                    if (connectionResult) connectionResult.style.display = 'block';
+                    
+                    const subscriptionDetails = document.getElementById('subscriptionDetails');
+                    if (subscriptionDetails) {
+                        subscriptionDetails.innerHTML = `
+                            <h4>Subscription Details:</h4>
+                            <p><strong>Type:</strong> ${eventsubType}</p>
+                            <p><strong>Status:</strong> Active (Already Exists)</p>
+                            <p><strong>Message:</strong> This event subscription is already set up and working.</p>
+                        `;
+                    }
+                    return;
+                }
                 
                 // Special handling: treat websocket-required for chat messages as connected guidance
                 if (errorData.code === 'TWITCH_CHAT_WEBSOCKET_REQUIRED') {
@@ -1327,60 +1599,125 @@ class ProjectWizard {
     }
 
     /**
-     * Load user's avatars directly from Firestore
+     * Load user's avatar groups and their assets from Firestore
      */
     async loadUserAvatars() {
         try {
             const user = getCurrentUser();
             if (!user) return;
 
-            console.log('Loading avatars for user:', user.uid);
+            console.log('Loading avatar groups for user:', user.uid);
             const { db, collection, getDocs } = await import('./firebase.js');
-            const avatarsRef = collection(db, 'users', user.uid, 'avatars');
-            const snapshot = await getDocs(avatarsRef);
+            
+            // Load avatar groups
+            const groupsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups');
+            const groupsSnapshot = await getDocs(groupsRef);
 
-            console.log('Avatar query snapshot size:', snapshot.size);
-            this.userAvatars = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .sort((a, b) => {
-                    if (!a.createdAt || !b.createdAt) return 0;
-                    try {
-                        return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
-                    } catch {
-                        return 0;
-                    }
-                });
-            console.log('User Avatars:', this.userAvatars.map(a => a.url));
-            this.renderAvatarList(this.userAvatars);
+            console.log('Avatar groups found:', groupsSnapshot.size);
+            
+            // Load each group with its assets
+            this.avatarGroups = [];
+            for (const groupDoc of groupsSnapshot.docs) {
+                const groupData = groupDoc.data();
+                const group = {
+                    id: groupDoc.id,
+                    displayName: groupData.displayName || 'Untitled Avatar',
+                    avatarUrl: groupData.avatarUrl,
+                    avatar_group_id: groupData.avatar_group_id,
+                    assets: []
+                };
+                
+                // Load assets for this group
+                const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupDoc.id, 'assets');
+                const assetsSnapshot = await getDocs(assetsRef);
+                
+                group.assets = assetsSnapshot.docs.map(assetDoc => ({
+                    id: assetDoc.id,
+                    groupId: groupDoc.id,
+                    groupName: group.displayName,
+                    ...assetDoc.data()
+                }));
+                
+                this.avatarGroups.push(group);
+            }
+            
+            // Sort groups by creation date (newest first)
+            this.avatarGroups.sort((a, b) => {
+                if (!a.createdAt || !b.createdAt) return 0;
+                try {
+                    return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
+                } catch {
+                    return 0;
+                }
+            });
+
+            console.log('Avatar groups loaded:', this.avatarGroups.length);
+            this.renderAvatarGroupsList(this.avatarGroups);
         } catch (e) {
-            console.error('Error loading avatars:', e);
-            this.userAvatars = [];
-            this.renderAvatarList([]);
+            console.error('Error loading avatar groups:', e);
+            this.avatarGroups = [];
+            this.renderAvatarGroupsList([]);
         }
     }
 
-    renderAvatarList(avatars) {
+    renderAvatarGroupsList(avatarGroups) {
         const avatarList = document.getElementById('avatarList');
         if (!avatarList) return;
-        if (!avatars || avatars.length === 0) {
-            avatarList.innerHTML = '<div style="color: rgba(255,255,255,0.6);">No saved avatars yet</div>';
+        
+        if (!avatarGroups || avatarGroups.length === 0) {
+            avatarList.innerHTML = '<div style="color: rgba(255,255,255,0.6); grid-column: 1/-1; text-align: center; padding: 2rem;">No saved avatar groups yet. Upload a new avatar to get started.</div>';
             return;
         }
+        
         const selectedUrl = this.projectData.avatarUrl;
-        avatarList.innerHTML = avatars.map(a => `
-            <div class="avatar-card${selectedUrl && a.url === selectedUrl ? ' selected' : ''}" data-avatar-id="${a.id}" style="position: relative;">
-                <img src="${a.url}" alt="avatar" style="width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);" onclick="projectWizard.selectAvatar('${a.id}', '${a.url}')" />
-                ${selectedUrl && a.url === selectedUrl ? '<div class="voice-selected" style="position:absolute;top:6px;right:6px;background:#16a34a;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;">✓</div>' : ''}
-            </div>
-        `).join('');
-        // If a selection exists, also update the preview
+        
+        // Render each avatar group with its assets
+        avatarList.innerHTML = avatarGroups.map(group => {
+            if (!group.assets || group.assets.length === 0) {
+                // Skip groups with no assets
+                return '';
+            }
+            
+            return `
+                <div class="avatar-group" style="grid-column: 1/-1; margin-bottom: 1rem;">
+                    <h4 style="color: rgba(255,255,255,0.8); margin: 0 0 0.5rem 0; font-size: 0.9rem;">${this.escapeHtml(group.displayName)}</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;">
+                        ${group.assets.map(asset => `
+                            <div class="avatar-card${selectedUrl && asset.url === selectedUrl ? ' selected' : ''}" 
+                                 data-asset-id="${asset.id}" 
+                                 data-group-id="${group.id}"
+                                 style="position: relative; cursor: pointer; border-radius: 6px; overflow: hidden; border: 2px solid ${selectedUrl && asset.url === selectedUrl ? '#16a34a' : 'rgba(255,255,255,0.1)'};"
+                                 onclick="projectWizard.selectAvatarAsset('${group.id}', '${asset.id}', '${asset.url}', '${this.escapeHtml(group.displayName)}')">
+                                <img src="${asset.url}" 
+                                     alt="${this.escapeHtml(group.displayName)}" 
+                                     style="width: 100%; height: 100px; object-fit: cover; display: block;" />
+                                ${selectedUrl && asset.url === selectedUrl ? '<div class="avatar-selected" style="position:absolute;top:4px;right:4px;background:#16a34a;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:12px;">✓</div>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }).filter(html => html).join('');
+        
+        // If a selection exists, update the preview
         if (selectedUrl) {
             this.selectAvatarByUrl(selectedUrl);
         }
     }
+    
+    escapeHtml(str) {
+        return String(str || '').replace(/[&<>"']/g, s => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[s]);
+    }
 
-    selectAvatar(avatarId, url) {
+    selectAvatarAsset(groupId, assetId, url, groupName) {
         this.projectData.avatarUrl = url;
+        this.projectData.avatarGroupId = groupId;
+        this.projectData.avatarAssetId = assetId;
+        this.projectData.avatarGroupName = groupName;
+        this.dirtyFlags.avatar = true;
+        
         // Show preview section
         const imagePreview = document.getElementById('imagePreview');
         const uploadArea = document.getElementById('uploadArea');
@@ -1388,29 +1725,38 @@ class ProjectWizard {
         if (previewImg) previewImg.src = url;
         if (imagePreview) imagePreview.style.display = 'block';
         if (uploadArea) uploadArea.style.display = 'none';
+        
         // Update selection classes in the list
         document.querySelectorAll('#avatarList .avatar-card').forEach(card => {
             card.classList.remove('selected');
+            card.style.borderColor = 'rgba(255,255,255,0.1)';
         });
-        const selectedCard = document.querySelector(`#avatarList .avatar-card img[src='${url}']`)?.parentElement;
-        if (selectedCard) selectedCard.classList.add('selected');
-        this.validateStep3();
-
-        // If editing an existing project, persist immediately
-        if (this.options.mode === 'edit' && this.projectData.projectId) {
-            (async () => {
-                try {
-                    const { db, doc, updateDoc } = await import('./firebase.js');
-                    const projectRef = doc(db, 'projects', this.projectData.projectId);
-                    await updateDoc(projectRef, { avatarUrl: url, updatedAt: new Date() });
-                } catch (err) {
-                    console.warn('Failed to persist avatar selection to project:', err);
-                }
-            })();
+        const selectedCard = document.querySelector(`#avatarList .avatar-card[data-asset-id="${assetId}"]`);
+        if (selectedCard) {
+            selectedCard.classList.add('selected');
+            selectedCard.style.borderColor = '#16a34a';
         }
+        
+        this.validateStep3();
+    }
+
+    selectAvatar(avatarId, url) {
+        // Legacy method - redirect to new method
+        this.selectAvatarAsset('', avatarId, url, 'Unknown Group');
     }
 
     selectAvatarByUrl(url) {
+        // Find the asset with this URL
+        if (this.avatarGroups) {
+            for (const group of this.avatarGroups) {
+                const asset = group.assets.find(a => a.url === url);
+                if (asset) {
+                    this.selectAvatarAsset(group.id, asset.id, url, group.displayName);
+                    return;
+                }
+            }
+        }
+        // Fallback to legacy method
         this.selectAvatar('', url);
     }
 
@@ -1495,6 +1841,7 @@ class ProjectWizard {
         this.projectData.voiceUrl = voice.url;
         this.projectData.voiceId = voice.id;
         this.projectData.voiceName = voice.name;
+        this.dirtyFlags.voice = true;
 
         // Load and show the selected voice with audio player
         await this.loadAndShowSelectedVoice(voice);
@@ -1845,6 +2192,25 @@ class ProjectWizard {
     }
 
     /**
+     * Retry content generation
+     */
+    async retryGeneration() {
+        const generationStatus = document.getElementById('generationStatus');
+        const generationResult = document.getElementById('generationResult');
+        if (generationStatus) {
+            generationStatus.innerHTML = `
+                <div class="loading-spinner"></div>
+                <p>Generating your AI avatar video...</p>
+            `;
+            generationStatus.style.display = 'block';
+        }
+        if (generationResult) {
+            generationResult.style.display = 'none';
+        }
+        await this.generateContent();
+    }
+
+    /**
      * Step 5: Content Generation
      */
     async generateContent() {
@@ -1852,95 +2218,314 @@ class ProjectWizard {
         const generationResult = document.getElementById('generationResult');
         
         try {
-            // If we don't yet have a HeyGen video for this project, request generation
-            const user = getCurrentUser();
-            if (user && this.projectData.projectId && this.projectData.voiceUrl && !this.projectData.heygenVideoId) {
-                const idToken = await user.getIdToken();
-                const resp = await fetch(`${config.api.baseUrl}/api/heygen/generate`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        projectId: this.projectData.projectId,
-                        voiceUrl: this.projectData.voiceUrl,
-                        // If client already knows the mapped HeyGen avatar id, pass it
-                        heygenAvatarId: this.projectData.heygenAvatarId || null,
-                        userAvatarUrl: this.projectData.avatarUrl || null,
-                        width: 1280,
-                        height: 720
-                    })
-                });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    this.projectData.heygenVideoId = data.videoId;
-                } else {
-                    const err = await resp.json().catch(() => ({}));
-                    console.warn('HeyGen generate failed:', err);
-                }
-            }
-            // Simulate minimal delay then show UI
-            await new Promise(resolve => setTimeout(resolve, 1200));
-            
-            // Show result
-            if (generationStatus) generationStatus.style.display = 'none';
-            if (generationResult) generationResult.style.display = 'block';
-            
-            // Show project URL - use Firebase UID only
-            const projectUrl = document.getElementById('projectUrl');
-            const projectUrlInput = document.getElementById('projectUrlInput');
-            if (projectUrl && projectUrlInput) {
-                const user = getCurrentUser();
-                let projectUrlValue;
-                
-                if (user && user.uid) {
-                    // Use Firebase UID as the identifier for all user's projects
-                    projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
-                } else {
-                    // Fallback to a temporary ID if user is not authenticated
-                    const tempId = `temp_${Date.now()}`;
-                    projectUrlValue = `${window.location.origin}/twitchevent.html#${tempId}`;
-                }
-                
-                projectUrlInput.value = projectUrlValue;
-                projectUrl.style.display = 'block';
-            }
-            
-        } catch (error) {
-            console.error('Content generation error:', error);
-        }
-    }
-
-    async saveVideoUrl() {
-        const videoUrl = document.getElementById('videoUrl');
-        if (!videoUrl || !videoUrl.value.trim()) {
-            alert('Please enter a video URL');
-            return;
-        }
-
-        try {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            // Save directly to Firestore
-            const { db, doc, updateDoc } = await import('./firebase.js');
+            // First, ensure the project is saved to Firestore if it doesn't exist
             if (!this.projectData.projectId) {
-                throw new Error('Project ID missing. Save the project first.');
+                await this.saveProjectToFirestore();
             }
+
+            // Check if we already have a completed video
+            if (this.projectData.videoUrl && this.projectData.heygenVideoId) {
+                console.log('Video already exists, showing preview');
+                
+                // Show the existing video
+                if (generationStatus) generationStatus.style.display = 'none';
+                if (generationResult) {
+                    generationResult.style.display = 'block';
+                    
+                    // Create video preview section
+                    let videoPreviewSection = generationResult.querySelector('.video-preview-section');
+                    if (!videoPreviewSection) {
+                        const resultMessage = generationResult.querySelector('.result-message');
+                        if (resultMessage) {
+                            videoPreviewSection = document.createElement('div');
+                            videoPreviewSection.className = 'video-preview-section';
+                            videoPreviewSection.style.cssText = 'margin: 1.5rem 0; text-align: center;';
+                            resultMessage.insertAdjacentElement('afterend', videoPreviewSection);
+                        }
+                    }
+                    
+                    if (videoPreviewSection) {
+                        videoPreviewSection.innerHTML = `
+                            <h4 style="color: rgba(255,255,255,0.9); margin-bottom: 1rem;">Video Preview</h4>
+                            <video controls autoplay muted style="width: 100%; max-width: 600px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                                <source src="${this.projectData.videoUrl}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+                        `;
+                    }
+                }
+                
+                // Show project URL
+                const projectUrl = document.getElementById('projectUrl');
+                const projectUrlInput = document.getElementById('projectUrlInput');
+                if (projectUrl && projectUrlInput) {
+                    const projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                    projectUrlInput.value = projectUrlValue;
+                    projectUrl.style.display = 'block';
+                }
+                
+                return; // Don't generate a new video
+            }
+            
+            // Check if we have a video ID but no URL (video might still be processing)
+            if (this.projectData.heygenVideoId && !this.projectData.videoUrl) {
+                console.log('Video ID exists but no URL, checking status');
+                await this.pollVideoStatus();
+                return;
+            }
+            
+            // Need to generate a new video
+            // Update status to show we're starting generation
+            if (generationStatus) {
+                generationStatus.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <p>Starting video generation...</p>
+                `;
+                generationStatus.style.display = 'block';
+            }
+
+            // Call HeyGen API to generate video
+            const idToken = await user.getIdToken();
+            const generateResp = await fetch(`${config.api.baseUrl}/api/heygen/generate`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    projectId: this.projectData.projectId,
+                    voiceUrl: this.projectData.voiceUrl,
+                    // Send the specific avatar ID directly (from step 3 selection)
+                    heygenAvatarId: this.projectData.avatarAssetId || null,
+                    // Also send group ID as fallback if specific avatar not selected
+                    avatarGroupId: this.projectData.avatarGroupId || null,
+                    avatarUrl: this.projectData.avatarUrl || null
+                    // Note: width/height are determined by backend from asset dimensions
+                })
+            });
+
+            if (!generateResp.ok) {
+                const err = await generateResp.json().catch(() => ({}));
+                throw new Error(err.message || err.error || 'Failed to generate video');
+            }
+
+            const generateData = await generateResp.json();
+            this.projectData.heygenVideoId = generateData.videoId || generateData.video_id;
+
+            // Save the video ID to Firestore
+            const { db, doc, updateDoc } = await import('./firebase.js');
             const projectRef = doc(db, 'projects', this.projectData.projectId);
             await updateDoc(projectRef, {
-                videoUrl: videoUrl.value.trim(),
+                heygenVideoId: this.projectData.heygenVideoId,
                 updatedAt: new Date()
             });
 
-            this.projectData.videoUrl = videoUrl.value.trim();
-            console.log('Video URL saved directly to Firestore');
+            console.log('HeyGen video generation started:', this.projectData.heygenVideoId);
+
+            // Now poll for the video status
+            await this.pollVideoStatus();
+            
         } catch (error) {
-            console.error('Error saving video URL:', error);
-            alert('Error saving video URL: ' + error.message);
+            console.error('Content generation error:', error);
+            
+            // Show error in generation status
+            if (generationStatus) {
+                generationStatus.innerHTML = `
+                    <div class="result-icon error">❌</div>
+                    <p class="error-message"><strong>Error:</strong> ${error.message}</p>
+                    <button class="btn btn-primary" onclick="projectWizard.retryGeneration()">Retry</button>
+                `;
+                generationStatus.style.display = 'block';
+            }
+            
+            if (generationResult) {
+                generationResult.style.display = 'none';
+            }
         }
     }
+
+    /**
+     * Save project to Firestore (used when creating project during generation)
+     */
+    async saveProjectToFirestore() {
+        const user = getCurrentUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { db, addDoc, collection } = await import('./firebase.js');
+        
+        const projectData = {
+            userId: user.uid,
+            platform: this.projectData.platform,
+            projectName: this.projectData.projectName,
+            eventType: this.projectData.eventType,
+            commandTrigger: this.projectData.commandTrigger || null,
+            voiceUrl: this.projectData.voiceUrl || null,
+            voiceId: this.projectData.voiceId || null,
+            voiceName: this.projectData.voiceName || null,
+            avatarUrl: this.projectData.avatarUrl || null,
+            avatarGroupId: this.projectData.avatarGroupId || null,
+            avatarAssetId: this.projectData.avatarAssetId || null,
+            avatarGroupName: this.projectData.avatarGroupName || null,
+            videoUrl: null,
+            heygenVideoId: null,
+            alertConfig: this.projectData.alertConfig || {},
+            twitchSubscription: true, // Set to true since we connected in step 4
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        const projectsRef = collection(db, 'projects');
+        const createdRef = await addDoc(projectsRef, projectData);
+        this.projectData.projectId = createdRef.id;
+        
+        console.log('Project saved to Firestore:', this.projectData.projectId);
+    }
+
+    /**
+     * Poll HeyGen video status until complete
+     */
+    async pollVideoStatus() {
+        const generationStatus = document.getElementById('generationStatus');
+        const generationResult = document.getElementById('generationResult');
+        
+        let attempts = 0;
+        const maxAttempts = 120; // 20 minutes maximum (120 * 10 seconds)
+        
+        const checkStatus = async () => {
+            try {
+                const user = getCurrentUser();
+                if (!user) throw new Error('User not authenticated');
+
+                const idToken = await user.getIdToken();
+                const statusResp = await fetch(
+                    `${config.api.baseUrl}/api/heygen/video_status.get?video_id=${encodeURIComponent(this.projectData.heygenVideoId)}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${idToken}`
+                        }
+                    }
+                );
+
+                if (!statusResp.ok) {
+                    throw new Error('Failed to check video status');
+                }
+
+                const statusData = await statusResp.json();
+                const data = statusData.data || statusData;
+                const status = data.status;
+                const videoUrl = data.video_url;
+
+                console.log('Video status:', status, 'Attempt:', attempts + 1);
+
+                // Update UI based on status
+                if (status === 'completed' && videoUrl) {
+                    // Video is ready!
+                    this.projectData.videoUrl = videoUrl;
+                    
+                    // Save video URL to Firestore
+                    const { db, doc, updateDoc } = await import('./firebase.js');
+                    const projectRef = doc(db, 'projects', this.projectData.projectId);
+                    await updateDoc(projectRef, {
+                        videoUrl: videoUrl,
+                        updatedAt: new Date()
+                    });
+
+                    // Show success with video preview
+                    if (generationStatus) generationStatus.style.display = 'none';
+                    if (generationResult) {
+                        generationResult.style.display = 'block';
+                        
+                        // Update or create the video preview section
+                        let videoPreviewSection = generationResult.querySelector('.video-preview-section');
+                        if (!videoPreviewSection) {
+                            // Add video preview section if it doesn't exist
+                            const resultMessage = generationResult.querySelector('.result-message');
+                            if (resultMessage) {
+                                videoPreviewSection = document.createElement('div');
+                                videoPreviewSection.className = 'video-preview-section';
+                                videoPreviewSection.style.cssText = 'margin: 1.5rem 0; text-align: center;';
+                                resultMessage.insertAdjacentElement('afterend', videoPreviewSection);
+                            }
+                        }
+                        
+                        // Set or update the video content
+                        if (videoPreviewSection) {
+                            videoPreviewSection.innerHTML = `
+                                <h4 style="color: rgba(255,255,255,0.9); margin-bottom: 1rem;">Video Preview</h4>
+                                <video controls autoplay muted style="width: 100%; max-width: 600px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                                    <source src="${videoUrl}" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            `;
+                        }
+                    }
+
+                    // Show project URL
+                    const projectUrl = document.getElementById('projectUrl');
+                    const projectUrlInput = document.getElementById('projectUrlInput');
+                    if (projectUrl && projectUrlInput) {
+                        const projectUrlValue = `${window.location.origin}/twitchevent.html#${user.uid}`;
+                        projectUrlInput.value = projectUrlValue;
+                        projectUrl.style.display = 'block';
+                    }
+
+                } else if (status === 'failed') {
+                    // Video generation failed
+                    const errorMsg = data.error?.message || data.error?.detail || 'Video generation failed';
+                    throw new Error(errorMsg);
+
+                } else if (status === 'processing' || status === 'pending' || status === 'waiting') {
+                    // Still processing, update status and check again
+                    attempts++;
+                    
+                    if (attempts >= maxAttempts) {
+                        throw new Error('Video generation timed out. Please try again.');
+                    }
+
+                    // Update status message
+                    if (generationStatus) {
+                        const statusMessages = {
+                            'pending': 'Video is in queue...',
+                            'waiting': 'Waiting to start processing...',
+                            'processing': 'Generating your AI avatar video...'
+                        };
+                        
+                        generationStatus.innerHTML = `
+                            <div class="loading-spinner"></div>
+                            <p>${statusMessages[status] || 'Processing...'}</p>
+                            <p style="font-size: 0.9rem; color: rgba(255,255,255,0.6); margin-top: 0.5rem;">
+                                This may take a few minutes. Checking status... (${attempts}/${maxAttempts})
+                            </p>
+                        `;
+                    }
+
+                    // Check again in 10 seconds
+                    setTimeout(checkStatus, 10000);
+                }
+
+            } catch (error) {
+                console.error('Error checking video status:', error);
+                
+                if (generationStatus) {
+                    generationStatus.innerHTML = `
+                        <div class="result-icon error">❌</div>
+                        <p class="error-message"><strong>Error:</strong> ${error.message}</p>
+                        <button class="btn btn-primary" onclick="projectWizard.retryGeneration()">Retry</button>
+                    `;
+                    generationStatus.style.display = 'block';
+                }
+            }
+        };
+
+        // Start checking
+        await checkStatus();
+    }
+
 
     copyProjectUrl() {
         const projectUrlInput = document.getElementById('projectUrlInput');
@@ -1959,29 +2544,38 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
-            // Create project directly in Firestore
-            const { db, addDoc, collection } = await import('./firebase.js');
-            const projectData = {
-                userId: user.uid,
-                platform: this.projectData.platform,
-                projectName: this.projectData.projectName,
-                eventType: this.projectData.eventType,
-                commandTrigger: this.projectData.commandTrigger || null,
-                voiceUrl: this.projectData.voiceUrl || null,
-                voiceId: this.projectData.voiceId || null,
-                voiceName: this.projectData.voiceName || null,
-                avatarUrl: this.projectData.avatarUrl || null,
-                videoUrl: this.projectData.videoUrl || null,
-                alertConfig: this.projectData.alertConfig || {},
-                twitchSubscription: this.projectData.twitchSubscription || null,
-                isActive: true,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            };
+            // Persist any dirty fields before finishing (for edit mode)
+            await this.persistDirtyFields();
 
-            const projectsRef = collection(db, 'projects');
-            const createdRef = await addDoc(projectsRef, projectData);
-            this.projectData.projectId = createdRef.id;
+            const { db, doc, updateDoc } = await import('./firebase.js');
+            
+            // Project should already be created in step 5, just update it
+            if (this.projectData.projectId) {
+                const projectRef = doc(db, 'projects', this.projectData.projectId);
+                const projectData = {
+                    platform: this.projectData.platform,
+                    projectName: this.projectData.projectName,
+                    eventType: this.projectData.eventType,
+                    commandTrigger: this.projectData.commandTrigger || null,
+                    voiceUrl: this.projectData.voiceUrl || null,
+                    voiceId: this.projectData.voiceId || null,
+                    voiceName: this.projectData.voiceName || null,
+                    avatarUrl: this.projectData.avatarUrl || null,
+                    avatarGroupId: this.projectData.avatarGroupId || null,
+                    avatarAssetId: this.projectData.avatarAssetId || null,
+                    avatarGroupName: this.projectData.avatarGroupName || null,
+                    videoUrl: this.projectData.videoUrl || null,
+                    heygenVideoId: this.projectData.heygenVideoId || null,
+                    alertConfig: this.projectData.alertConfig || {},
+                    twitchSubscription: true, // Always true since we connected in step 4
+                    updatedAt: new Date()
+                };
+                await updateDoc(projectRef, projectData);
+            } else {
+                // Fallback: create project if it somehow wasn't created in step 5
+                console.warn('Project was not created in step 5, creating now...');
+                await this.saveProjectToFirestore();
+            }
 
             // Update the project URL with the user's UID (not project ID)
             const projectUrl = document.getElementById('projectUrl');
@@ -1999,17 +2593,59 @@ class ProjectWizard {
             alert('Project saved successfully!');
         } catch (error) {
             console.error('Error finishing wizard:', error);
-            alert('Error creating project: ' + error.message);
+            alert('Error saving project: ' + error.message);
         }
     }
 
     /**
-     * Cancel wizard
+     * Close wizard
      */
-    cancel() {
+    close() {
+        // Hide the wizard
+        const container = document.getElementById(this.options.containerId);
+        if (container) {
+            container.style.display = 'none';
+        }
+        
+        // Show projects view (dashboard and projects manager)
+        const dashboard = document.getElementById('dashboard');
+        const projectsManager = document.getElementById('projectsManager');
+        const recentProjects = document.getElementById('recentProjects');
+        
+        // If projects manager exists, show it; otherwise try to show recent projects or dashboard
+        if (projectsManager) {
+            if (dashboard) dashboard.style.display = 'block';
+            // Projects manager should already be visible if it exists
+        } else if (recentProjects) {
+            if (dashboard) dashboard.style.display = 'block';
+            recentProjects.style.display = 'block';
+        } else if (dashboard) {
+            dashboard.style.display = 'block';
+            // Try to render projects manager if dashboard is available
+            const dashboardContainer = dashboard.querySelector('.dashboard-container');
+            if (dashboardContainer) {
+                import('./projects.js').then(({ renderProjectsManager }) => {
+                    renderProjectsManager('#dashboard .dashboard-container');
+                }).catch(err => {
+                    console.warn('Failed to load projects manager on close:', err);
+                });
+            }
+        }
+        
+        // Call cancel callback if provided
         if (this.options.onCancel) {
             this.options.onCancel();
         }
+        
+        // Destroy the wizard instance
+        this.destroy();
+    }
+
+    /**
+     * Cancel wizard (kept for backward compatibility)
+     */
+    cancel() {
+        this.close();
     }
 
     /**
@@ -2021,14 +2657,25 @@ class ProjectWizard {
             container.innerHTML = '';
         }
         
-        // Clean up global reference
+        // Clean up global references
         if (window.projectWizard === this) {
             delete window.projectWizard;
+        }
+        
+        // Clean up module-level reference
+        if (projectWizard === this) {
+            projectWizard = null;
         }
     }
 }
 
 // Global functions for HTML onclick handlers
+window.selectAvatarAsset = function(groupId, assetId, url, groupName) {
+    if (window.projectWizard) {
+        window.projectWizard.selectAvatarAsset(groupId, assetId, url, groupName);
+    }
+};
+
 window.startNewRecording = function() {
     if (window.projectWizard) {
         window.projectWizard.startNewRecording();

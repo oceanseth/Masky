@@ -1,3 +1,24 @@
+// Load local environment FIRST before any other imports
+if (process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local') {
+    console.log('🔧 Loading local environment for Lambda handler...');
+    console.log('   IS_OFFLINE:', process.env.IS_OFFLINE);
+    console.log('   STAGE:', process.env.STAGE);
+    
+    try {
+        const { loadLocalEnv } = require('../local-env-loader');
+        loadLocalEnv();
+        console.log('   ✓ Local environment loaded');
+        
+        // Verify environment variables were loaded
+        console.log('   FIREBASE_SERVICE_ACCOUNT:', !!process.env.FIREBASE_SERVICE_ACCOUNT ? 'exists' : 'MISSING');
+        console.log('   TWITCH_CLIENT_ID:', process.env.TWITCH_CLIENT_ID || 'MISSING');
+        console.log('   HEYGEN_API_KEY:', !!process.env.HEYGEN_API_KEY ? 'exists' : 'MISSING');
+    } catch (error) {
+        console.error('❌ Failed to load local environment:', error.message);
+        console.error('   Stack:', error.stack);
+    }
+}
+
 const AWS = require('aws-sdk');
 const s3 = new AWS.S3({
     region: 'us-east-1',
@@ -8,6 +29,14 @@ const firebaseInitializer = require('../utils/firebaseInit');
 const stripeInitializer = require('../utils/stripeInit');
 const twitchInitializer = require('../utils/twitchInit');
 const heygen = require('../utils/heygen');
+const {
+    handleHeygenAvatarGroupInit,
+    handleHeygenAvatarGroupAddLook,
+    handleHeygenAvatarGroupRemoveLook,
+    handleHeygenAvatarGroupSync,
+    handleHeygenAvatarGroupDelete,
+    handleHeygenAvatarGroupClaim
+} = require('../utils/heygen');
 const { parseMultipartData } = require('./multipartParser');
 
 // Handle Twitch OAuth login (legacy - for direct access token)
@@ -103,13 +132,14 @@ exports.handler = async (event, context) => {
         headers: event.headers 
     }));
     
+    // CORS: Allow requests from any origin (including localhost)
     const requestOrigin = event.headers?.origin || event.headers?.Origin || '*';
     const headers = {
-        'Access-Control-Allow-Origin': requestOrigin,
+        'Access-Control-Allow-Origin': requestOrigin === '*' ? '*' : requestOrigin,
         'Vary': 'Origin',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': '*',
-        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Credentials': requestOrigin !== '*' ? 'true' : 'false',
         'Access-Control-Max-Age': '86400'
     };
 
@@ -123,7 +153,16 @@ exports.handler = async (event, context) => {
     }
 
     // Route handling
-    const path = event.path || event.rawPath || '';
+    let path = event.path || event.rawPath || '';
+    // Normalize path: ensure it starts with / and remove /api prefix if present
+    // API Gateway proxy integration may include or exclude /api prefix
+    if (path && !path.startsWith('/')) {
+        path = '/' + path;
+    }
+    // Remove /api prefix if present for consistent matching
+    if (path.startsWith('/api/')) {
+        path = path.substring(4); // Remove '/api'
+    }
     const method = event.httpMethod || event.requestContext?.http?.method;
 
     // Handle Twitch OAuth callback (authorization code exchange)
@@ -164,6 +203,90 @@ exports.handler = async (event, context) => {
                 statusCode: 502,
                 headers,
                 body: JSON.stringify({ error: 'Heygen proxy failed', message: err.message })
+            };
+        }
+    }
+
+    // HeyGen: check avatar group training status
+    if (path.includes('/heygen/avatar-group/training-status') && method === 'GET') {
+        try {
+            const authHeader = event.headers.Authorization || event.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'Unauthorized' })
+                };
+            }
+
+            const idToken = authHeader.split('Bearer ')[1];
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const decoded = await admin.auth().verifyIdToken(idToken);
+            const userId = decoded.uid;
+
+            const url = new URL(event.rawUrl || `${event.headers.origin || 'http://localhost:3001'}${path}${event.rawQueryString ? ('?' + event.rawQueryString) : ''}`);
+            const groupDocId = url.searchParams.get('group_id') || event.queryStringParameters?.group_id;
+            
+            if (!groupDocId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing group_id parameter' })
+                };
+            }
+
+            const db = admin.firestore();
+            const groupDoc = await db.collection('users').doc(userId)
+                .collection('heygenAvatarGroups').doc(groupDocId).get();
+            
+            if (!groupDoc.exists) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Avatar group not found' })
+                };
+            }
+
+            const groupData = groupDoc.data();
+            const heygenGroupId = groupData.avatar_group_id;
+            
+            if (!heygenGroupId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ 
+                        error: 'Avatar group not yet created in HeyGen',
+                        status: 'not_started'
+                    })
+                };
+            }
+
+            const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+            const avatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: trainingStatus?.status || 'unknown',
+                    progress: trainingStatus?.progress || 0,
+                    avatar_group_id: heygenGroupId,
+                    avatars_count: avatars?.length || 0,
+                    avatars: avatars || []
+                })
+            };
+        } catch (err) {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ 
+                    error: 'Failed to check training status', 
+                    message: err.message 
+                })
             };
         }
     }
@@ -215,6 +338,34 @@ exports.handler = async (event, context) => {
         const response = await handleHeygenGenerate(event, headers);
         return response;
     }
+
+    // HeyGen: initialize avatar group
+    if (path.includes('/heygen/avatar-group/init') && method === 'POST') {
+        return await handleHeygenAvatarGroupInit(event, headers);
+    }
+
+    // HeyGen: add look to avatar group
+    if (path.includes('/heygen/avatar-group/add-look') && method === 'POST') {
+        return await handleHeygenAvatarGroupAddLook(event, headers);
+    }
+
+    // HeyGen: remove look from avatar group
+    if (path.includes('/heygen/avatar-group/remove-look') && method === 'POST') {
+        return await handleHeygenAvatarGroupRemoveLook(event, headers);
+    }
+
+    // HeyGen: sync assets between Firestore and HeyGen
+        if (path.includes('/heygen/avatar-group/sync') && method === 'POST') {
+            return await handleHeygenAvatarGroupSync(event, headers);
+        }
+        
+        if (path.includes('/heygen/avatar-group/delete') && method === 'POST') {
+            return await handleHeygenAvatarGroupDelete(event, headers);
+        }
+        
+        if (path.includes('/heygen/avatar-group/claim') && method === 'POST') {
+            return await handleHeygenAvatarGroupClaim(event, headers);
+        }
 
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
@@ -582,10 +733,24 @@ exports.handler = async (event, context) => {
             }
 
             // Validate token scopes
-            const validation = await twitchInitializer.validateToken(accessToken);
+            let validation;
+            try {
+                validation = await twitchInitializer.validateToken(accessToken);
+            } catch (e) {
+                // Map invalid/expired token to actionable error for client
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Twitch token invalid or expired. Please reconnect Twitch.',
+                        code: 'TWITCH_TOKEN_MISSING'
+                    })
+                };
+            }
             const scopes = Array.isArray(validation.scopes) ? validation.scopes : [];
             const hasChatRead = scopes.includes('chat:read');
             const hasChatEdit = scopes.includes('chat:edit');
+            const hasChannelBot = scopes.includes('channel:bot'); // Required for Cloud Chatbots to allow bot to subscribe
 
             if (!hasChatRead || !hasChatEdit) {
                 return {
@@ -598,8 +763,309 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            // Mark chatbot as established for this user (a separate bot service can join channels)
+            if (!hasChannelBot) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Missing required scope (channel:bot). This scope grants permission for the bot to subscribe to chat-related EventSub subscriptions. Please reconnect Twitch.',
+                        code: 'TWITCH_CHANNEL_BOT_SCOPE_MISSING'
+                    })
+                };
+            }
+
+            // Create EventSub subscription for channel.chat.message to receive all chat messages via webhook
             const db = admin.firestore();
+            const subscriptionKey = 'twitch_channel.chat.message';
+            const userSubscriptionsRef = db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey);
+            const existingSubscription = await userSubscriptionsRef.get();
+
+            let subscription;
+            let subscriptionCreated = false;
+
+            if (existingSubscription.exists) {
+                const existingData = existingSubscription.data();
+                const existing = existingData.twitchSubscription || {};
+                // Reuse only if same type and currently enabled
+                if (existing.type === 'channel.chat.message' && existing.status === 'enabled') {
+                    subscription = existing;
+                    console.log('Using existing chat message subscription:', subscription.id);
+                } else {
+                    console.log('Existing chat subscription not enabled or mismatched; will (re)create');
+                }
+            }
+
+            if (!subscription) {
+                // Initialize Twitch credentials from SSM
+                await twitchInitializer.initialize();
+                const { clientId, clientSecret } = twitchInitializer.getCredentials();
+                
+                // For Cloud Chatbots with webhook transport, we MUST use an App Access Token
+                // per Twitch documentation: "You can only subscribe to events over Webhook transport using an App Access Token"
+                // The App Access Token is obtained via client credentials flow (no user context)
+                const appToken = await twitchInitializer.getAppAccessToken();
+                console.log('Creating EventSub subscription for channel.chat.message');
+                console.log('Using App Access Token (client credentials flow)');
+                console.log('Client ID:', clientId);
+                console.log('App Token (first 20 chars):', appToken.substring(0, 20) + '...');
+                
+                // Validate app token to ensure Client ID matches
+                try {
+                    const validateResponse = await fetch('https://id.twitch.tv/oauth2/validate', {
+                        headers: { 'Authorization': `OAuth ${appToken}` }
+                    });
+                    if (validateResponse.ok) {
+                        const validateData = await validateResponse.json();
+                        console.log('App Token validation:', {
+                            client_id: validateData.client_id,
+                            matches: validateData.client_id === clientId,
+                            scopes: validateData.scopes
+                        });
+                        if (validateData.client_id !== clientId) {
+                            throw new Error(`Client ID mismatch: token has ${validateData.client_id}, expected ${clientId}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not validate app token:', e.message);
+                }
+                
+                // Bot User ID - the maskyai chatbot account (1386063343)
+                // This bot account must have authorized the app with user:read:chat and user:bot scopes
+                const botUserId = '1386063343';
+                
+                // Check if bot account has authorized the app
+                const botTokensRef = db.collection('system').doc('bot_tokens');
+                const botTokensDoc = await botTokensRef.get();
+                let botHasAuthorized = false;
+                let botAuthUrl = null;
+                
+                if (botTokensDoc.exists) {
+                    const botTokens = botTokensDoc.data();
+                    // Validate bot token has required scopes
+                    if (botTokens.accessToken && botTokens.scopes) {
+                        const hasUserReadChat = botTokens.scopes.includes('user:read:chat') || 
+                                               botTokens.scopes.includes('chat:read');
+                        const hasUserBot = botTokens.scopes.includes('user:bot');
+                        
+                        if (hasUserReadChat && hasUserBot) {
+                            botHasAuthorized = true;
+                            console.log('Bot account has authorized with required scopes');
+                        } else {
+                            console.log('Bot account authorized but missing required scopes:', {
+                                hasUserReadChat,
+                                hasUserBot,
+                                scopes: botTokens.scopes
+                            });
+                        }
+                    }
+                }
+                
+                // Generate bot authorization URL if not authorized
+                if (!botHasAuthorized) {
+                    botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                    console.log('Bot account not authorized. Auth URL:', botAuthUrl);
+                }
+                
+                // Verify bot account exists and can be accessed
+                try {
+                    const botUserResponse = await fetch(`https://api.twitch.tv/helix/users?id=${botUserId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${appToken}`,
+                            'Client-Id': clientId
+                        }
+                    });
+                    if (botUserResponse.ok) {
+                        const botUserData = await botUserResponse.json();
+                        console.log('Bot account info:', botUserData.data?.[0] ? {
+                            id: botUserData.data[0].id,
+                            login: botUserData.data[0].login,
+                            display_name: botUserData.data[0].display_name
+                        } : 'Bot account not found');
+                    } else {
+                        console.warn('Could not fetch bot account info:', await botUserResponse.text());
+                    }
+                } catch (e) {
+                    console.warn('Error checking bot account:', e.message);
+                }
+                
+                // For channel.chat.message EventSub subscriptions (Cloud Chatbot pattern):
+                // - broadcaster_user_id: The channel owner (broadcaster) who granted channel:bot permission
+                // - user_id: The bot's User ID that will receive the chat messages
+                //   This bot account must have authorized the app with user:read:chat + user:bot scopes
+                //   The bot account authorization must be done with THIS client ID (sgb17aslo6gesnetuqfnf6qql6jrae)
+                // - Authorization: App Access Token (required for webhook transport)
+                // - Client-Id: Must match the client ID embedded in the app token
+                console.log('Subscription condition:', {
+                    broadcaster_user_id: twitchId,
+                    user_id: botUserId,
+                    note: 'Bot account must have authorized this app with user:read:chat + user:bot scopes'
+                });
+                
+                const requestBody = {
+                    type: 'channel.chat.message',
+                    version: '1',
+                    condition: {
+                        broadcaster_user_id: twitchId, // The broadcaster's channel
+                        user_id: botUserId // Bot account ID - must have authorized with user:read:chat + user:bot
+                    },
+                    transport: {
+                        method: 'webhook',
+                        callback: 'https://masky.ai/api/twitch-webhook',
+                        secret: clientSecret
+                    }
+                };
+
+                const requestHeaders = {
+                    'Authorization': `Bearer ${appToken}`, // App Access Token (client credentials flow) - FULL TOKEN
+                    'Client-Id': clientId, // Must match the client ID in the app token
+                    'Content-Type': 'application/json'
+                };
+
+                // Log that we're using the full token (for debugging)
+                console.log('Request headers prepared:', {
+                    'Authorization': `Bearer ${appToken.substring(0, 20)}... (${appToken.length} chars total)`,
+                    'Client-Id': clientId,
+                    'Content-Type': 'application/json'
+                });
+
+                // Check if bot has authorized before attempting subscription
+                if (!botHasAuthorized) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({
+                            error: 'Bot account not authorized',
+                            message: 'The bot account (maskyai) must authorize the app with user:read:chat and user:bot scopes before creating chat subscriptions.',
+                            code: 'BOT_ACCOUNT_NOT_AUTHORIZED',
+                            botAuthUrl: botAuthUrl,
+                            instructions: [
+                                '1. Open the bot authorization URL in a browser',
+                                '2. Log in as the bot account (maskyai)',
+                                '3. Click "Authorize" to grant the required permissions',
+                                '4. Try connecting again'
+                            ]
+                        })
+                    };
+                }
+
+                const twitchResponse = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
+                    method: 'POST',
+                    headers: requestHeaders,
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!twitchResponse.ok) {
+                    const errorText = await twitchResponse.text();
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch (e) {
+                        errorData = { raw: errorText };
+                    }
+                    
+                    // Handle 409 Conflict - subscription already exists
+                    if (twitchResponse.status === 409 && errorData.message?.includes('subscription already exists')) {
+                        console.log('Subscription already exists in Twitch API, fetching existing subscription...');
+                        
+                        // Fetch existing subscriptions for this broadcaster and bot
+                        const getSubscriptionsResponse = await fetch(
+                            `https://api.twitch.tv/helix/eventsub/subscriptions?broadcaster_user_id=${twitchId}&type=channel.chat.message`,
+                            {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': `Bearer ${appToken}`,
+                                    'Client-Id': clientId
+                                }
+                            }
+                        );
+                        
+                        if (getSubscriptionsResponse.ok) {
+                            const subscriptionsData = await getSubscriptionsResponse.json();
+                            // Find the subscription matching our condition (same broadcaster and bot user_id)
+                            const matchingSubscription = subscriptionsData.data?.find(sub => 
+                                sub.type === 'channel.chat.message' &&
+                                sub.condition?.broadcaster_user_id === twitchId &&
+                                sub.condition?.user_id === botUserId
+                            );
+                            
+                            if (matchingSubscription) {
+                                subscription = matchingSubscription;
+                                console.log('Found existing subscription:', subscription.id, 'Status:', subscription.status);
+                                
+                                // Update Firestore with the existing subscription
+                                await userSubscriptionsRef.set({
+                                    provider: 'twitch',
+                                    eventType: 'channel.chat.message',
+                                    twitchSubscription: subscription,
+                                    isActive: subscription.status === 'enabled',
+                                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                                });
+                                
+                                console.log('Updated Firestore with existing subscription:', subscription.id);
+                            } else {
+                                console.warn('Subscription exists in Twitch but could not find matching subscription in API response');
+                                // Fall through to throw error
+                                throw new Error('Subscription already exists but could not retrieve details');
+                            }
+                        } else {
+                            console.warn('Failed to fetch existing subscriptions:', await getSubscriptionsResponse.text());
+                            // Fall through to throw error
+                            throw new Error('Subscription already exists but could not retrieve details');
+                        }
+                    } else {
+                        // Handle other errors
+                        console.error('Failed to create chat message subscription. Status:', twitchResponse.status, 'Response:', JSON.stringify(errorData, null, 2));
+                        console.error('Request body sent:', JSON.stringify(requestBody, null, 2));
+                        
+                        // Include full request payload in error for debugging
+                        const twitchPayload = {
+                            url: 'https://api.twitch.tv/helix/eventsub/subscriptions',
+                            method: 'POST',
+                            headers: {
+                                ...requestHeaders,
+                                'Authorization': `Bearer ${appToken.substring(0, 20)}...` // Only show first 20 chars of token
+                            },
+                            body: requestBody
+                        };
+                        
+                        // Provide detailed error message with troubleshooting steps
+                        let errorMessage = `Twitch API error: ${errorData.message || errorData.error || 'Unknown error'}`;
+                        if (twitchResponse.status === 403 && errorData.message?.includes('authorization')) {
+                            errorMessage += `\n\nThe bot account (ID: ${botUserId}) must authorize your app.`;
+                            if (!botAuthUrl) {
+                                botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                            }
+                        }
+                        
+                        const error = new Error(errorMessage);
+                        error.twitchPayload = twitchPayload;
+                        error.twitchResponse = errorData;
+                        error.twitchStatus = twitchResponse.status;
+                        error.botAuthUrl = botAuthUrl || `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                        throw error;
+                    }
+                } else {
+                    // Successfully created new subscription
+                    const subscriptionData = await twitchResponse.json();
+                    subscription = subscriptionData.data[0];
+                    subscriptionCreated = true;
+                    
+                    // Save subscription to user's subscriptions collection
+                    await userSubscriptionsRef.set({
+                        provider: 'twitch',
+                        eventType: 'channel.chat.message',
+                        twitchSubscription: subscription,
+                        isActive: true,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    console.log('Created new chat message subscription:', subscription.id);
+                }
+            }
+
+            // Mark chatbot as established for this user
             await db.collection('users').doc(userId).set({
                 chatbotEstablished: true,
                 twitchId: twitchId,
@@ -612,14 +1078,38 @@ exports.handler = async (event, context) => {
                     ...headers,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ ok: true, chatbotEstablished: true })
+                body: JSON.stringify({ 
+                    ok: true, 
+                    chatbotEstablished: true,
+                    subscription: subscription,
+                    subscriptionCreated: subscriptionCreated
+                })
             };
         } catch (err) {
             console.error('Error ensuring Twitch chatbot:', err);
+            const errorResponse = { 
+                error: 'Failed to ensure Twitch chatbot', 
+                message: err.message 
+            };
+            
+            // Include Twitch API debugging info if available
+            if (err.twitchPayload) {
+                errorResponse.twitch_payload = err.twitchPayload;
+            }
+            if (err.twitchResponse) {
+                errorResponse.twitch_response = err.twitchResponse;
+            }
+            if (err.twitchStatus) {
+                errorResponse.twitch_status = err.twitchStatus;
+            }
+            if (err.botAuthUrl) {
+                errorResponse.bot_auth_url = err.botAuthUrl;
+            }
+            
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: 'Failed to ensure Twitch chatbot', message: err.message })
+                body: JSON.stringify(errorResponse)
             };
         }
     }
@@ -706,12 +1196,20 @@ async function handleHeygenGenerate(event, headers) {
         const {
             projectId,
             voiceUrl: voiceUrlInput,
-            heygenAvatarId,
+            heygenAvatarId,  // This might be a HeyGen avatar ID OR a Firestore asset ID
             userAvatarUrl: userAvatarUrlInput,
-            width = 1280,
-            height = 720,
+            avatarGroupId: avatarGroupIdInput,
+            width = 720,   // Default to 720p for HeyGen free/basic tier compatibility
+            height = 1280, // Portrait orientation
             avatarStyle = 'normal'
         } = body;
+
+        console.log('🎬 Generate request received:', {
+            projectId,
+            heygenAvatarId: heygenAvatarId || '(not provided)',
+            avatarGroupId: avatarGroupIdInput || '(not provided)',
+            hasVoiceUrl: !!voiceUrlInput
+        });
 
         if (!projectId) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'projectId is required' }) };
@@ -723,6 +1221,7 @@ async function handleHeygenGenerate(event, headers) {
         const projectName = projectData?.projectName || 'Masky Video';
         const voiceUrl = voiceUrlInput || projectData?.voiceUrl;
         const userAvatarUrl = userAvatarUrlInput || projectData?.avatarUrl;
+        const avatarGroupId = avatarGroupIdInput || projectData?.avatarGroupId;
 
         if (!voiceUrl) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'voiceUrl is required' }) };
@@ -755,41 +1254,237 @@ async function handleHeygenGenerate(event, headers) {
             });
         }
 
-        let resolvedAvatarId = heygenAvatarId || null;
+        let resolvedAvatarId = null;
+        let heygenGroupId = null;
 
-        // If no HeyGen avatar id provided, try to find an existing mapping by avatarUrl
-        if (!resolvedAvatarId && userAvatarUrl) {
-            // Use avatar groups flow
-            // 1) lookup group for this asset
+        // If we have both heygenAvatarId and avatarGroupId, treat heygenAvatarId as a Firestore asset ID
+        // and look up the actual HeyGen avatar ID from the group
+        if (heygenAvatarId && avatarGroupIdInput) {
+            console.log('🔍 Looking up HeyGen avatar ID for Firestore asset:', heygenAvatarId, 'in group:', avatarGroupIdInput);
+            
+            const groupsRef = userRef.collection('heygenAvatarGroups');
+            const groupDoc = await groupsRef.doc(avatarGroupIdInput).get();
+            
+            if (groupDoc.exists) {
+                const groupData = groupDoc.data();
+                heygenGroupId = groupData.avatar_group_id;
+                
+                if (heygenGroupId) {
+                    console.log('✅ Found HeyGen group ID:', heygenGroupId);
+                    console.log('   Firestore group doc ID:', avatarGroupIdInput);
+                    
+                    // Get the asset document to find its URL
+                    const assetsRef = groupDoc.ref.collection('assets');
+                    const assetDoc = await assetsRef.doc(heygenAvatarId).get();
+                    
+                    if (assetDoc.exists) {
+                        const assetData = assetDoc.data();
+                        const assetUrl = assetData.url;
+                        console.log('Found asset data:', {
+                            url: assetUrl,
+                            heygenPhotoAvatarId: assetData.heygenPhotoAvatarId || '(not saved)',
+                            heygenStatus: assetData.heygenStatus || '(not saved)',
+                            width: assetData.width || '(not saved)',
+                            height: assetData.height || '(not saved)'
+                        });
+                        
+                        // If we have the HeyGen photo avatar ID saved, use it directly!
+                        if (assetData.heygenPhotoAvatarId) {
+                            resolvedAvatarId = assetData.heygenPhotoAvatarId;
+                            console.log('✅ Using saved HeyGen photo avatar ID:', resolvedAvatarId);
+                            console.log('   Status:', assetData.heygenStatus || 'unknown');
+                            
+                            // Use the asset's original dimensions if available
+                            if (assetData.width && assetData.height) {
+                                width = assetData.width;
+                                height = assetData.height;
+                                console.log('   Using asset dimensions:', width, 'x', height);
+                            }
+                            
+                            // Check if the photo avatar is ready
+                            if (assetData.heygenStatus === 'pending') {
+                                console.log('⚠️  Photo avatar status is pending - may still be processing');
+                            }
+                        } else {
+                            console.log('⚠️  No HeyGen photo avatar ID saved in Firestore asset. Querying HeyGen API...');
+                            
+                            // Fallback: List all avatars in the HeyGen group to find the matching one
+                            const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+                            console.log('Avatars in HeyGen group:', JSON.stringify(groupAvatars, null, 2));
+                            
+                            // If no avatars, check training status
+                            if (!groupAvatars || groupAvatars.length === 0) {
+                            console.log('📊 No avatars found, checking training status...');
+                            let trainingStatus = null;
+                            try {
+                                trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                            } catch (statusErr) {
+                                console.log('Could not get training status:', statusErr.message);
+                            }
+                            
+                            // If training is in progress, throw clear error
+                            if (trainingStatus && trainingStatus.status && trainingStatus.status !== 'completed') {
+                                throw new Error(`Avatar training is ${trainingStatus.status}. Please wait for training to complete before generating videos. This typically takes 5-10 minutes. Check status at: http://localhost:3001/api/heygen/avatar-group/training-status?group_id=${avatarGroupIdInput}`);
+                            }
+                            
+                            // If training is completed but no avatars, something went wrong
+                            if (trainingStatus && trainingStatus.status === 'completed') {
+                                throw new Error(`Training is marked as completed but no avatars found in the group. This may indicate a HeyGen API issue. Please try re-uploading the image.`);
+                            }
+                            
+                                // If no training status at all, training was never started
+                                throw new Error('No avatars found and training status unknown. Please ensure the avatar was uploaded correctly and training was initiated.');
+                            }
+                            
+                            if (groupAvatars && groupAvatars.length > 0) {
+                                // Try to match by name, or just use the first completed avatar
+                                // HeyGen avatars have 'avatar_id', 'avatar_name', 'name', etc.
+                                const matchingAvatar = groupAvatars.find(a => 
+                                    a.name === heygenAvatarId || 
+                                    a.avatar_name === heygenAvatarId ||
+                                    a.id === heygenAvatarId
+                                );
+                                
+                                // If no match, use first completed avatar
+                                const avatarToUse = matchingAvatar || groupAvatars.find(a => a.status === 'completed') || groupAvatars[0];
+                                
+                                resolvedAvatarId = avatarToUse.avatar_id || avatarToUse.id;
+                                console.log('✓ Resolved HeyGen avatar ID from API query:', resolvedAvatarId, 'from avatar:', JSON.stringify(avatarToUse, null, 2));
+                            } else {
+                                console.error('❌ No avatars found in HeyGen group - group may need training');
+                                throw new Error('No avatars found in avatar group. Please ensure the avatar group has been trained and avatars are available.');
+                            }
+                        }
+                    } else {
+                        console.warn('Asset document not found:', heygenAvatarId);
+                    }
+                } else {
+                    console.error('❌ Group has no avatar_group_id yet - group not synced with HeyGen');
+                    throw new Error(`Avatar group ${avatarGroupIdInput} has not been synced with HeyGen yet. Please try uploading an image to the group first.`);
+                }
+            } else {
+                console.error('❌ Avatar group document not found:', avatarGroupIdInput);
+                throw new Error(`Avatar group ${avatarGroupIdInput} not found in your account.`);
+            }
+        }
+        // If only heygenAvatarId provided (no group), assume it's already a HeyGen avatar ID
+        else if (heygenAvatarId && !avatarGroupIdInput) {
+            console.log('✓ Using directly provided HeyGen avatar ID (no group):', heygenAvatarId);
+            resolvedAvatarId = heygenAvatarId;
+        }
+        // If only avatarGroupId provided, look up an avatar from the group
+        else if (!heygenAvatarId && avatarGroupIdInput) {
+            console.log('Looking up avatar from group ID (no asset specified):', avatarGroupIdInput);
+            const groupsRef = userRef.collection('heygenAvatarGroups');
+            const groupDoc = await groupsRef.doc(avatarGroupIdInput).get();
+            
+            if (groupDoc.exists) {
+                const groupData = groupDoc.data();
+                heygenGroupId = groupData.avatar_group_id;
+                
+                if (heygenGroupId) {
+                    console.log('Found HeyGen avatar_group_id:', heygenGroupId);
+                    
+                    // List avatars in the group and pick one
+                    const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+                    console.log('Group avatars from HeyGen:', JSON.stringify(groupAvatars, null, 2));
+                    
+                    if (groupAvatars && groupAvatars.length > 0) {
+                        // Choose first avatar from the group
+                        const selected = groupAvatars[0];
+                        resolvedAvatarId = selected.avatar_id || selected.id;
+                        console.log('Selected avatar from group:', resolvedAvatarId);
+                        
+                        // Check if avatar needs training
+                        if (selected.status && selected.status !== 'completed') {
+                            console.warn('Avatar may not be fully trained. Status:', selected.status);
+                            // Try to get training status
+                            try {
+                                const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                                if (trainingStatus.status && trainingStatus.status !== 'completed') {
+                                    throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
+                                }
+                            } catch (trainingErr) {
+                                console.warn('Could not check training status:', trainingErr.message);
+                            }
+                        }
+                    } else {
+                        console.error('No avatars found in group:', heygenGroupId);
+                    }
+                } else {
+                    console.warn('Group document exists but has no avatar_group_id:', avatarGroupId);
+                }
+            } else {
+                console.error('Avatar group document not found:', avatarGroupId);
+            }
+        }
+
+        // Legacy fallback: If no HeyGen avatar id resolved yet and we have userAvatarUrl, try to find an existing mapping
+        // NOTE: This path should rarely be reached now that we look up avatars from groups
+        if (!resolvedAvatarId && userAvatarUrl && !avatarGroupIdInput) {
+            console.log('⚠️  Legacy path: No avatar resolved yet, trying to find by avatarUrl:', userAvatarUrl);
+            // Use avatar groups flow - lookup group for this asset
             const groupsRef = userRef.collection('heygenAvatarGroups');
             const existing = await groupsRef.where('avatarUrl', '==', userAvatarUrl).limit(1).get();
-            let groupId = null;
+            
             if (!existing.empty) {
-                groupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
+                heygenGroupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
+                console.log('Found existing group by avatarUrl:', heygenGroupId);
             } else {
                 // create group (name per user once) and add look for this asset
+                console.log('Creating new avatar group for user:', userId);
                 const groupName = `masky_${userId}`;
-                groupId = await heygen.createPhotoAvatarGroup(groupName);
+                heygenGroupId = await heygen.createPhotoAvatarGroup(groupName);
                 await groupsRef.add({
                     userId,
                     avatarUrl: userAvatarUrl,
-                    avatar_group_id: groupId,
+                    avatar_group_id: heygenGroupId,
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 });
-                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+                await heygen.addLooksToPhotoAvatarGroup(heygenGroupId, [{ url: userAvatarUrl }]);
+                
+                // Start training the avatar group (required before avatars can be used)
+                try {
+                    console.log('Starting training for new avatar group:', heygenGroupId);
+                    await heygen.trainPhotoAvatarGroup(heygenGroupId);
+                    console.log('Training initiated for avatar group:', heygenGroupId);
+                } catch (trainErr) {
+                    console.warn('Failed to start training for avatar group:', trainErr.message);
+                    // Continue anyway - training might already be in progress
+                }
             }
 
             // Ensure the asset look exists in the group (idempotent add)
             try {
-                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+                await heygen.addLooksToPhotoAvatarGroup(heygenGroupId, [{ url: userAvatarUrl }]);
             } catch {}
 
-            // 2) list avatars in the group and pick one
-            const groupAvatars = await heygen.listAvatarsInAvatarGroup(groupId);
+            // List avatars in the group and pick one
+            const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+            console.log('Group avatars from HeyGen:', JSON.stringify(groupAvatars, null, 2));
             if (groupAvatars && groupAvatars.length > 0) {
                 // choose most recent if timestamps available; else first
                 const selected = groupAvatars[0];
                 resolvedAvatarId = selected.avatar_id || selected.id;
+                console.log('Selected avatar from group:', resolvedAvatarId, 'Full object:', JSON.stringify(selected, null, 2));
+                
+                // Check if avatar needs training
+                if (selected.status && selected.status !== 'completed') {
+                    console.warn('Avatar group avatar may not be fully trained. Status:', selected.status);
+                    // Try to get training status
+                    try {
+                        const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                        console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                        if (trainingStatus.status && trainingStatus.status !== 'completed') {
+                            throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
+                        }
+                    } catch (trainingErr) {
+                        // If training status check fails, log but continue
+                        console.warn('Could not check training status:', trainingErr.message);
+                    }
+                }
             }
         }
 
@@ -822,19 +1517,67 @@ async function handleHeygenGenerate(event, headers) {
             };
         }
 
-        // Upload audio asset to HeyGen to get audio_asset_id
-        const audioAssetId = await heygen.uploadAssetFromUrl(voiceUrl);
-
-        // Request generation with audio_asset_id and folder
-        const videoId = await heygen.generateVideoWithAudioAsset({
+        // Use audio URL directly (no need to upload audio files to HeyGen)
+        console.log('Generating video with audio URL directly:', voiceUrl);
+        
+        // Determine if this is a photo avatar (user-uploaded) or regular HeyGen avatar
+        // Photo avatars come from avatar groups, regular avatars are HeyGen's stock avatars
+        const isPhotoAvatar = !!(avatarGroupIdInput || heygenGroupId);
+        
+        // Scale down dimensions if they exceed HeyGen plan limits while maintaining aspect ratio
+        // Free/Basic tier: 720p max (longer side <= 1280)
+        // Creator tier: 1080p max (longer side <= 1920)
+        const MAX_DIMENSION_720P = 1280;   // Free/Basic tier limit
+        const MAX_DIMENSION_1080P = 1920;  // Creator tier limit
+        
+        // Get user's subscription tier to determine max resolution
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.exists ? userDoc.data() : {};
+        const subscriptionTier = userData.subscriptionTier || 'free';
+        
+        // Determine max dimension based on subscription
+        let maxDimension = MAX_DIMENSION_720P;  // Default to free tier
+        if (subscriptionTier === 'standard' || subscriptionTier === 'pro') {
+            maxDimension = MAX_DIMENSION_1080P;  // Allow 1080p for paid tiers
+        }
+        
+        console.log('📊 Subscription tier:', subscriptionTier, '→ Max dimension:', maxDimension);
+        console.log('📐 Original dimensions:', width, 'x', height);
+        
+        if (width > maxDimension || height > maxDimension) {
+            const originalWidth = width;
+            const originalHeight = height;
+            const aspectRatio = width / height;
+            
+            if (width > height) {
+                // Landscape or square-ish - constrain width
+                width = maxDimension;
+                height = Math.round(maxDimension / aspectRatio);
+            } else {
+                // Portrait - constrain height
+                height = maxDimension;
+                width = Math.round(maxDimension * aspectRatio);
+            }
+            
+            console.log('📐 Scaled down:', originalWidth, 'x', originalHeight, '→', width, 'x', height, '(preserving aspect ratio)');
+        } else {
+            console.log('✓ Dimensions within plan limit, using original size');
+        }
+        
+        console.log('🎬 Calling HeyGen generate:', {
             avatarId: resolvedAvatarId,
-            audioAssetId,
+            isPhotoAvatar: isPhotoAvatar,
+            avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
+            dimensions: `${width}x${height}`
+        });
+        
+        const videoId = await heygen.generateVideoWithAudio({
+            avatarId: resolvedAvatarId,
+            audioUrl: voiceUrl,
             width,
             height,
             avatarStyle,
-            title: projectName,
-            callbackId: projectId,
-            folderId
+            isPhotoAvatar: isPhotoAvatar
         });
 
         // Persist to project
@@ -855,15 +1598,52 @@ async function handleHeygenGenerate(event, headers) {
         };
     } catch (err) {
         console.error('HeyGen generate error:', err);
+        console.error('Error stack:', err.stack);
+        console.error('Error details:', err.details);
+        
+        // Extract error message properly
+        let errorMessage = 'Unknown error';
+        let errorDetails = null;
+        
+        if (err.message) {
+            // If message is a string, use it
+            if (typeof err.message === 'string') {
+                errorMessage = err.message;
+            } else {
+                // If message is an object, stringify it
+                errorMessage = JSON.stringify(err.message);
+            }
+        }
+        
+        // Check for details object (from HeyGen API errors)
+        if (err.details) {
+            errorDetails = err.details;
+            // Try to extract a more specific error message from details
+            if (err.details.error) {
+                if (typeof err.details.error === 'string') {
+                    errorMessage = err.details.error;
+                } else if (err.details.error.message) {
+                    errorMessage = err.details.error.message;
+                } else if (err.details.error.code) {
+                    errorMessage = `${err.details.error.code}: ${err.details.error.message || 'Unknown error'}`;
+                }
+            } else if (err.details.message) {
+                errorMessage = err.details.message;
+            }
+        }
+        
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: 'Failed to generate HeyGen video', message: err.message })
+            body: JSON.stringify({ 
+                error: 'Failed to generate HeyGen video', 
+                message: errorMessage,
+                details: errorDetails
+            })
         };
     }
 }
 
-    
 
 /**
  * Get subscription status for a user

@@ -3,6 +3,9 @@ const https = require('https');
 
 AWS.config.update({ region: 'us-east-1' });
 
+// Note: Local environment is loaded in api/api.js handler
+// No need to load again here
+
 class TwitchInitializer {
   constructor() {
     this.ssm = new AWS.SSM();
@@ -33,7 +36,7 @@ class TwitchInitializer {
     });
   }
 
-  // Load Twitch credentials from SSM
+  // Load Twitch credentials from SSM or local environment
   async initialize() {
     try {
       // Return if already initialized
@@ -41,29 +44,44 @@ class TwitchInitializer {
         return { clientId: this.clientId, clientSecret: this.clientSecret };
       }
 
-      // Get Client ID
-      const clientIdParams = {
-        Name: '/masky/production/twitch_client_id',
-        WithDecryption: true
-      };
-      const clientIdResult = await this.ssm.getParameter(clientIdParams).promise();
-      
-      if (!clientIdResult?.Parameter?.Value) {
-        throw new Error('Twitch Client ID not found in SSM');
-      }
-      this.clientId = clientIdResult.Parameter.Value;
+      // Check if running locally
+      if (process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local') {
+        console.log('🔧 Running in local mode - loading Twitch from environment');
+        
+        if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_CLIENT_SECRET) {
+          throw new Error('TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not found in .env.local. Please copy env.local.example to .env.local and fill in your credentials.');
+        }
 
-      // Get Client Secret
-      const clientSecretParams = {
-        Name: '/masky/production/twitch_client_secret',
-        WithDecryption: true
-      };
-      const clientSecretResult = await this.ssm.getParameter(clientSecretParams).promise();
-      
-      if (!clientSecretResult?.Parameter?.Value) {
-        throw new Error('Twitch Client Secret not found in SSM');
+        this.clientId = process.env.TWITCH_CLIENT_ID;
+        this.clientSecret = process.env.TWITCH_CLIENT_SECRET;
+      } else {
+        // Production mode - load from SSM
+        console.log('☁️  Loading Twitch from SSM...');
+        
+        // Get Client ID
+        const clientIdParams = {
+          Name: '/masky/production/twitch_client_id',
+          WithDecryption: true
+        };
+        const clientIdResult = await this.ssm.getParameter(clientIdParams).promise();
+        
+        if (!clientIdResult?.Parameter?.Value) {
+          throw new Error('Twitch Client ID not found in SSM');
+        }
+        this.clientId = clientIdResult.Parameter.Value;
+
+        // Get Client Secret
+        const clientSecretParams = {
+          Name: '/masky/production/twitch_client_secret',
+          WithDecryption: true
+        };
+        const clientSecretResult = await this.ssm.getParameter(clientSecretParams).promise();
+        
+        if (!clientSecretResult?.Parameter?.Value) {
+          throw new Error('Twitch Client Secret not found in SSM');
+        }
+        this.clientSecret = clientSecretResult.Parameter.Value;
       }
-      this.clientSecret = clientSecretResult.Parameter.Value;
 
       return { clientId: this.clientId, clientSecret: this.clientSecret };
     } catch (error) {
@@ -166,9 +184,24 @@ class TwitchInitializer {
         req.end();
       });
 
+      // Log the response if there's an error
+      if (tokenResponse.error) {
+        console.error('Twitch token request error:', tokenResponse);
+        throw new Error(`Failed to get app access token: ${tokenResponse.error} - ${tokenResponse.message || 'Unknown error'}`);
+      }
+
       if (!tokenResponse.access_token) {
+        console.error('Invalid token response:', tokenResponse);
         throw new Error('No access token in response');
       }
+
+      // Log token info (without exposing the full token)
+      console.log('App Access Token obtained successfully:', {
+        token_length: tokenResponse.access_token.length,
+        token_type: tokenResponse.token_type,
+        expires_in: tokenResponse.expires_in,
+        scope: tokenResponse.scope
+      });
 
       return tokenResponse.access_token;
     } catch (error) {
@@ -458,40 +491,149 @@ class TwitchInitializer {
           // Only process if subscription is active
           if (subscriptionData.isActive) {
             
-            // Find all active projects for this user and event type
-            const projectsSnapshot = await db.collection('projects')
-              .where('userId', '==', userId)
-              .where('platform', '==', 'twitch')
-              .where('eventType', '==', subscription.type)
-              .where('isActive', '==', true)
-              .get();
-
-            if (!projectsSnapshot.empty) {
-              // Select a random active project for reference
-              const activeProjects = projectsSnapshot.docs;
-              const randomIndex = Math.floor(Math.random() * activeProjects.length);
-              const selectedProject = activeProjects[randomIndex];
+            // Handle chat message events specially - they need command matching
+            if (subscription.type === 'channel.chat.message') {
+              // Extract message text from chat message event
+              const messageText = eventData.message?.text || '';
+              const chatterName = eventData.chatter_user_name || eventData.chatter_user_login || 'Anonymous';
+              const chatterId = eventData.chatter_user_id || null;
+              
+              console.log(`Processing chat message from ${chatterName}: "${messageText}"`);
+              
+              // Parse command format: !maskyai <trigger> or just <trigger> if bot is mentioned
+              // Check if message starts with !maskyai or contains the bot name
+              const botMentionPattern = /^!maskyai\s+(.+)$/i;
+              const match = messageText.match(botMentionPattern);
+              
+              if (!match || !match[1]) {
+                console.log(`Chat message does not match command format (!maskyai <trigger>): "${messageText}"`);
+                return {
+                  statusCode: 200,
+                  body: JSON.stringify({ received: true, processed: false, reason: 'Not a command' })
+                };
+              }
+              
+              const commandTrigger = match[1].trim().toLowerCase();
+              console.log(`Extracted command trigger: "${commandTrigger}"`);
+              
+              // Find active projects for this user with eventType 'channel.chat_command' and matching commandTrigger
+              const projectsSnapshot = await db.collection('projects')
+                .where('userId', '==', userId)
+                .where('platform', '==', 'twitch')
+                .where('eventType', '==', 'channel.chat_command')
+                .where('isActive', '==', true)
+                .get();
+              
+              if (projectsSnapshot.empty) {
+                console.log(`No active chat command projects found for user ${userId}`);
+                return {
+                  statusCode: 200,
+                  body: JSON.stringify({ received: true, processed: false, reason: 'No matching projects' })
+                };
+              }
+              
+              // Filter projects by matching commandTrigger
+              const matchingProjects = projectsSnapshot.docs.filter(doc => {
+                const projectData = doc.data();
+                const projectTrigger = (projectData.commandTrigger || '').trim().toLowerCase();
+                return projectTrigger === commandTrigger;
+              });
+              
+              if (matchingProjects.length === 0) {
+                console.log(`No projects found with commandTrigger "${commandTrigger}" for user ${userId}`);
+                return {
+                  statusCode: 200,
+                  body: JSON.stringify({ received: true, processed: false, reason: 'No matching command trigger' })
+                };
+              }
+              
+              // Select a random matching project (or first one if only one)
+              const selectedProject = matchingProjects[Math.floor(Math.random() * matchingProjects.length)];
               const projectId = selectedProject.id;
-
-              // Save event to user's events collection (provider + eventType specific)
-              const eventKey = `twitch_${subscription.type}`;
+              const projectData = selectedProject.data();
+              
+              console.log(`Matched command "${commandTrigger}" to project ${projectId} (${projectData.projectName || 'unnamed'})`);
+              
+              // Save event to user's events collection
+              // Use the same eventKey format as other events: twitch_${eventType}
+              // This matches what the frontend listener expects
+              const eventKey = `twitch_channel.chat_command`;
+              
+              // Add command field to eventData for frontend template replacement
+              const enrichedEventData = {
+                ...eventData,
+                command: commandTrigger,
+                user_name: chatterName,
+                chatter_user_name: chatterName,
+                message: {
+                  text: messageText
+                }
+              };
+              
               const alertData = {
-                eventType: subscription.type,
+                eventType: 'channel.chat_command',
                 provider: 'twitch',
-                eventData: eventData,
+                eventData: enrichedEventData,
+                commandTrigger: commandTrigger,
+                messageText: messageText,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                userName: eventData.user_name || eventData.from_broadcaster_user_name || 'Anonymous',
-                userId: eventData.user_id || eventData.from_broadcaster_user_id || null,
-                selectedProjectId: projectId, // For reference, but not the primary storage
+                userName: chatterName,
+                userId: chatterId,
+                selectedProjectId: projectId,
                 messageId: messageId // For deduplication
               };
-
+              
               // Store in user's events collection
               await db.collection('users').doc(userId).collection('events').doc(eventKey).collection('alerts').add(alertData);
-
-              console.log(`Event saved to user events: ${userId}/events/${eventKey} (selected project: ${projectId} from ${activeProjects.length} active projects), Event: ${subscription.type}`);
+              
+              console.log(`Chat command event saved: ${userId}/events/${eventKey} (project: ${projectId}, trigger: ${commandTrigger})`);
+              
+              return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                  received: true, 
+                  processed: true,
+                  commandTrigger: commandTrigger,
+                  projectId: projectId
+                })
+              };
             } else {
-              console.log(`No active projects found for user ${userId} and event type ${subscription.type}`);
+              // Handle other event types (follows, subscriptions, etc.)
+              // Find all active projects for this user and event type
+              const projectsSnapshot = await db.collection('projects')
+                .where('userId', '==', userId)
+                .where('platform', '==', 'twitch')
+                .where('eventType', '==', subscription.type)
+                .where('isActive', '==', true)
+                .get();
+
+              if (!projectsSnapshot.empty) {
+                // Select a random active project for reference
+                const activeProjects = projectsSnapshot.docs;
+                const randomIndex = Math.floor(Math.random() * activeProjects.length);
+                const selectedProject = activeProjects[randomIndex];
+                const projectId = selectedProject.id;
+
+                // Save event to user's events collection (provider + eventType specific)
+                const eventKey = `twitch_${subscription.type}`;
+                const alertData = {
+                  eventType: subscription.type,
+                  provider: 'twitch',
+                  eventData: eventData,
+                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                  userName: eventData.user_name || eventData.from_broadcaster_user_name || 'Anonymous',
+                  userId: eventData.user_id || eventData.from_broadcaster_user_id || null,
+                  selectedProjectId: projectId, // For reference, but not the primary storage
+                  messageId: messageId // For deduplication
+                };
+
+                // Store in user's events collection
+                await db.collection('users').doc(userId).collection('events').doc(eventKey).collection('alerts').add(alertData);
+
+                console.log(`Event saved to user events: ${userId}/events/${eventKey} (selected project: ${projectId} from ${activeProjects.length} active projects), Event: ${subscription.type}`);
+              } else {
+                console.log(`No active projects found for user ${userId} and event type ${subscription.type}`);
+              }
             }
           } else {
             console.log(`Subscription ${subscription.id} is inactive, skipping alert processing`);
@@ -623,6 +765,42 @@ class TwitchInitializer {
         } else {
           throw error;
         }
+      }
+
+      // Check if this is the bot account and store tokens separately
+      const botUserId = '1386063343'; // From config
+      const isBotAccount = twitchUser.id === botUserId;
+      
+      if (isBotAccount) {
+        // Store bot account tokens in Firestore for later use
+        const db = admin.firestore();
+        const botTokensRef = db.collection('system').doc('bot_tokens');
+        
+        // Validate token scopes to ensure it has required scopes
+        let validation;
+        try {
+          validation = await this.validateToken(accessToken);
+        } catch (e) {
+          console.warn('Could not validate bot token scopes:', e.message);
+        }
+        
+        const botTokenData = {
+          twitchId: twitchUser.id,
+          accessToken: accessToken,
+          refreshToken: tokenResponse.refresh_token || null,
+          expiresAt: tokenResponse.expires_in ? 
+            admin.firestore.Timestamp.fromMillis(Date.now() + (tokenResponse.expires_in * 1000)) : 
+            null,
+          scopes: validation?.scopes || tokenResponse.scope || [],
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          displayName: twitchUser.display_name
+        };
+        
+        await botTokensRef.set(botTokenData, { merge: true });
+        console.log('Bot account tokens stored:', {
+          twitchId: twitchUser.id,
+          hasRequiredScopes: validation?.scopes?.includes('user:read:chat') && validation?.scopes?.includes('user:bot')
+        });
       }
 
       // Store Twitch access token in custom claims

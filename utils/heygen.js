@@ -692,8 +692,14 @@ class HeygenClient {
         return this.cachedPlanMaxDimension;
     }
 
-    async resolveEffectiveMaxDimension(maxDimensionOverride) {
-        const planMax = await this.getPlanMaxDimension();
+    async resolveEffectiveMaxDimension(maxDimensionOverride, planMaxDimensionOverride = null) {
+        let planMax = null;
+        const overridePlan = Number(planMaxDimensionOverride);
+        if (Number.isFinite(overridePlan) && overridePlan > 0) {
+            planMax = overridePlan;
+        } else {
+            planMax = await this.getPlanMaxDimension();
+        }
         const overrideValue = Number(maxDimensionOverride);
 
         if (Number.isFinite(overrideValue) && overrideValue > 0) {
@@ -711,7 +717,8 @@ class HeygenClient {
             height = FALLBACK_HEIGHT,
             avatarStyle = 'normal',
             isPhotoAvatar = false,  // Flag to use talking_photo instead of avatar
-            maxDimensionOverride = null
+            maxDimensionOverride = null,
+            planMaxDimension = null
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
@@ -729,7 +736,10 @@ class HeygenClient {
             avatar_style: avatarStyle
         };
 
-        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(maxDimensionOverride);
+        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(
+            maxDimensionOverride,
+            planMaxDimension
+        );
         const normalizedDimensions = this.normalizeDimensions(width, height, effectiveMaxDimension, {
             fallbackWidth: FALLBACK_WIDTH,
             fallbackHeight: FALLBACK_HEIGHT
@@ -784,13 +794,17 @@ class HeygenClient {
             title,
             callbackId,
             folderId,
-            maxDimensionOverride = null
+            maxDimensionOverride = null,
+            planMaxDimension = null
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
         if (!audioAssetId) throw new Error('audioAssetId is required');
 
-        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(maxDimensionOverride);
+        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(
+            maxDimensionOverride,
+            planMaxDimension
+        );
         const normalizedDimensions = this.normalizeDimensions(width, height, effectiveMaxDimension, {
             fallbackWidth: FALLBACK_WIDTH,
             fallbackHeight: FALLBACK_HEIGHT

@@ -1536,12 +1536,13 @@ async function handleHeygenGenerate(event, headers) {
         const subscriptionTier = userData.subscriptionTier || 'free';
         
         // Determine max dimension based on subscription
+        const hasSubscription = subscriptionTier && subscriptionTier !== 'free';
         let userMaxDimension = MAX_DIMENSION_720P;  // Default to free tier
-        if (subscriptionTier === 'standard' || subscriptionTier === 'pro') {
+        if (subscriptionTier === 'standard' || subscriptionTier === 'pro' || hasSubscription) {
             userMaxDimension = MAX_DIMENSION_1080P;  // Allow 1080p for paid tiers
         }
         
-        const planMaxDimension = await heygen.getPlanMaxDimension();
+        const planMaxDimension = hasSubscription ? MAX_DIMENSION_1080P : MAX_DIMENSION_720P;
         const effectiveMaxDimension = Math.min(userMaxDimension, planMaxDimension);
         const originalWidth = width;
         const originalHeight = height;
@@ -1554,7 +1555,7 @@ async function handleHeygenGenerate(event, headers) {
         height = normalizedDimensions.height;
         
         console.log('📊 Subscription tier:', subscriptionTier, '→ User max dimension:', userMaxDimension);
-        console.log('🏷️ HeyGen plan max dimension:', planMaxDimension, '→ Effective cap:', effectiveMaxDimension);
+        console.log('🏷️ Assumed HeyGen plan max dimension:', planMaxDimension, '→ Effective cap:', effectiveMaxDimension);
         console.log('📐 Original dimensions:', originalWidth, 'x', originalHeight);
         
         if (normalizedDimensions.wasAdjusted) {
@@ -1577,7 +1578,8 @@ async function handleHeygenGenerate(event, headers) {
             height,
             avatarStyle,
             isPhotoAvatar: isPhotoAvatar,
-            maxDimensionOverride: effectiveMaxDimension
+            maxDimensionOverride: effectiveMaxDimension,
+            planMaxDimension
         });
 
         // Persist to project

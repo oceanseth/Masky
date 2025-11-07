@@ -25,19 +25,8 @@ import {
 } from 'firebase/firestore';
 import { config } from './config';
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBxDknJ0YcbfGXcrj9aoqyW5UMQm4OhcdI",
-  authDomain: "maskydotnet.firebaseapp.com",
-  databaseURL: "https://maskydotnet-default-rtdb.firebaseio.com",
-  projectId: "maskydotnet",
-  storageBucket: "maskydotnet.firebasestorage.app",
-  messagingSenderId: "253806012115",
-  appId: "1:253806012115:web:634bb43405ca639401d626"
-};
-
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(config.firebase);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);

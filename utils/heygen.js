@@ -3,6 +3,28 @@ const AWS = require('aws-sdk');
 AWS.config.update({ region: 'us-east-1' });
 const firebaseInitializer = require('./firebaseInit');
 
+const FALLBACK_WIDTH = 1280;
+const FALLBACK_HEIGHT = 720;
+const DEFAULT_PLAN_MAX_DIMENSION = (() => {
+    const envValue = Number(process.env.HEYGEN_PLAN_MAX_DIMENSION || process.env.HEYGEN_MAX_DIMENSION);
+    if (Number.isFinite(envValue) && envValue > 0) {
+        return envValue;
+    }
+    return 1280;
+})();
+
+const PLAN_NAME_DIMENSION_MAP = {
+    free: 1280,
+    starter: 1280,
+    basic: 1280,
+    hobby: 1280,
+    creator: 1920,
+    standard: 1920,
+    pro: 1920,
+    business: 3840,
+    enterprise: 3840
+};
+
 // Note: Local environment is loaded in api/api.js handler
 // No need to load again here
 
@@ -13,6 +35,9 @@ class HeygenClient {
     constructor() {
         this.ssm = new AWS.SSM();
         this.apiKey = null;
+        this.cachedPlanMaxDimension = null;
+        this.planInfoLastFetchedAt = null;
+        this.planInfoFetchFailed = false;
     }
 
     async initialize() {
@@ -155,8 +180,7 @@ class HeygenClient {
 
     async videoList(token) {
         const path = token ? `/v1/video.list?token=${encodeURIComponent(token)}` : '/v1/video.list';
-        const json = await this.requestJson(path, { method: 'GET' });
-        return json;
+        return await this.requestJson(path, { method: 'GET' });
     }
 
     async uploadAssetFromUrl(url) {
@@ -531,14 +555,170 @@ class HeygenClient {
         return json?.data || json;
     }
 
+    normalizeDimensions(widthInput, heightInput, maxLongSide, options = {}) {
+        let width = Number(widthInput);
+        let height = Number(heightInput);
+
+        const fallbackWidth = Number(options.fallbackWidth) || FALLBACK_WIDTH;
+        const fallbackHeight = Number(options.fallbackHeight) || FALLBACK_HEIGHT;
+
+        if (!Number.isFinite(width) || width <= 0) {
+            width = fallbackWidth;
+        }
+        if (!Number.isFinite(height) || height <= 0) {
+            height = fallbackHeight;
+        }
+
+        let aspectRatio = Number.isFinite(width) && Number.isFinite(height) && height !== 0
+            ? width / height
+            : (fallbackWidth / fallbackHeight);
+
+        if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+            aspectRatio = fallbackWidth / fallbackHeight;
+        }
+
+        let targetWidth = width;
+        let targetHeight = height;
+        const longSideLimit = Number(maxLongSide);
+
+        if (Number.isFinite(longSideLimit) && longSideLimit > 0) {
+            const currentLongSide = Math.max(targetWidth, targetHeight);
+            if (currentLongSide > longSideLimit) {
+                if (targetWidth >= targetHeight) {
+                    targetWidth = longSideLimit;
+                    targetHeight = Math.round(longSideLimit / aspectRatio);
+                } else {
+                    targetHeight = longSideLimit;
+                    targetWidth = Math.round(longSideLimit * aspectRatio);
+                }
+            }
+        }
+
+        targetWidth = Math.floor(targetWidth);
+        targetHeight = Math.floor(targetHeight);
+
+        if (targetWidth < 2) targetWidth = 2;
+        if (targetHeight < 2) targetHeight = 2;
+
+        // Many video encoders prefer even dimensions
+        if (targetWidth % 2 !== 0) targetWidth -= 1;
+        if (targetHeight % 2 !== 0) targetHeight -= 1;
+
+        if (targetWidth < 2) targetWidth = 2;
+        if (targetHeight < 2) targetHeight = 2;
+
+        return {
+            width: targetWidth,
+            height: targetHeight,
+            aspectRatio,
+            wasAdjusted: targetWidth !== Math.floor(width) || targetHeight !== Math.floor(height)
+        };
+    }
+
+    extractPlanMaxDimension(accountInfo) {
+        if (!accountInfo || typeof accountInfo !== 'object') return null;
+
+        const numericCandidates = [
+            accountInfo?.data?.max_dimension,
+            accountInfo?.data?.maxDimension,
+            accountInfo?.data?.max_resolution,
+            accountInfo?.data?.maxResolution,
+            accountInfo?.data?.max_long_side,
+            accountInfo?.data?.capabilities?.max_dimension,
+            accountInfo?.data?.capabilities?.max_resolution,
+            accountInfo?.plan?.max_dimension,
+            accountInfo?.plan?.max_resolution,
+            accountInfo?.subscription?.max_dimension,
+            accountInfo?.subscription?.max_resolution,
+            accountInfo?.data?.limits?.video?.max_dimension,
+            accountInfo?.data?.limits?.video?.max_resolution
+        ];
+
+        for (const candidate of numericCandidates) {
+            const value = Number(candidate);
+            if (Number.isFinite(value) && value > 0) {
+                return value;
+            }
+        }
+
+        const planName =
+            accountInfo?.data?.plan ||
+            accountInfo?.data?.plan_name ||
+            accountInfo?.plan?.name ||
+            accountInfo?.subscription?.plan ||
+            accountInfo?.data?.subscription?.plan ||
+            accountInfo?.data?.account?.plan;
+
+        if (typeof planName === 'string') {
+            const normalized = planName.trim().toLowerCase();
+            if (PLAN_NAME_DIMENSION_MAP[normalized]) {
+                return PLAN_NAME_DIMENSION_MAP[normalized];
+            }
+        }
+
+        return null;
+    }
+
+    async getPlanMaxDimension(forceRefresh = false) {
+        if (!forceRefresh && Number.isFinite(this.cachedPlanMaxDimension)) {
+            return this.cachedPlanMaxDimension;
+        }
+
+        const envValue = Number(process.env.HEYGEN_PLAN_MAX_DIMENSION || process.env.HEYGEN_MAX_DIMENSION);
+        if (Number.isFinite(envValue) && envValue > 0) {
+            this.cachedPlanMaxDimension = envValue;
+            return this.cachedPlanMaxDimension;
+        }
+
+        if (this.planInfoFetchFailed && !forceRefresh) {
+            this.cachedPlanMaxDimension = this.cachedPlanMaxDimension || DEFAULT_PLAN_MAX_DIMENSION;
+            return this.cachedPlanMaxDimension;
+        }
+
+        try {
+            const accountInfo = await this.requestJson('/v1/account/info', { method: 'GET' });
+            const maxDimension = this.extractPlanMaxDimension(accountInfo);
+            if (Number.isFinite(maxDimension) && maxDimension > 0) {
+                this.cachedPlanMaxDimension = maxDimension;
+                this.planInfoLastFetchedAt = Date.now();
+                return this.cachedPlanMaxDimension;
+            }
+        } catch (err) {
+            this.planInfoFetchFailed = true;
+            console.warn('[HeygenClient] Failed to load plan info, defaulting max dimension:', err.message);
+        }
+
+        this.cachedPlanMaxDimension = DEFAULT_PLAN_MAX_DIMENSION;
+        return this.cachedPlanMaxDimension;
+    }
+
+    async resolveEffectiveMaxDimension(maxDimensionOverride, planMaxDimensionOverride = null) {
+        let planMax = null;
+        const overridePlan = Number(planMaxDimensionOverride);
+        if (Number.isFinite(overridePlan) && overridePlan > 0) {
+            planMax = overridePlan;
+        } else {
+            planMax = await this.getPlanMaxDimension();
+        }
+        const overrideValue = Number(maxDimensionOverride);
+
+        if (Number.isFinite(overrideValue) && overrideValue > 0) {
+            return Math.min(planMax, overrideValue);
+        }
+
+        return planMax;
+    }
+
     async generateVideoWithAudio(params) {
         const {
             avatarId,
             audioUrl,
-            width = 1280,
-            height = 720,
+            width = FALLBACK_WIDTH,
+            height = FALLBACK_HEIGHT,
             avatarStyle = 'normal',
-            isPhotoAvatar = false  // Flag to use talking_photo instead of avatar
+            isPhotoAvatar = false,  // Flag to use talking_photo instead of avatar
+            maxDimensionOverride = null,
+            planMaxDimension = null
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
@@ -556,6 +736,23 @@ class HeygenClient {
             avatar_style: avatarStyle
         };
 
+        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(
+            maxDimensionOverride,
+            planMaxDimension
+        );
+        const normalizedDimensions = this.normalizeDimensions(width, height, effectiveMaxDimension, {
+            fallbackWidth: FALLBACK_WIDTH,
+            fallbackHeight: FALLBACK_HEIGHT
+        });
+
+        if (normalizedDimensions.wasAdjusted) {
+            console.log('[generateVideoWithAudio] Scaled dimensions to fit plan limit:', {
+                requested: { width, height },
+                effectiveMaxDimension,
+                final: { width: normalizedDimensions.width, height: normalizedDimensions.height }
+            });
+        }
+
         const body = {
             video_inputs: [
                 {
@@ -567,15 +764,17 @@ class HeygenClient {
                 }
             ],
             dimension: {
-                width,
-                height
+                width: normalizedDimensions.width,
+                height: normalizedDimensions.height
             }
         };
 
         console.log('[generateVideoWithAudio] Generating video with:', {
             avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
             avatarId,
-            audioUrl: audioUrl.substring(0, 50) + '...'
+            audioUrl: audioUrl.substring(0, 50) + '...',
+            width: normalizedDimensions.width,
+            height: normalizedDimensions.height
         });
 
         // POST /v2/video/generate
@@ -589,16 +788,35 @@ class HeygenClient {
         const {
             avatarId,
             audioAssetId,
-            width = 1280,
-            height = 720,
+            width = FALLBACK_WIDTH,
+            height = FALLBACK_HEIGHT,
             avatarStyle = 'normal',
             title,
             callbackId,
-            folderId
+            folderId,
+            maxDimensionOverride = null,
+            planMaxDimension = null
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
         if (!audioAssetId) throw new Error('audioAssetId is required');
+
+        const effectiveMaxDimension = await this.resolveEffectiveMaxDimension(
+            maxDimensionOverride,
+            planMaxDimension
+        );
+        const normalizedDimensions = this.normalizeDimensions(width, height, effectiveMaxDimension, {
+            fallbackWidth: FALLBACK_WIDTH,
+            fallbackHeight: FALLBACK_HEIGHT
+        });
+
+        if (normalizedDimensions.wasAdjusted) {
+            console.log('[generateVideoWithAudioAsset] Scaled dimensions to fit plan limit:', {
+                requested: { width, height },
+                effectiveMaxDimension,
+                final: { width: normalizedDimensions.width, height: normalizedDimensions.height }
+            });
+        }
 
         const body = {
             title,
@@ -618,8 +836,8 @@ class HeygenClient {
                 }
             ],
             dimension: {
-                width,
-                height
+                width: normalizedDimensions.width,
+                height: normalizedDimensions.height
             }
         };
 

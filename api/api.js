@@ -1536,29 +1536,29 @@ async function handleHeygenGenerate(event, headers) {
         const subscriptionTier = userData.subscriptionTier || 'free';
         
         // Determine max dimension based on subscription
-        let maxDimension = MAX_DIMENSION_720P;  // Default to free tier
-        if (subscriptionTier === 'standard' || subscriptionTier === 'pro') {
-            maxDimension = MAX_DIMENSION_1080P;  // Allow 1080p for paid tiers
+        const hasSubscription = subscriptionTier && subscriptionTier !== 'free';
+        let userMaxDimension = MAX_DIMENSION_720P;  // Default to free tier
+        if (subscriptionTier === 'standard' || subscriptionTier === 'pro' || hasSubscription) {
+            userMaxDimension = MAX_DIMENSION_1080P;  // Allow 1080p for paid tiers
         }
         
-        console.log('📊 Subscription tier:', subscriptionTier, '→ Max dimension:', maxDimension);
-        console.log('📐 Original dimensions:', width, 'x', height);
+        const planMaxDimension = hasSubscription ? MAX_DIMENSION_1080P : MAX_DIMENSION_720P;
+        const effectiveMaxDimension = Math.min(userMaxDimension, planMaxDimension);
+        const originalWidth = width;
+        const originalHeight = height;
+        const normalizedDimensions = heygen.normalizeDimensions(width, height, effectiveMaxDimension, {
+            fallbackWidth: 1280,
+            fallbackHeight: 720
+        });
         
-        if (width > maxDimension || height > maxDimension) {
-            const originalWidth = width;
-            const originalHeight = height;
-            const aspectRatio = width / height;
-            
-            if (width > height) {
-                // Landscape or square-ish - constrain width
-                width = maxDimension;
-                height = Math.round(maxDimension / aspectRatio);
-            } else {
-                // Portrait - constrain height
-                height = maxDimension;
-                width = Math.round(maxDimension * aspectRatio);
-            }
-            
+        width = normalizedDimensions.width;
+        height = normalizedDimensions.height;
+        
+        console.log('📊 Subscription tier:', subscriptionTier, '→ User max dimension:', userMaxDimension);
+        console.log('🏷️ Assumed HeyGen plan max dimension:', planMaxDimension, '→ Effective cap:', effectiveMaxDimension);
+        console.log('📐 Original dimensions:', originalWidth, 'x', originalHeight);
+        
+        if (normalizedDimensions.wasAdjusted) {
             console.log('📐 Scaled down:', originalWidth, 'x', originalHeight, '→', width, 'x', height, '(preserving aspect ratio)');
         } else {
             console.log('✓ Dimensions within plan limit, using original size');
@@ -1577,7 +1577,9 @@ async function handleHeygenGenerate(event, headers) {
             width,
             height,
             avatarStyle,
-            isPhotoAvatar: isPhotoAvatar
+            isPhotoAvatar: isPhotoAvatar,
+            maxDimensionOverride: effectiveMaxDimension,
+            planMaxDimension
         });
 
         // Persist to project

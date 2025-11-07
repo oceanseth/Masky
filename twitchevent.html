@@ -266,6 +266,9 @@
         // Map of eventType -> array of preloaded HTMLVideoElements (detached)
         let preloadedVideoElements = new Map();
 
+        // Track processed event document IDs to avoid replaying existing events on initial load
+        let processedEventDocIds = new Map();
+
         // Load user's active projects from Firestore
         async function loadUserProjects() {
             if (!currentUserId) return;
@@ -296,6 +299,7 @@
 
                 // Store project configurations and build video cache
                 eventVideoCache = new Map();
+                processedEventDocIds = new Map();
                 // Debug: list projects
                 const debugProjectsList = [];
                 snapshot.docs.forEach(doc => {
@@ -499,10 +503,29 @@
             
             console.log(`Setting up listener for event type: ${eventType} at path: users/${currentUserId}/events/twitch_${eventType}/alerts`);
             
+            if (!processedEventDocIds.has(eventType)) {
+                processedEventDocIds.set(eventType, new Set());
+            }
+            const processedIds = processedEventDocIds.get(eventType);
+            let isInitialSnapshot = true;
+
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added') {
                         const alertData = change.doc.data();
+                        const docId = change.doc.id;
+
+                        if (isInitialSnapshot) {
+                            processedIds.add(docId);
+                            return;
+                        }
+
+                        if (processedIds.has(docId)) {
+                            return;
+                        }
+
+                        processedIds.add(docId);
+
                         console.log(`New alert received for ${eventType}:`, alertData);
                         // Try to play Heygen video for this event; fallback to text alert
                         const played = playHeygenVideoForEvent(eventType, alertData.eventData);
@@ -511,6 +534,7 @@
                         }
                     }
                 });
+                isInitialSnapshot = false;
             }, (error) => {
                 console.error(`Error listening to events for ${eventType}:`, error);
             });

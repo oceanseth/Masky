@@ -1,6 +1,7 @@
 // Configuration for OAuth providers, API endpoints, and Stripe products
 
 export const config = {
+  // Firebase configuration
   firebase: {
     apiKey: "AIzaSyBxDknJ0YcbfGXcrj9aoqyW5UMQm4OhcdI",
     authDomain: "maskydotnet.firebaseapp.com",
@@ -10,6 +11,7 @@ export const config = {
     messagingSenderId: "253806012115",
     appId: "1:253806012115:web:634bb43405ca639401d626"
   },
+
   // Twitch OAuth Configuration
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',

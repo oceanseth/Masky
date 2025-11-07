@@ -51,6 +51,11 @@ provider:
 package:
   individually: true
   excludeDevDependencies: true
+  patterns:
+    - '!dist/**'
+    - '!**/*.log'
+    - '!**/*.pyc'
+    - '!**/*.md'
 
 plugins:
   - serverless-prune-plugin
@@ -64,7 +69,7 @@ custom:
     target: es2020  # Use ES2020 to preserve class syntax
     format: cjs  # CommonJS format
     platform: node
-    concurrency: 10
+    concurrency: 2
     external:
       - firebase-admin
       - '@google-cloud/storage'

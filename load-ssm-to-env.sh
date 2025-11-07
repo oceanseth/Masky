@@ -158,3 +158,4 @@ echo "  2. Run: npm run api:dev"
 echo "  3. Test: curl http://localhost:3001/api/heygen/avatars"
 echo ""
 
+

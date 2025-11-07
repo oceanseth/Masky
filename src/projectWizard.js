@@ -2339,12 +2339,17 @@ class ProjectWizard {
                     throw new Error(generateData.message || generateData.error || 'Failed to generate video');
                 }
 
-                this.projectData.heygenVideoId = generateData.videoId || generateData.video_id;
+                const resolvedVideoId = generateData.videoId || generateData.video_id;
+                if (!resolvedVideoId) {
+                    throw new Error('HeyGen did not return a video ID. Please try again in a moment.');
+                }
+
+                this.projectData.heygenVideoId = resolvedVideoId;
 
                 const { db, doc, updateDoc } = await import('./firebase.js');
                 const projectRef = doc(db, 'projects', this.projectData.projectId);
                 await updateDoc(projectRef, {
-                    heygenVideoId: this.projectData.heygenVideoId,
+                    heygenVideoId: resolvedVideoId,
                     updatedAt: new Date()
                 });
 

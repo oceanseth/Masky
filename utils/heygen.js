@@ -3,6 +3,9 @@ const AWS = require('aws-sdk');
 AWS.config.update({ region: 'us-east-1' });
 const firebaseInitializer = require('./firebaseInit');
 
+// Note: Local environment is loaded in api/api.js handler
+// No need to load again here
+
 // Note: Image conversion (WebP to JPEG/PNG) is now handled client-side before upload
 // This avoids the need for sharp and platform-specific binaries on Lambda
 
@@ -15,19 +18,34 @@ class HeygenClient {
     async initialize() {
         if (this.apiKey) return this.apiKey;
 
-        const stage = process.env.STAGE || 'production';
-        const params = {
-            Name: `/masky/${stage}/heygen_api_key`,
-            WithDecryption: true
-        };
+        // Check if running locally
+        if (process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local') {
+            console.log('🔧 Running in local mode - loading HeyGen from environment');
+            
+            if (!process.env.HEYGEN_API_KEY) {
+                throw new Error('HEYGEN_API_KEY not found in .env.local. Please copy env.local.example to .env.local and fill in your credentials.');
+            }
 
-        const result = await this.ssm.getParameter(params).promise();
-        if (!result?.Parameter?.Value) {
-            throw new Error('Heygen API key not found in SSM');
+            this.apiKey = process.env.HEYGEN_API_KEY;
+            return this.apiKey;
+        } else {
+            // Production mode - load from SSM
+            console.log('☁️  Loading HeyGen from SSM...');
+            
+            const stage = process.env.STAGE || 'production';
+            const params = {
+                Name: `/masky/${stage}/heygen_api_key`,
+                WithDecryption: true
+            };
+
+            const result = await this.ssm.getParameter(params).promise();
+            if (!result?.Parameter?.Value) {
+                throw new Error('Heygen API key not found in SSM');
+            }
+
+            this.apiKey = result.Parameter.Value;
+            return this.apiKey;
         }
-
-        this.apiKey = result.Parameter.Value;
-        return this.apiKey;
     }
 
     async getVideoStatus(videoId) {
@@ -379,50 +397,73 @@ class HeygenClient {
         }
     }
 
-    async addLooksToPhotoAvatarGroup(groupId, looks) {
-        // looks: array of { url } or { image_key }
+    async addLooksToPhotoAvatarGroup(groupId, looks, namePrefix = null) {
+        // looks: array of { url, name?, assetId? } or { image_key, name?, assetId? }
         // If looks contain URLs, we need to upload them first to get image_key
+        // HeyGen API expects 'group_id', 'image_keys', and 'name'
         if (!Array.isArray(looks) || looks.length === 0) {
             throw new Error('Looks must be a non-empty array');
         }
         
-        console.log('addLooksToPhotoAvatarGroup called with:', { groupId, looksCount: looks.length, looks });
+        console.log('addLooksToPhotoAvatarGroup called with:', { groupId, looksCount: looks.length, looks, namePrefix });
         
-        const processedLooks = await Promise.all(looks.map(async (look, index) => {
+        // Extract image_keys from looks (upload URLs if needed)
+        const imageKeys = [];
+        
+        for (let index = 0; index < looks.length; index++) {
+            const look = looks[index];
             console.log(`Processing look ${index}:`, look);
+            
+            let imageKey = null;
             
             // If look has image_key already, use it
             if (look.image_key) {
-                console.log(`Look ${index} already has image_key:`, look.image_key);
-                return { image_key: look.image_key };
+                imageKey = look.image_key;
+                console.log(`Look ${index} already has image_key:`, imageKey);
             }
-            
-            // If look has URL, upload it first
-            if (look.url) {
+            // If look has URL, upload it first to get image_key
+            else if (look.url) {
                 console.log(`Look ${index} has URL, uploading to get image_key:`, look.url);
                 try {
-                    const assetId = await this.uploadAssetFromUrl(look.url);
-                    console.log(`Look ${index} upload successful, got assetId/image_key:`, assetId);
-                    return { image_key: assetId };
+                    imageKey = await this.uploadAssetFromUrl(look.url);
+                    console.log(`Look ${index} upload successful, got image_key:`, imageKey);
                 } catch (uploadErr) {
                     console.error(`Look ${index} failed to upload asset from URL:`, uploadErr);
                     throw new Error(`Failed to upload image ${index + 1}: ${uploadErr.message || uploadErr}`);
                 }
             }
+            else {
+                throw new Error(`Look ${index + 1} must have either 'url' or 'image_key'`);
+            }
             
-            // Neither url nor image_key provided
-            throw new Error(`Look ${index + 1} must have either 'url' or 'image_key'`);
-        }));
-        
-        console.log('Processed looks before sending to HeyGen:', JSON.stringify(processedLooks));
-        
-        // Verify all looks have image_key
-        const invalidLooks = processedLooks.filter(look => !look.image_key);
-        if (invalidLooks.length > 0) {
-            throw new Error(`Invalid looks format: ${invalidLooks.length} look(s) missing image_key`);
+            if (imageKey) {
+                imageKeys.push(imageKey);
+            }
         }
         
-        const requestBody = { avatar_group_id: groupId, looks: processedLooks };
+        console.log('Processed image_keys:', imageKeys);
+        
+        if (imageKeys.length === 0) {
+            throw new Error('No valid image_keys found after processing looks');
+        }
+        
+        // Generate a name for this batch of looks
+        // Use the namePrefix if provided, otherwise generate from first look's name or assetId
+        let batchName = namePrefix;
+        if (!batchName) {
+            const firstLook = looks[0];
+            batchName = firstLook.name || 
+                       firstLook.assetId || 
+                       firstLook.fileName ||
+                       `avatar_${Date.now()}`;
+        }
+        
+        // HeyGen API expects 'group_id', 'image_keys' (plural, array of strings), and 'name'
+        const requestBody = { 
+            group_id: groupId, 
+            image_keys: imageKeys,
+            name: batchName
+        };
         const apiUrl = 'https://api.heygen.com/v2/photo_avatar/avatar_group/add';
         const apiMethod = 'POST';
         console.log(`[addLooksToPhotoAvatarGroup] Sending ${apiMethod} request to: ${apiUrl}`);
@@ -456,10 +497,11 @@ class HeygenClient {
         // Remove a look from photo avatar group by URL
         // Note: HeyGen may not have a direct remove endpoint, so we'll use the delete method
         // If the API requires look_id instead of URL, we'll need to list looks first and match by URL
+        // HeyGen API expects 'group_id' not 'avatar_group_id'
         const json = await this.requestJson('/v2/photo_avatar/avatar_group/remove', { 
             method: 'POST', 
             body: { 
-                avatar_group_id: groupId, 
+                group_id: groupId, 
                 looks: [{ url: lookUrl }]
             } 
         });
@@ -467,7 +509,7 @@ class HeygenClient {
     }
 
     async listAvatarsInAvatarGroup(groupId) {
-        const path = `/v2/photo_avatar/avatar_group/avatars?avatar_group_id=${encodeURIComponent(groupId)}`;
+        const path = `/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`;
         const json = await this.requestJson(path, { method: 'GET' });
         return json?.data?.avatars || [];
     }
@@ -476,7 +518,7 @@ class HeygenClient {
         if (!groupId) throw new Error('groupId is required for training');
         const json = await this.requestJson('/v2/photo_avatar/train', {
             method: 'POST',
-            body: { avatar_group_id: groupId }
+            body: { group_id: groupId }  // HeyGen API expects 'group_id', not 'avatar_group_id'
         });
         // API may return various identifiers; surface the whole data for debugging
         return json?.data || json;
@@ -495,20 +537,29 @@ class HeygenClient {
             audioUrl,
             width = 1280,
             height = 720,
-            avatarStyle = 'normal'
+            avatarStyle = 'normal',
+            isPhotoAvatar = false  // Flag to use talking_photo instead of avatar
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
         if (!audioUrl) throw new Error('audioUrl is required');
 
+        // Photo avatars (UGC avatars) use different character type
+        const characterSettings = isPhotoAvatar ? {
+            type: 'talking_photo',
+            talking_photo_id: avatarId,
+            talking_style: 'stable',
+            scale: 1.0
+        } : {
+            type: 'avatar',
+            avatar_id: avatarId,
+            avatar_style: avatarStyle
+        };
+
         const body = {
             video_inputs: [
                 {
-                    character: {
-                        type: 'avatar',
-                        avatar_id: avatarId,
-                        avatar_style: avatarStyle
-                    },
+                    character: characterSettings,
                     voice: {
                         type: 'audio',
                         audio_url: audioUrl
@@ -520,6 +571,12 @@ class HeygenClient {
                 height
             }
         };
+
+        console.log('[generateVideoWithAudio] Generating video with:', {
+            avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
+            avatarId,
+            audioUrl: audioUrl.substring(0, 50) + '...'
+        });
 
         // POST /v2/video/generate
         const json = await this.requestJson('/v2/video/generate', { method: 'POST', body });
@@ -764,6 +821,8 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
         
         // Get the image URL from Firestore if assetId is provided
         let imageUrlToUse = imageUrl;
+        let assetName = assetId || `asset_${Date.now()}`; // Use assetId as name
+        
         if (assetId && !imageUrl) {
             const assetsRef = db.collection('users').doc(userId)
                 .collection('heygenAvatarGroups').doc(groupDocId)
@@ -855,6 +914,7 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
 
         // Add look to the HeyGen avatar group (only if group already existed)
         // If we just created the group, the image was already added during creation
+        let photoAvatarId = null;
         if (avatarGroupId && groupData.avatar_group_id) {
             console.log('[handleHeygenAvatarGroupAddLook] About to add look to existing HeyGen group:', {
                 avatarGroupId,
@@ -864,8 +924,28 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
             try {
                 // Use server-side Firebase Admin to get the file directly
                 const fileUrl = await getFileUrlFromStorageUrl(imageUrlToUse, admin);
-                await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, [{ url: fileUrl }]);
+                const addLookResponse = await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, [{ url: fileUrl, name: assetName, assetId: assetName }], assetName);
                 console.log('[handleHeygenAvatarGroupAddLook] Successfully added look to HeyGen');
+                
+                // Extract photo avatar ID from response
+                if (addLookResponse && addLookResponse.photo_avatar_list && addLookResponse.photo_avatar_list.length > 0) {
+                    const photoAvatar = addLookResponse.photo_avatar_list[0];
+                    photoAvatarId = photoAvatar.id;
+                    console.log('[handleHeygenAvatarGroupAddLook] Got HeyGen photo avatar ID:', photoAvatarId);
+                    
+                    // Save the HeyGen photo avatar ID to the Firestore asset document
+                    if (assetId && photoAvatarId) {
+                        const assetsRef = db.collection('users').doc(userId)
+                            .collection('heygenAvatarGroups').doc(groupDocId)
+                            .collection('assets');
+                        await assetsRef.doc(assetId).update({
+                            heygenPhotoAvatarId: photoAvatarId,
+                            heygenStatus: photoAvatar.status || 'pending',
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log('[handleHeygenAvatarGroupAddLook] Saved HeyGen photo avatar ID to Firestore asset:', assetId);
+                    }
+                }
             } catch (addErr) {
                 console.error('[handleHeygenAvatarGroupAddLook] Failed to add look:', addErr);
                 console.error('[handleHeygenAvatarGroupAddLook] Error details:', addErr.details || addErr.message);
@@ -914,6 +994,7 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
             body: JSON.stringify({
                 success: true,
                 avatar_group_id: avatarGroupId,
+                photo_avatar_id: photoAvatarId,
                 trainingStatus: trainingStatus?.status || 'pending',
                 trainingStarted: trainingStarted,
                 message: statusCode === 202 
@@ -1176,7 +1257,7 @@ async function handleHeygenAvatarGroupSync(event, headers) {
                             const remainingFileUrls = await Promise.all(
                                 remainingAssetUrls.map(url => getFileUrlFromStorageUrl(url, admin))
                             );
-                            await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, remainingFileUrls.map(url => ({ url })));
+                            await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, remainingFileUrls.map((url, i) => ({ url, name: `sync_asset_${i}` })), 'sync_batch');
                             console.log('[sync] Successfully added', remainingAssetUrls.length, 'remaining assets to HeyGen group');
                     } catch (addErr) {
                         console.error('[sync] Failed to add remaining assets to HeyGen group:', addErr.message);
@@ -1229,7 +1310,7 @@ async function handleHeygenAvatarGroupSync(event, headers) {
                                 const remainingFileUrls = await Promise.all(
                                     remainingAssetUrls.map(url => getFileUrlFromStorageUrl(url, admin))
                                 );
-                                await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, remainingFileUrls.map(url => ({ url })));
+                                await heygenClient.addLooksToPhotoAvatarGroup(avatarGroupId, remainingFileUrls.map((url, i) => ({ url, name: `sync_replacement_${i}` })), 'sync_replacement_batch');
                                 console.log('[sync] Successfully added', remainingAssetUrls.length, 'remaining assets to replacement HeyGen group');
                             } catch (addErr) {
                                 console.error('[sync] Failed to add remaining assets to replacement HeyGen group:', addErr.message);

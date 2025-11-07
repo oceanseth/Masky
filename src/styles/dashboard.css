@@ -439,6 +439,108 @@
     font-size: 1.2rem;
 }
 
+/* Status Toggle Switch Styles */
+.status-toggle {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.status-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.status-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ef4444;
+    transition: 0.3s;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.status-toggle input:checked + .status-slider {
+    background-color: #10b981;
+}
+
+.status-toggle input:checked + .status-slider:before {
+    transform: translateX(26px);
+}
+
+.status-toggle input:disabled + .status-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.status-toggle.updating .status-slider {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.status-toggle.updating .status-slider:before {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Video Play Button Styles */
+.video-play-btn {
+    background: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.video-play-btn:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(192, 132, 252, 0.4);
+}
+
+.video-play-btn:active {
+    transform: scale(0.95);
+}
+
+.video-overlay {
+    transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.video-thumbnail-container:hover .video-overlay {
+    background: rgba(0, 0, 0, 0.5) !important;
+}
+
 /* Additional mobile breakpoint for very small screens */
 @media (max-width: 480px) {
     .social-card {

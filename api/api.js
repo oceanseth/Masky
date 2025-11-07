@@ -1,3 +1,24 @@
+// Load local environment FIRST before any other imports
+if (process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local') {
+    console.log('🔧 Loading local environment for Lambda handler...');
+    console.log('   IS_OFFLINE:', process.env.IS_OFFLINE);
+    console.log('   STAGE:', process.env.STAGE);
+    
+    try {
+        const { loadLocalEnv } = require('../local-env-loader');
+        loadLocalEnv();
+        console.log('   ✓ Local environment loaded');
+        
+        // Verify environment variables were loaded
+        console.log('   FIREBASE_SERVICE_ACCOUNT:', !!process.env.FIREBASE_SERVICE_ACCOUNT ? 'exists' : 'MISSING');
+        console.log('   TWITCH_CLIENT_ID:', process.env.TWITCH_CLIENT_ID || 'MISSING');
+        console.log('   HEYGEN_API_KEY:', !!process.env.HEYGEN_API_KEY ? 'exists' : 'MISSING');
+    } catch (error) {
+        console.error('❌ Failed to load local environment:', error.message);
+        console.error('   Stack:', error.stack);
+    }
+}
+
 const AWS = require('aws-sdk');
 const s3 = new AWS.S3({
     region: 'us-east-1',
@@ -182,6 +203,90 @@ exports.handler = async (event, context) => {
                 statusCode: 502,
                 headers,
                 body: JSON.stringify({ error: 'Heygen proxy failed', message: err.message })
+            };
+        }
+    }
+
+    // HeyGen: check avatar group training status
+    if (path.includes('/heygen/avatar-group/training-status') && method === 'GET') {
+        try {
+            const authHeader = event.headers.Authorization || event.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'Unauthorized' })
+                };
+            }
+
+            const idToken = authHeader.split('Bearer ')[1];
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const decoded = await admin.auth().verifyIdToken(idToken);
+            const userId = decoded.uid;
+
+            const url = new URL(event.rawUrl || `${event.headers.origin || 'http://localhost:3001'}${path}${event.rawQueryString ? ('?' + event.rawQueryString) : ''}`);
+            const groupDocId = url.searchParams.get('group_id') || event.queryStringParameters?.group_id;
+            
+            if (!groupDocId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing group_id parameter' })
+                };
+            }
+
+            const db = admin.firestore();
+            const groupDoc = await db.collection('users').doc(userId)
+                .collection('heygenAvatarGroups').doc(groupDocId).get();
+            
+            if (!groupDoc.exists) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Avatar group not found' })
+                };
+            }
+
+            const groupData = groupDoc.data();
+            const heygenGroupId = groupData.avatar_group_id;
+            
+            if (!heygenGroupId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ 
+                        error: 'Avatar group not yet created in HeyGen',
+                        status: 'not_started'
+                    })
+                };
+            }
+
+            const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+            const avatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: trainingStatus?.status || 'unknown',
+                    progress: trainingStatus?.progress || 0,
+                    avatar_group_id: heygenGroupId,
+                    avatars_count: avatars?.length || 0,
+                    avatars: avatars || []
+                })
+            };
+        } catch (err) {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ 
+                    error: 'Failed to check training status', 
+                    message: err.message 
+                })
             };
         }
     }
@@ -1091,12 +1196,20 @@ async function handleHeygenGenerate(event, headers) {
         const {
             projectId,
             voiceUrl: voiceUrlInput,
-            heygenAvatarId,
+            heygenAvatarId,  // This might be a HeyGen avatar ID OR a Firestore asset ID
             userAvatarUrl: userAvatarUrlInput,
-            width = 1280,
-            height = 720,
+            avatarGroupId: avatarGroupIdInput,
+            width = 720,   // Default to 720p for HeyGen free/basic tier compatibility
+            height = 1280, // Portrait orientation
             avatarStyle = 'normal'
         } = body;
+
+        console.log('🎬 Generate request received:', {
+            projectId,
+            heygenAvatarId: heygenAvatarId || '(not provided)',
+            avatarGroupId: avatarGroupIdInput || '(not provided)',
+            hasVoiceUrl: !!voiceUrlInput
+        });
 
         if (!projectId) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'projectId is required' }) };
@@ -1108,6 +1221,7 @@ async function handleHeygenGenerate(event, headers) {
         const projectName = projectData?.projectName || 'Masky Video';
         const voiceUrl = voiceUrlInput || projectData?.voiceUrl;
         const userAvatarUrl = userAvatarUrlInput || projectData?.avatarUrl;
+        const avatarGroupId = avatarGroupIdInput || projectData?.avatarGroupId;
 
         if (!voiceUrl) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'voiceUrl is required' }) };
@@ -1140,34 +1254,202 @@ async function handleHeygenGenerate(event, headers) {
             });
         }
 
-        let resolvedAvatarId = heygenAvatarId || null;
+        let resolvedAvatarId = null;
+        let heygenGroupId = null;
 
-        // If no HeyGen avatar id provided, try to find an existing mapping by avatarUrl
-        if (!resolvedAvatarId && userAvatarUrl) {
-            // Use avatar groups flow
-            // 1) lookup group for this asset
+        // If we have both heygenAvatarId and avatarGroupId, treat heygenAvatarId as a Firestore asset ID
+        // and look up the actual HeyGen avatar ID from the group
+        if (heygenAvatarId && avatarGroupIdInput) {
+            console.log('🔍 Looking up HeyGen avatar ID for Firestore asset:', heygenAvatarId, 'in group:', avatarGroupIdInput);
+            
+            const groupsRef = userRef.collection('heygenAvatarGroups');
+            const groupDoc = await groupsRef.doc(avatarGroupIdInput).get();
+            
+            if (groupDoc.exists) {
+                const groupData = groupDoc.data();
+                heygenGroupId = groupData.avatar_group_id;
+                
+                if (heygenGroupId) {
+                    console.log('✅ Found HeyGen group ID:', heygenGroupId);
+                    console.log('   Firestore group doc ID:', avatarGroupIdInput);
+                    
+                    // Get the asset document to find its URL
+                    const assetsRef = groupDoc.ref.collection('assets');
+                    const assetDoc = await assetsRef.doc(heygenAvatarId).get();
+                    
+                    if (assetDoc.exists) {
+                        const assetData = assetDoc.data();
+                        const assetUrl = assetData.url;
+                        console.log('Found asset data:', {
+                            url: assetUrl,
+                            heygenPhotoAvatarId: assetData.heygenPhotoAvatarId || '(not saved)',
+                            heygenStatus: assetData.heygenStatus || '(not saved)',
+                            width: assetData.width || '(not saved)',
+                            height: assetData.height || '(not saved)'
+                        });
+                        
+                        // If we have the HeyGen photo avatar ID saved, use it directly!
+                        if (assetData.heygenPhotoAvatarId) {
+                            resolvedAvatarId = assetData.heygenPhotoAvatarId;
+                            console.log('✅ Using saved HeyGen photo avatar ID:', resolvedAvatarId);
+                            console.log('   Status:', assetData.heygenStatus || 'unknown');
+                            
+                            // Use the asset's original dimensions if available
+                            if (assetData.width && assetData.height) {
+                                width = assetData.width;
+                                height = assetData.height;
+                                console.log('   Using asset dimensions:', width, 'x', height);
+                            }
+                            
+                            // Check if the photo avatar is ready
+                            if (assetData.heygenStatus === 'pending') {
+                                console.log('⚠️  Photo avatar status is pending - may still be processing');
+                            }
+                        } else {
+                            console.log('⚠️  No HeyGen photo avatar ID saved in Firestore asset. Querying HeyGen API...');
+                            
+                            // Fallback: List all avatars in the HeyGen group to find the matching one
+                            const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+                            console.log('Avatars in HeyGen group:', JSON.stringify(groupAvatars, null, 2));
+                            
+                            // If no avatars, check training status
+                            if (!groupAvatars || groupAvatars.length === 0) {
+                            console.log('📊 No avatars found, checking training status...');
+                            let trainingStatus = null;
+                            try {
+                                trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                            } catch (statusErr) {
+                                console.log('Could not get training status:', statusErr.message);
+                            }
+                            
+                            // If training is in progress, throw clear error
+                            if (trainingStatus && trainingStatus.status && trainingStatus.status !== 'completed') {
+                                throw new Error(`Avatar training is ${trainingStatus.status}. Please wait for training to complete before generating videos. This typically takes 5-10 minutes. Check status at: http://localhost:3001/api/heygen/avatar-group/training-status?group_id=${avatarGroupIdInput}`);
+                            }
+                            
+                            // If training is completed but no avatars, something went wrong
+                            if (trainingStatus && trainingStatus.status === 'completed') {
+                                throw new Error(`Training is marked as completed but no avatars found in the group. This may indicate a HeyGen API issue. Please try re-uploading the image.`);
+                            }
+                            
+                                // If no training status at all, training was never started
+                                throw new Error('No avatars found and training status unknown. Please ensure the avatar was uploaded correctly and training was initiated.');
+                            }
+                            
+                            if (groupAvatars && groupAvatars.length > 0) {
+                                // Try to match by name, or just use the first completed avatar
+                                // HeyGen avatars have 'avatar_id', 'avatar_name', 'name', etc.
+                                const matchingAvatar = groupAvatars.find(a => 
+                                    a.name === heygenAvatarId || 
+                                    a.avatar_name === heygenAvatarId ||
+                                    a.id === heygenAvatarId
+                                );
+                                
+                                // If no match, use first completed avatar
+                                const avatarToUse = matchingAvatar || groupAvatars.find(a => a.status === 'completed') || groupAvatars[0];
+                                
+                                resolvedAvatarId = avatarToUse.avatar_id || avatarToUse.id;
+                                console.log('✓ Resolved HeyGen avatar ID from API query:', resolvedAvatarId, 'from avatar:', JSON.stringify(avatarToUse, null, 2));
+                            } else {
+                                console.error('❌ No avatars found in HeyGen group - group may need training');
+                                throw new Error('No avatars found in avatar group. Please ensure the avatar group has been trained and avatars are available.');
+                            }
+                        }
+                    } else {
+                        console.warn('Asset document not found:', heygenAvatarId);
+                    }
+                } else {
+                    console.error('❌ Group has no avatar_group_id yet - group not synced with HeyGen');
+                    throw new Error(`Avatar group ${avatarGroupIdInput} has not been synced with HeyGen yet. Please try uploading an image to the group first.`);
+                }
+            } else {
+                console.error('❌ Avatar group document not found:', avatarGroupIdInput);
+                throw new Error(`Avatar group ${avatarGroupIdInput} not found in your account.`);
+            }
+        }
+        // If only heygenAvatarId provided (no group), assume it's already a HeyGen avatar ID
+        else if (heygenAvatarId && !avatarGroupIdInput) {
+            console.log('✓ Using directly provided HeyGen avatar ID (no group):', heygenAvatarId);
+            resolvedAvatarId = heygenAvatarId;
+        }
+        // If only avatarGroupId provided, look up an avatar from the group
+        else if (!heygenAvatarId && avatarGroupIdInput) {
+            console.log('Looking up avatar from group ID (no asset specified):', avatarGroupIdInput);
+            const groupsRef = userRef.collection('heygenAvatarGroups');
+            const groupDoc = await groupsRef.doc(avatarGroupIdInput).get();
+            
+            if (groupDoc.exists) {
+                const groupData = groupDoc.data();
+                heygenGroupId = groupData.avatar_group_id;
+                
+                if (heygenGroupId) {
+                    console.log('Found HeyGen avatar_group_id:', heygenGroupId);
+                    
+                    // List avatars in the group and pick one
+                    const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
+                    console.log('Group avatars from HeyGen:', JSON.stringify(groupAvatars, null, 2));
+                    
+                    if (groupAvatars && groupAvatars.length > 0) {
+                        // Choose first avatar from the group
+                        const selected = groupAvatars[0];
+                        resolvedAvatarId = selected.avatar_id || selected.id;
+                        console.log('Selected avatar from group:', resolvedAvatarId);
+                        
+                        // Check if avatar needs training
+                        if (selected.status && selected.status !== 'completed') {
+                            console.warn('Avatar may not be fully trained. Status:', selected.status);
+                            // Try to get training status
+                            try {
+                                const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                                if (trainingStatus.status && trainingStatus.status !== 'completed') {
+                                    throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
+                                }
+                            } catch (trainingErr) {
+                                console.warn('Could not check training status:', trainingErr.message);
+                            }
+                        }
+                    } else {
+                        console.error('No avatars found in group:', heygenGroupId);
+                    }
+                } else {
+                    console.warn('Group document exists but has no avatar_group_id:', avatarGroupId);
+                }
+            } else {
+                console.error('Avatar group document not found:', avatarGroupId);
+            }
+        }
+
+        // Legacy fallback: If no HeyGen avatar id resolved yet and we have userAvatarUrl, try to find an existing mapping
+        // NOTE: This path should rarely be reached now that we look up avatars from groups
+        if (!resolvedAvatarId && userAvatarUrl && !avatarGroupIdInput) {
+            console.log('⚠️  Legacy path: No avatar resolved yet, trying to find by avatarUrl:', userAvatarUrl);
+            // Use avatar groups flow - lookup group for this asset
             const groupsRef = userRef.collection('heygenAvatarGroups');
             const existing = await groupsRef.where('avatarUrl', '==', userAvatarUrl).limit(1).get();
-            let groupId = null;
+            
             if (!existing.empty) {
-                groupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
+                heygenGroupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
+                console.log('Found existing group by avatarUrl:', heygenGroupId);
             } else {
                 // create group (name per user once) and add look for this asset
+                console.log('Creating new avatar group for user:', userId);
                 const groupName = `masky_${userId}`;
-                groupId = await heygen.createPhotoAvatarGroup(groupName);
+                heygenGroupId = await heygen.createPhotoAvatarGroup(groupName);
                 await groupsRef.add({
                     userId,
                     avatarUrl: userAvatarUrl,
-                    avatar_group_id: groupId,
+                    avatar_group_id: heygenGroupId,
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 });
-                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+                await heygen.addLooksToPhotoAvatarGroup(heygenGroupId, [{ url: userAvatarUrl }]);
                 
                 // Start training the avatar group (required before avatars can be used)
                 try {
-                    console.log('Starting training for new avatar group:', groupId);
-                    await heygen.trainPhotoAvatarGroup(groupId);
-                    console.log('Training initiated for avatar group:', groupId);
+                    console.log('Starting training for new avatar group:', heygenGroupId);
+                    await heygen.trainPhotoAvatarGroup(heygenGroupId);
+                    console.log('Training initiated for avatar group:', heygenGroupId);
                 } catch (trainErr) {
                     console.warn('Failed to start training for avatar group:', trainErr.message);
                     // Continue anyway - training might already be in progress
@@ -1176,11 +1458,11 @@ async function handleHeygenGenerate(event, headers) {
 
             // Ensure the asset look exists in the group (idempotent add)
             try {
-                await heygen.addLooksToPhotoAvatarGroup(groupId, [{ url: userAvatarUrl }]);
+                await heygen.addLooksToPhotoAvatarGroup(heygenGroupId, [{ url: userAvatarUrl }]);
             } catch {}
 
-            // 2) list avatars in the group and pick one
-            const groupAvatars = await heygen.listAvatarsInAvatarGroup(groupId);
+            // List avatars in the group and pick one
+            const groupAvatars = await heygen.listAvatarsInAvatarGroup(heygenGroupId);
             console.log('Group avatars from HeyGen:', JSON.stringify(groupAvatars, null, 2));
             if (groupAvatars && groupAvatars.length > 0) {
                 // choose most recent if timestamps available; else first
@@ -1193,7 +1475,7 @@ async function handleHeygenGenerate(event, headers) {
                     console.warn('Avatar group avatar may not be fully trained. Status:', selected.status);
                     // Try to get training status
                     try {
-                        const trainingStatus = await heygen.getTrainingJobStatus(groupId);
+                        const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
                         console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
                         if (trainingStatus.status && trainingStatus.status !== 'completed') {
                             throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
@@ -1235,19 +1517,67 @@ async function handleHeygenGenerate(event, headers) {
             };
         }
 
-        // Upload audio asset to HeyGen to get audio_asset_id
-        const audioAssetId = await heygen.uploadAssetFromUrl(voiceUrl);
-
-        // Request generation with audio_asset_id and folder
-        const videoId = await heygen.generateVideoWithAudioAsset({
+        // Use audio URL directly (no need to upload audio files to HeyGen)
+        console.log('Generating video with audio URL directly:', voiceUrl);
+        
+        // Determine if this is a photo avatar (user-uploaded) or regular HeyGen avatar
+        // Photo avatars come from avatar groups, regular avatars are HeyGen's stock avatars
+        const isPhotoAvatar = !!(avatarGroupIdInput || heygenGroupId);
+        
+        // Scale down dimensions if they exceed HeyGen plan limits while maintaining aspect ratio
+        // Free/Basic tier: 720p max (longer side <= 1280)
+        // Creator tier: 1080p max (longer side <= 1920)
+        const MAX_DIMENSION_720P = 1280;   // Free/Basic tier limit
+        const MAX_DIMENSION_1080P = 1920;  // Creator tier limit
+        
+        // Get user's subscription tier to determine max resolution
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.exists ? userDoc.data() : {};
+        const subscriptionTier = userData.subscriptionTier || 'free';
+        
+        // Determine max dimension based on subscription
+        let maxDimension = MAX_DIMENSION_720P;  // Default to free tier
+        if (subscriptionTier === 'standard' || subscriptionTier === 'pro') {
+            maxDimension = MAX_DIMENSION_1080P;  // Allow 1080p for paid tiers
+        }
+        
+        console.log('📊 Subscription tier:', subscriptionTier, '→ Max dimension:', maxDimension);
+        console.log('📐 Original dimensions:', width, 'x', height);
+        
+        if (width > maxDimension || height > maxDimension) {
+            const originalWidth = width;
+            const originalHeight = height;
+            const aspectRatio = width / height;
+            
+            if (width > height) {
+                // Landscape or square-ish - constrain width
+                width = maxDimension;
+                height = Math.round(maxDimension / aspectRatio);
+            } else {
+                // Portrait - constrain height
+                height = maxDimension;
+                width = Math.round(maxDimension * aspectRatio);
+            }
+            
+            console.log('📐 Scaled down:', originalWidth, 'x', originalHeight, '→', width, 'x', height, '(preserving aspect ratio)');
+        } else {
+            console.log('✓ Dimensions within plan limit, using original size');
+        }
+        
+        console.log('🎬 Calling HeyGen generate:', {
             avatarId: resolvedAvatarId,
-            audioAssetId,
+            isPhotoAvatar: isPhotoAvatar,
+            avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
+            dimensions: `${width}x${height}`
+        });
+        
+        const videoId = await heygen.generateVideoWithAudio({
+            avatarId: resolvedAvatarId,
+            audioUrl: voiceUrl,
             width,
             height,
             avatarStyle,
-            title: projectName,
-            callbackId: projectId,
-            folderId
+            isPhotoAvatar: isPhotoAvatar
         });
 
         // Persist to project

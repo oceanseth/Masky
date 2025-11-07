@@ -228,10 +228,12 @@ function initializeMobileMenu() {
             const wiz = document.getElementById('projectWizard');
             const recent = document.getElementById('recentProjects');
             const about = document.getElementById('aboutSection');
+            const projectsManager = document.getElementById('projectsManager');
             const dashboard = document.getElementById('dashboard');
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (about) about.style.display = 'none';
+            if (projectsManager) projectsManager.remove();
             if (dashboard) dashboard.style.display = 'block';
             // Render avatar manager
             renderAvatars('#dashboard .dashboard-container');

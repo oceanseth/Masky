@@ -1,6 +1,7 @@
 import { getCurrentUser, onAuthChange } from './firebase.js';
 import { showProjectWizard } from './projectWizard.js';
 import { config } from './config.js';
+import { renderProjectCard, bindProjectCard } from './projectCard.js';
 
 export function renderProjectsManager(container) {
     const containerElement = typeof container === 'string' ? document.querySelector(container) : container;
@@ -20,7 +21,7 @@ export function renderProjectsManager(container) {
 
     console.log('[Projects] Rendering projects manager UI');
     root.innerHTML = `
-        <div class="projects-header" style="margin: 12px 0 20px 0;">
+        <div class="projects-header" id="projectsHeader" style="margin: 12px 0 20px 0;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
                 <h2 class="section-title" style="margin: 0;">Your Projects</h2>
                 <button class="btn btn-primary" id="newProjectBtn">+ New Project</button>
@@ -37,21 +38,14 @@ export function renderProjectsManager(container) {
                 <p>Loading your projects...</p>
             </div>
         </div>
-        <div class="modal" id="projectWizardModal" style="display:none;">
-            <div class="modal-content">
-                <button class="modal-close" id="closeWizardBtn">×</button>
-                <div id="projectWizardContainer"></div>
-            </div>
-        </div>
+        <div id="projectWizardContainer" style="display:none;"></div>
     `;
 
     // Wiring
     const newProjectBtn = root.querySelector('#newProjectBtn');
     const copyObsBtn = root.querySelector('#copyObsBtn');
-    const closeWizardBtn = root.querySelector('#closeWizardBtn');
     if (newProjectBtn) newProjectBtn.onclick = () => openWizard();
     if (copyObsBtn) copyObsBtn.onclick = copyObsUrl;
-    if (closeWizardBtn) closeWizardBtn.onclick = closeWizard;
 
     // Show OBS URL
     const user = getCurrentUser();
@@ -157,89 +151,45 @@ export function renderProjectsManager(container) {
                 <div class="empty-state" style="text-align:center; color: rgba(255,255,255,0.6); padding: 2rem; border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px;">
                     <div style="font-size: 2rem;">📁</div>
                     <div>No projects yet</div>
-                    <button class="btn btn-primary" id="emptyCreateBtn" style="margin-top: 10px;">Create Your First Project</button>
                 </div>`;
-            const btn = root.querySelector('#emptyCreateBtn');
-            if (btn) btn.onclick = () => openWizard();
             return;
         }
 
         console.log('[Projects] rendering cards...');
-        grid.innerHTML = projects.map(p => `
-            <div class="project-card" data-id="${p.projectId}" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                    <div>
-                        <div class="project-name" style="font-weight:600;">${escapeHtml(p.projectName || 'Untitled Project')}</div>
-                        <div class="project-platform" style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">${escapeHtml((p.platform || '').charAt(0).toUpperCase() + (p.platform || '').slice(1))} - ${escapeHtml(p.eventType || '')}</div>
-                    </div>
-                    <div class="project-status" style="display:flex; align-items:center; gap:6px;">
-                        <span class="status-label" style="font-size:0.8rem;">${p.twitchSubscription ? 'Active' : 'Inactive'}</span>
-                        <label class="status-toggle" style="position:relative; display:inline-block; width:50px; height:24px;">
-                            <input type="checkbox" ${p.twitchSubscription ? 'checked' : ''} data-role="status-toggle" style="display:none;">
-                            <span class="status-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:${p.twitchSubscription ? '#10b981' : '#ef4444'};transition:0.3s;border-radius:24px;border:1px solid rgba(255,255,255,0.2);"></span>
-                        </label>
-                    </div>
-                </div>
+        grid.innerHTML = projects.map(p => renderProjectCard(p)).join('');
 
-                <div class="project-video-preview" style="margin-top:12px;">
-                    ${p.videoUrl ? `
-                        <div class="video-thumbnail-container" style="position:relative; aspect-ratio:16/9; background:#1a1a1a; border-radius:12px; overflow:hidden;">
-                            <video src="${p.videoUrl}" muted preload="metadata" style="width:100%; height:100%; object-fit:cover;"></video>
-                            <div class="video-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center; background: rgba(0,0,0,0.35);">▶️</div>
-                        </div>
-                    ` : `
-                        <div class="video-placeholder" style="aspect-ratio:16/9; border: 2px dashed rgba(255,255,255,0.2); border-radius:12px; display:flex; align-items:center; justify-content:center; color: rgba(255,255,255,0.6);">No video created yet</div>
-                    `}
-                </div>
-
-                <div class="project-actions" style="display:flex; gap:8px; margin-top:12px;">
-                    <button class="btn btn-secondary" data-role="edit">Edit</button>
-                    <button class="btn btn-secondary" data-role="view">View</button>
-                    <button class="btn btn-secondary" data-role="copy-url">Copy URL</button>
-                </div>
-            </div>
-        `).join('');
-
-        // bind each card
-        projects.forEach(p => bindCard(p));
+        // Bind each card
+        projects.forEach(p => {
+            const card = grid.querySelector(`.project-card[data-id="${p.projectId}"]`);
+            if (card) {
+                bindProjectCard(card, p, openWizard, toggleProjectStatus);
+            }
+        });
     }
 
-    function bindCard(project) {
-        const card = root.querySelector(`.project-card[data-id="${project.projectId}"]`);
-        if (!card) return;
-        const statusToggle = card.querySelector('[data-role="status-toggle"]');
-        const statusLabel = card.querySelector('.status-label');
-        const editBtn = card.querySelector('[data-role="edit"]');
-        const viewBtn = card.querySelector('[data-role="view"]');
-        const copyBtn = card.querySelector('[data-role="copy-url"]');
-
-        if (statusToggle) {
-            statusToggle.onchange = async (e) => {
-                try {
-                    const checked = e.target.checked;
-                    const { db, doc, updateDoc } = await import('./firebase.js');
-                    await updateDoc(doc(db, 'projects', project.projectId), {
-                        twitchSubscription: checked,
-                        updatedAt: new Date()
-                    });
-                    if (statusLabel) statusLabel.textContent = checked ? 'Active' : 'Inactive';
-                } catch (err) {
-                    console.error('Failed to toggle status', err);
-                    e.target.checked = !e.target.checked;
-                }
-            };
-        }
-
-        if (editBtn) editBtn.onclick = () => openWizard(project);
-        if (viewBtn) viewBtn.onclick = () => openProject(project);
-        if (copyBtn) copyBtn.onclick = () => copyProjectUrl(project);
+    async function toggleProjectStatus(projectId, isActive) {
+        const { db, doc, updateDoc } = await import('./firebase.js');
+        await updateDoc(doc(db, 'projects', projectId), {
+            twitchSubscription: isActive,
+            updatedAt: new Date()
+        });
     }
 
     function openWizard(project = null) {
-        const modal = document.getElementById('projectWizardModal');
-        const container = document.getElementById('projectWizardContainer');
-        if (!modal || !container) return;
+        const container = root.querySelector('#projectWizardContainer');
+        const projectsHeader = root.querySelector('#projectsHeader');
+        const projectsGrid = root.querySelector('#projectsGrid');
+        
+        if (!container) return;
+        
+        // Hide projects list and header
+        if (projectsHeader) projectsHeader.style.display = 'none';
+        if (projectsGrid) projectsGrid.style.display = 'none';
+        
+        // Show and clear wizard container
+        container.style.display = 'block';
         container.innerHTML = '';
+        
         showProjectWizard({
             containerId: 'projectWizardContainer',
             mode: project ? 'edit' : 'create',
@@ -250,21 +200,22 @@ export function renderProjectsManager(container) {
             },
             onCancel: () => closeWizard()
         });
-        modal.style.display = 'block';
     }
 
     function closeWizard() {
-        const modal = document.getElementById('projectWizardModal');
-        if (modal) modal.style.display = 'none';
-    }
-
-    function openProject(project) {
-        const user = getCurrentUser();
-        if (user && user.uid) {
-            window.open(`/twitchevent.html#${user.uid}`, '_blank');
-        } else {
-            alert('Please log in to view your project');
+        const container = root.querySelector('#projectWizardContainer');
+        const projectsHeader = root.querySelector('#projectsHeader');
+        const projectsGrid = root.querySelector('#projectsGrid');
+        
+        // Hide wizard
+        if (container) {
+            container.style.display = 'none';
+            container.innerHTML = '';
         }
+        
+        // Show projects list and header
+        if (projectsHeader) projectsHeader.style.display = 'block';
+        if (projectsGrid) projectsGrid.style.display = 'grid';
     }
 
     function copyObsUrl() {
@@ -276,20 +227,6 @@ export function renderProjectsManager(container) {
             alert('Please log in to copy your OBS Browser Source URL');
         }
     }
-
-    function copyProjectUrl(project) {
-        const user = getCurrentUser();
-        if (user && user.uid) {
-            const url = `${window.location.origin}/twitchevent.html#${user.uid}`;
-            navigator.clipboard.writeText(url).then(() => alert('Project URL copied!'));
-        } else {
-            alert('Please log in to copy your project URL');
-        }
-    }
-}
-
-function escapeHtml(str) {
-    return String(str || '').replace(/[&<>"]+/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s]));
 }
 
 

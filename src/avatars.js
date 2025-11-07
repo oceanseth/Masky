@@ -31,11 +31,7 @@ export async function renderAvatars(container) {
             </div>
         </div>
         <div class="avatars-grid" id="avatarsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:16px;"></div>
-        <div class="avatar-library" style="margin-top:24px;">
-            <h3 class="section-title" style="font-size:1.1rem;">Upload Image</h3>
-            <input type="file" id="avatarUploadInput" accept="image/*" style="display:none;" />
-            <button class="btn btn-primary" id="openUpload">Upload</button>
-        </div>
+        <input type="file" id="avatarUploadInput" accept="image/*" style="display:none;" />
     `;
 
     // Bind create button
@@ -65,16 +61,7 @@ export async function renderAvatars(container) {
         await loadAvatars();
     };
 
-    // Hook upload button
-    const openUploadBtn = document.getElementById('openUpload');
-    if (openUploadBtn) {
-        openUploadBtn.onclick = () => {
-            const input = document.getElementById('avatarUploadInput');
-            if (input) input.click();
-        };
-    }
-
-    await Promise.all([loadAvatars(), loadLibrary()]);
+    await loadAvatars();
 
     async function loadAvatars() {
         try {
@@ -306,6 +293,19 @@ export async function renderAvatars(container) {
                     }
                 }
 
+                // Get image dimensions before uploading
+                const imageDimensions = await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        resolve({ width: img.width, height: img.height });
+                    };
+                    img.onerror = () => {
+                        reject(new Error('Failed to load image for dimension check'));
+                    };
+                    img.src = URL.createObjectURL(fileToUpload);
+                });
+                console.log('Image dimensions:', imageDimensions);
+
                 // Upload directly to Firebase Storage
                 const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
                 const storage = getStorage();
@@ -324,6 +324,8 @@ export async function renderAvatars(container) {
                     url: imageUrl,
                     fileName: fileToUpload.name,
                     userId: user.uid,
+                    width: imageDimensions.width,
+                    height: imageDimensions.height,
                     createdAt: serverTimestamp ? serverTimestamp() : new Date()
                 });
                 const assetId = assetDocRef.id;
@@ -380,8 +382,6 @@ export async function renderAvatars(container) {
         // Also set avatarUrl on the group (acts as primary for now)
         await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), { avatarUrl: url, updatedAt: new Date() });
     }
-
-    async function loadLibrary() { /* no-op now: upload via button */ }
 
     function renderInfo(message) {
         const grid = document.getElementById('avatarsGrid');

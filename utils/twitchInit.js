@@ -3,6 +3,9 @@ const https = require('https');
 
 AWS.config.update({ region: 'us-east-1' });
 
+// Note: Local environment is loaded in api/api.js handler
+// No need to load again here
+
 class TwitchInitializer {
   constructor() {
     this.ssm = new AWS.SSM();
@@ -33,7 +36,7 @@ class TwitchInitializer {
     });
   }
 
-  // Load Twitch credentials from SSM
+  // Load Twitch credentials from SSM or local environment
   async initialize() {
     try {
       // Return if already initialized
@@ -41,29 +44,44 @@ class TwitchInitializer {
         return { clientId: this.clientId, clientSecret: this.clientSecret };
       }
 
-      // Get Client ID
-      const clientIdParams = {
-        Name: '/masky/production/twitch_client_id',
-        WithDecryption: true
-      };
-      const clientIdResult = await this.ssm.getParameter(clientIdParams).promise();
-      
-      if (!clientIdResult?.Parameter?.Value) {
-        throw new Error('Twitch Client ID not found in SSM');
-      }
-      this.clientId = clientIdResult.Parameter.Value;
+      // Check if running locally
+      if (process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local') {
+        console.log('🔧 Running in local mode - loading Twitch from environment');
+        
+        if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_CLIENT_SECRET) {
+          throw new Error('TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not found in .env.local. Please copy env.local.example to .env.local and fill in your credentials.');
+        }
 
-      // Get Client Secret
-      const clientSecretParams = {
-        Name: '/masky/production/twitch_client_secret',
-        WithDecryption: true
-      };
-      const clientSecretResult = await this.ssm.getParameter(clientSecretParams).promise();
-      
-      if (!clientSecretResult?.Parameter?.Value) {
-        throw new Error('Twitch Client Secret not found in SSM');
+        this.clientId = process.env.TWITCH_CLIENT_ID;
+        this.clientSecret = process.env.TWITCH_CLIENT_SECRET;
+      } else {
+        // Production mode - load from SSM
+        console.log('☁️  Loading Twitch from SSM...');
+        
+        // Get Client ID
+        const clientIdParams = {
+          Name: '/masky/production/twitch_client_id',
+          WithDecryption: true
+        };
+        const clientIdResult = await this.ssm.getParameter(clientIdParams).promise();
+        
+        if (!clientIdResult?.Parameter?.Value) {
+          throw new Error('Twitch Client ID not found in SSM');
+        }
+        this.clientId = clientIdResult.Parameter.Value;
+
+        // Get Client Secret
+        const clientSecretParams = {
+          Name: '/masky/production/twitch_client_secret',
+          WithDecryption: true
+        };
+        const clientSecretResult = await this.ssm.getParameter(clientSecretParams).promise();
+        
+        if (!clientSecretResult?.Parameter?.Value) {
+          throw new Error('Twitch Client Secret not found in SSM');
+        }
+        this.clientSecret = clientSecretResult.Parameter.Value;
       }
-      this.clientSecret = clientSecretResult.Parameter.Value;
 
       return { clientId: this.clientId, clientSecret: this.clientSecret };
     } catch (error) {

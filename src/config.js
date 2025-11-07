@@ -24,8 +24,20 @@ export const config = {
   
   // API Configuration  
   api: {
-    // Use direct API Gateway to bypass CloudFront (which is still deploying updated config)
-    baseUrl: 'https://masky.ai'
+    // Dynamically determine API URL based on environment
+    // In local development (localhost), use serverless-offline
+    // In production, use production API
+    get baseUrl() {
+      const hostname = window.location.hostname;
+      
+      // Local development
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:3001';
+      }
+      
+      // Production
+      return 'https://masky.ai';
+    }
   },
   stripe: {
     // Stripe Price IDs (not Product IDs)

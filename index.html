@@ -584,8 +584,9 @@
 
     <script type="module">
         import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
-        import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs } from '/src/firebase.js';
+        import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs, doc, updateDoc } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
+        import { renderProjectCard, bindProjectCard } from '/src/projectCard.js';
         
         // Render the header
         renderHeader('#header-container', {
@@ -655,20 +656,24 @@
                 return;
             }
 
-            projectsGrid.innerHTML = projects.map(project => `
-                <div class="project-card" onclick='openProjectEditor(${JSON.stringify(project)})' style="cursor: pointer;">
-                    <div class="project-name">${project.projectName}</div>
-                    <div class="project-platform">${project.platform?.charAt(0).toUpperCase() + project.platform?.slice(1) || ''} - ${project.eventType || ''}</div>
-                    <div class="project-preview" style="position: relative; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.03);">
-                        ${project.videoUrl ? `
-                        <video src="${project.videoUrl}" preload="metadata" style="width: 100%; display: block; max-height: 200px; object-fit: cover;" muted></video>
-                        <button class="btn btn-secondary" style="position: absolute; left: 12px; bottom: 12px;" onclick="event.stopPropagation(); this.previousElementSibling.play();">▶ Play</button>
-                        ` : `
-                        <div style="padding: 24px; color: rgba(255,255,255,0.6);">No video saved yet</div>
-                        `}
-                    </div>
-                </div>
-            `).join('');
+            projectsGrid.innerHTML = projects.map(project => renderProjectCard(project)).join('');
+            
+            // Bind each card with edit and toggle handlers
+            projects.forEach(project => {
+                const card = projectsGrid.querySelector(`.project-card[data-id="${project.projectId}"]`);
+                if (card) {
+                    bindProjectCard(card, project, openProjectEditor, toggleProjectStatus);
+                }
+            });
+        }
+        
+        // Toggle project status handler
+        async function toggleProjectStatus(projectId, isActive) {
+            const projectRef = doc(db, 'projects', projectId);
+            await updateDoc(projectRef, {
+                twitchSubscription: isActive,
+                updatedAt: new Date()
+            });
         }
 
         // Open project in editor (wizard) for editing

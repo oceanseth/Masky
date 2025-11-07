@@ -53,15 +53,16 @@ package:
   excludeDevDependencies: true
 
 plugins:
-  - serverless-esbuild
   - serverless-prune-plugin
+  - serverless-offline
 
 custom:
   esbuild:
     bundle: true
-    minify: true
-    sourcemap: false
-    target: node18
+    minify: false  # Disable minification for local dev
+    sourcemap: true  # Enable sourcemaps for debugging
+    target: es2020  # Use ES2020 to preserve class syntax
+    format: cjs  # CommonJS format
     platform: node
     concurrency: 10
     external:
@@ -74,10 +75,24 @@ custom:
   prune:
     automatic: true
     number: 3
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3002
+    websocketPort: 3003
+    noPrependStageInUrl: true
+    ignoreJWTSignature: true
+    noAuth: true
+    # Enable CORS for local development
+    cors: true
+    # Set environment variables for local development
+    environment:
+      IS_OFFLINE: "true"
+      STAGE: "local"
 
 functions:
   api:
     handler: api/api.handler
+    timeout: 300  # 5 minutes timeout for local debugging
     events:
       - http:
           path: api/{proxy+}  # Wildcard path that matches api/* 

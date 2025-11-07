@@ -13,7 +13,7 @@ We use **serverless-offline** to simulate AWS Lambda and API Gateway locally. Th
 
 ## Prerequisites
 
-1. **Node.js** 18.x or later
+1. **Node.js** 20.x or later
 2. **npm** installed
 3. **Firebase Service Account** credentials
 4. **API Keys** for Twitch, Stripe, and HeyGen

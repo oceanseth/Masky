@@ -2278,55 +2278,81 @@ class ProjectWizard {
             }
             
             // Need to generate a new video
-            // Update status to show we're starting generation
             if (generationStatus) {
                 generationStatus.innerHTML = `
                     <div class="loading-spinner"></div>
-                    <p>Starting video generation...</p>
+                    <p>Generating your AI avatar video...</p>
                 `;
                 generationStatus.style.display = 'block';
             }
 
-            // Call HeyGen API to generate video
-            const idToken = await user.getIdToken();
-            const generateResp = await fetch(`${config.api.baseUrl}/api/heygen/generate`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${idToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    projectId: this.projectData.projectId,
-                    voiceUrl: this.projectData.voiceUrl,
-                    // Send the specific avatar ID directly (from step 3 selection)
-                    heygenAvatarId: this.projectData.avatarAssetId || null,
-                    // Also send group ID as fallback if specific avatar not selected
-                    avatarGroupId: this.projectData.avatarGroupId || null,
-                    avatarUrl: this.projectData.avatarUrl || null
-                    // Note: width/height are determined by backend from asset dimensions
-                })
-            });
+            const requestPayload = {
+                projectId: this.projectData.projectId,
+                voiceUrl: this.projectData.voiceUrl,
+                heygenAvatarId: this.projectData.avatarAssetId || null,
+                avatarGroupId: this.projectData.avatarGroupId || null,
+                avatarUrl: this.projectData.avatarUrl || null
+            };
 
-            if (!generateResp.ok) {
-                const err = await generateResp.json().catch(() => ({}));
-                throw new Error(err.message || err.error || 'Failed to generate video');
+            // Attempt generation, waiting for avatar training if necessary
+            while (true) {
+                const idToken = await user.getIdToken();
+                const generateResp = await fetch(`${config.api.baseUrl}/api/heygen/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestPayload)
+                });
+
+                let generateData = {};
+                try {
+                    generateData = await generateResp.json();
+                } catch (parseErr) {
+                    console.warn('Failed to parse HeyGen generate response:', parseErr);
+                    generateData = {};
+                }
+
+                if (generateResp.status === 202 && generateData?.status === 'training_pending') {
+                    const groupDocIdForPolling =
+                        generateData.groupId ||
+                        requestPayload.avatarGroupId ||
+                        this.projectData.avatarGroupId ||
+                        null;
+
+                    if (!this.projectData.avatarGroupId && generateData.groupId) {
+                        this.projectData.avatarGroupId = generateData.groupId;
+                    }
+
+                    requestPayload.avatarGroupId =
+                        this.projectData.avatarGroupId ||
+                        generateData.groupId ||
+                        requestPayload.avatarGroupId ||
+                        null;
+
+                    await this.waitForAvatarTraining(groupDocIdForPolling, generateData);
+                    continue;
+                }
+
+                if (!generateResp.ok) {
+                    throw new Error(generateData.message || generateData.error || 'Failed to generate video');
+                }
+
+                this.projectData.heygenVideoId = generateData.videoId || generateData.video_id;
+
+                const { db, doc, updateDoc } = await import('./firebase.js');
+                const projectRef = doc(db, 'projects', this.projectData.projectId);
+                await updateDoc(projectRef, {
+                    heygenVideoId: this.projectData.heygenVideoId,
+                    updatedAt: new Date()
+                });
+
+                console.log('HeyGen video generation started:', this.projectData.heygenVideoId);
+
+                await this.pollVideoStatus();
+                return;
             }
-
-            const generateData = await generateResp.json();
-            this.projectData.heygenVideoId = generateData.videoId || generateData.video_id;
-
-            // Save the video ID to Firestore
-            const { db, doc, updateDoc } = await import('./firebase.js');
-            const projectRef = doc(db, 'projects', this.projectData.projectId);
-            await updateDoc(projectRef, {
-                heygenVideoId: this.projectData.heygenVideoId,
-                updatedAt: new Date()
-            });
-
-            console.log('HeyGen video generation started:', this.projectData.heygenVideoId);
-
-            // Now poll for the video status
-            await this.pollVideoStatus();
             
         } catch (error) {
             console.error('Content generation error:', error);
@@ -2345,6 +2371,130 @@ class ProjectWizard {
                 generationResult.style.display = 'none';
             }
         }
+    }
+
+    async waitForAvatarTraining(groupDocId, serverPayload = {}) {
+        const generationStatus = document.getElementById('generationStatus');
+
+        const setStatusMessage = (message) => {
+            if (generationStatus) {
+                generationStatus.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <p>${message}</p>
+                `;
+                generationStatus.style.display = 'block';
+            }
+        };
+
+        setStatusMessage('Training your avatar. We\'ll generate your video as soon as it\'s ready...');
+
+        const user = getCurrentUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const retryAfterSeconds = Number.isFinite(serverPayload.retryAfterSeconds)
+            ? Math.max(serverPayload.retryAfterSeconds, 3)
+            : 10;
+        const pollIntervalMs = retryAfterSeconds * 1000;
+        const maxAttempts = Number.isFinite(serverPayload.maxPollAttempts)
+            ? serverPayload.maxPollAttempts
+            : 60; // ~10 minutes at default interval
+
+        if (!groupDocId) {
+            console.warn('waitForAvatarTraining called without groupDocId; waiting before retrying generation.');
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+            return;
+        }
+
+        const statusPath = serverPayload.statusEndpoint
+            ? serverPayload.statusEndpoint
+            : `/api/heygen/avatar-group/training-status?group_id=${encodeURIComponent(groupDocId)}`;
+
+        const baseApiUrl = config.api.baseUrl.endsWith('/')
+            ? config.api.baseUrl.slice(0, -1)
+            : config.api.baseUrl;
+
+        const statusUrl = statusPath.startsWith('http')
+            ? statusPath
+            : `${baseApiUrl}${statusPath.startsWith('/') ? '' : '/'}${statusPath}`;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const idToken = await user.getIdToken();
+            let statusResp;
+
+            try {
+                statusResp = await fetch(statusUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+            } catch (statusErr) {
+                console.warn('Error polling avatar training status:', statusErr);
+                await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                continue;
+            }
+
+            if (statusResp.status === 404) {
+                throw new Error('Avatar group not found while checking training status.');
+            }
+
+            if (statusResp.status === 401) {
+                throw new Error('Authentication failed while checking avatar training status.');
+            }
+
+            let statusData = {};
+            try {
+                statusData = await statusResp.json();
+            } catch (parseErr) {
+                console.warn('Could not parse avatar training status response:', parseErr);
+            }
+
+            const statusValue =
+                statusData?.status ||
+                statusData?.trainingStatus ||
+                statusData?.data?.status ||
+                null;
+            const progressValue = typeof statusData?.progress === 'number'
+                ? Math.round(statusData.progress)
+                : (typeof statusData?.data?.progress === 'number'
+                    ? Math.round(statusData.data.progress)
+                    : null);
+
+            const avatarsArray = Array.isArray(statusData?.avatars)
+                ? statusData.avatars
+                : (Array.isArray(statusData?.data?.avatars) ? statusData.data.avatars : []);
+            const avatarsCount = typeof statusData?.avatars_count === 'number'
+                ? statusData.avatars_count
+                : (typeof statusData?.data?.avatars_count === 'number'
+                    ? statusData.data.avatars_count
+                    : avatarsArray.length);
+
+            if (statusResp.ok) {
+                const progressText = progressValue !== null ? ` (${progressValue}%)` : '';
+                setStatusMessage(`Training your avatar${progressText}. We'll generate your video as soon as it's ready...`);
+
+                if (statusValue === 'completed' || statusValue === 'ready') {
+                    const hasAvatars = avatarsCount > 0 || avatarsArray.length > 0;
+                    if (hasAvatars) {
+                        setStatusMessage('Avatar ready! Generating your video...');
+                        if (!this.projectData.avatarGroupId && groupDocId) {
+                            this.projectData.avatarGroupId = groupDocId;
+                        }
+                        return;
+                    }
+                }
+
+                if (statusValue === 'failed' || statusValue === 'error') {
+                    throw new Error('Avatar training failed. Please try uploading your avatar again.');
+                }
+            } else {
+                console.warn('Non-success status while polling avatar training:', statusResp.status, statusResp.statusText);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        }
+
+        throw new Error('Avatar training is taking longer than expected. Please try again in a few minutes.');
     }
 
     /**

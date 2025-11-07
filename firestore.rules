@@ -78,8 +78,9 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid;
       
       // Allow public read access for active Twitch projects (for overlay)
-      allow read: if resource.data.twitchSubscription == true && 
-        resource.data.platform == 'twitch';
+      // Twitch subscriptions may be stored as objects, so we gate on platform + isActive
+      allow read: if resource.data.platform == 'twitch' &&
+        resource.data.isActive == true;
     }
     
     // Voices collection - users can only access their own voices

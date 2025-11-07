@@ -48,11 +48,25 @@ class FirebaseInitializer {
 
       const serviceAccount = JSON.parse(serviceAccountJson);
 
+      const projectId = serviceAccount.project_id;
+      const resolvedStorageBucket = process.env.FIREBASE_STORAGE_BUCKET
+        || serviceAccount.storageBucket
+        || (projectId ? `${projectId}.firebasestorage.app` : undefined);
+      const resolvedDatabaseUrl = process.env.FIREBASE_DATABASE_URL
+        || (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined)
+        || 'https://maskydotnet-default-rtdb.firebaseio.com';
+
       this.firebaseApp = admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        databaseURL: 'https://maskydotnet-default-rtdb.firebaseio.com',
-        storageBucket: 'maskydotnet.appspot.com'
+        databaseURL: resolvedDatabaseUrl,
+        storageBucket: resolvedStorageBucket
       });
+
+      if (!resolvedStorageBucket) {
+        console.warn('Firebase storage bucket not specified; uploads may fail without FIREBASE_STORAGE_BUCKET.');
+      } else {
+        console.log(`Firebase initialized with storage bucket: ${resolvedStorageBucket}`);
+      }
 
       return this.firebaseApp;
     } catch (error) {

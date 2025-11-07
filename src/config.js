@@ -1,6 +1,15 @@
 // Configuration for OAuth providers, API endpoints, and Stripe products
 
 export const config = {
+  firebase: {
+    apiKey: "AIzaSyBxDknJ0YcbfGXcrj9aoqyW5UMQm4OhcdI",
+    authDomain: "maskydotnet.firebaseapp.com",
+    databaseURL: "https://maskydotnet-default-rtdb.firebaseio.com",
+    projectId: "maskydotnet",
+    storageBucket: "maskydotnet.firebasestorage.app",
+    messagingSenderId: "253806012115",
+    appId: "1:253806012115:web:634bb43405ca639401d626"
+  },
   // Twitch OAuth Configuration
   twitch: {
     clientId: 'sgb17aslo6gesnetuqfnf6qql6jrae',
@@ -28,7 +37,7 @@ export const config = {
     // In local development (localhost), use serverless-offline
     // In production, use production API
     get baseUrl() {
-      const hostname = window.location.hostname;
+      const { hostname } = window.location;
       
       // Local development
       if (hostname === 'localhost' || hostname === '127.0.0.1') {

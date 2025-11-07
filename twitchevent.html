@@ -195,7 +195,7 @@
 
     <script type="module">
         import { db, collection, query, where, getDocs, onSnapshot } from '/src/firebase.js';
-        import '/src/config.js';
+        import { config } from '/src/config.js';
 
         // Initialize event listeners
         let unsubscribeEvents = null;
@@ -315,29 +315,31 @@
                         projectConfigs.set(eventType, getDefaultAlertConfig(eventType));
                     }
 
-                    // Collect Heygen video URL if available
-                    const videoUrl = extractHeygenVideoUrl(projectData);
+                    // Collect HeyGen identifiers (URLs fetched dynamically per playback)
+                    const heygenVideoId = projectData.heygenVideoId || null;
+                    const storedVideoUrl = extractHeygenVideoUrl(projectData);
                     debugProjectsList.push({
                         projectId: doc.id,
                         eventType,
-                        heygenVideoId: projectData.heygenVideoId || null,
-                        hasVideoUrl: !!videoUrl,
-                        videoUrl: videoUrl || null,
+                        heygenVideoId,
+                        hasStoredUrl: !!storedVideoUrl,
+                        storedVideoUrl: storedVideoUrl || null,
                         twitchSubscription: projectData.twitchSubscription,
                         isActive: projectData.isActive
                     });
-                    if (videoUrl) {
+                    if (heygenVideoId) {
                         if (!eventVideoCache.has(eventType)) eventVideoCache.set(eventType, []);
                         eventVideoCache.get(eventType).push({
                             projectId: doc.id,
-                            videoUrl
+                            videoId: heygenVideoId,
+                            currentUrl: null,
+                            lastFetched: 0
                         });
                     } else {
-                        const hasHeygenId = !!projectData.heygenVideoId;
-                        if (!hasHeygenId) {
-                            console.warn(`Project ${doc.id} (${eventType}) missing HeyGen video ID and video URL`);
+                        if (storedVideoUrl) {
+                            console.warn(`Project ${doc.id} (${eventType}) has a stored HeyGen video URL but no video ID; skipping until ID is saved.`);
                         } else {
-                            console.warn(`Project ${doc.id} (${eventType}) has HeyGen ID but no resolvable video URL yet`);
+                            console.warn(`Project ${doc.id} (${eventType}) missing HeyGen video ID and video URL`);
                         }
                     }
                 });
@@ -349,7 +351,7 @@
                 }
 
                 // Preload videos for all event types
-                preloadAllEventVideos();
+                await preloadAllEventVideos();
 
                 // Get event types to listen for
                 const eventTypes = [...new Set(snapshot.docs.map(doc => doc.data().eventType))];
@@ -384,31 +386,88 @@
             return null;
         }
 
+        async function fetchHeygenVideoUrl(videoId) {
+            if (!videoId) return null;
+            const statusUrl = `${config.api.baseUrl}/api/heygen/video_status.get?video_id=${encodeURIComponent(videoId)}`;
+            const response = await fetch(statusUrl, {
+                method: 'GET',
+                cache: 'no-store',
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-store, no-cache, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to fetch HeyGen video status (${response.status})`);
+            }
+            const payload = await response.json().catch(() => ({}));
+            const data = payload?.data || payload || {};
+            const videoUrl = data.video_url || data.videoUrl || null;
+            const status = data.status || payload?.status || null;
+            return { videoUrl, status, raw: payload };
+        }
+
+        async function refreshHeygenVideoUrl(cacheEntry) {
+            if (!cacheEntry || !cacheEntry.videoId) return null;
+            try {
+                const info = await fetchHeygenVideoUrl(cacheEntry.videoId);
+                if (info.videoUrl) {
+                    cacheEntry.currentUrl = info.videoUrl;
+                    cacheEntry.lastFetched = Date.now();
+                    cacheEntry.lastStatus = info.status || null;
+                    return cacheEntry.currentUrl;
+                }
+                console.warn('HeyGen video status did not include a video URL', {
+                    projectId: cacheEntry.projectId,
+                    videoId: cacheEntry.videoId,
+                    info
+                });
+                cacheEntry.currentUrl = null;
+                return null;
+            } catch (err) {
+                console.error('Failed to refresh HeyGen video URL', {
+                    projectId: cacheEntry.projectId,
+                    videoId: cacheEntry.videoId,
+                    error: err
+                });
+                cacheEntry.currentUrl = null;
+                return null;
+            }
+        }
+
         // Preload all videos into detached video elements to warm cache
-        function preloadAllEventVideos() {
+        async function preloadAllEventVideos() {
             preloadedVideoElements = new Map();
-            eventVideoCache.forEach((items, eventType) => {
+            for (const [eventType, items] of eventVideoCache.entries()) {
                 console.groupCollapsed(`Preloading videos for ${eventType}`);
                 const list = [];
-                items.forEach(item => {
+                await Promise.all(items.map(async (item) => {
                     try {
+                        const videoUrl = await refreshHeygenVideoUrl(item);
+                        if (!videoUrl) {
+                            console.warn('No HeyGen video URL available for preloading', {
+                                projectId: item.projectId,
+                                videoId: item.videoId
+                            });
+                            return;
+                        }
                         const v = document.createElement('video');
-                        v.src = item.videoUrl;
+                        v.src = videoUrl;
                         v.preload = 'auto';
                         v.muted = true; // allow autoplay preloading
-                        // Start loading
                         v.load();
-                        list.push({ projectId: item.projectId, el: v, url: item.videoUrl });
-                        console.log('Preloading URL:', item.videoUrl, 'projectId:', item.projectId);
+                        list.push({ projectId: item.projectId, el: v, url: videoUrl });
+                        console.log('Preloading URL:', videoUrl, 'projectId:', item.projectId);
                     } catch (e) {
-                        console.warn('Failed to preload video', item.videoUrl, e);
+                        console.warn('Failed to preload video for project', item.projectId, e);
                     }
-                });
+                }));
                 preloadedVideoElements.set(eventType, list);
                 console.groupEnd();
-            });
-            console.log('Preloaded Heygen videos by event type:',
-                Array.from(eventVideoCache.entries()).reduce((acc, [k, v]) => ({...acc, [k]: v.length}), {}));
+            }
+            console.log('Preloaded HeyGen videos by event type:',
+                Object.fromEntries(Array.from(preloadedVideoElements.entries()).map(([key, list]) => [key, list.length])));
         }
 
         // Get default alert configuration for an event type
@@ -528,10 +587,7 @@
 
                         console.log(`New alert received for ${eventType}:`, alertData);
                         // Try to play Heygen video for this event; fallback to text alert
-                        const played = playHeygenVideoForEvent(eventType, alertData.eventData);
-                        if (!played) {
-                            showAlert(alertData);
-                        }
+                        playVideoOrShowAlert(alertData);
                     }
                 });
                 isInitialSnapshot = false;
@@ -547,7 +603,7 @@
         }
 
         // Play a random preloaded Heygen video for the given event type
-        function playHeygenVideoForEvent(eventType, eventData = null) {
+        async function playHeygenVideoForEvent(eventType, eventData = null) {
             // Get config and check conditions first
             const eventConfig = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
             
@@ -570,12 +626,22 @@
 
             const randomIndex = Math.floor(Math.random() * items.length);
             const selected = items[randomIndex];
+            const videoUrl = await refreshHeygenVideoUrl(selected);
+            if (!videoUrl) {
+                console.warn(`No playable HeyGen video URL available for event type: ${eventType}`, {
+                    projectId: selected.projectId,
+                    videoId: selected.videoId,
+                    lastStatus: selected.lastStatus
+                });
+                return false;
+            }
             
             console.log(`🎲 Random video selection for ${eventType}:`);
             console.log(`  - Available videos: ${items.length}`);
             console.log(`  - Random index: ${randomIndex}`);
             console.log(`  - Selected project: ${selected.projectId}`);
-            console.log(`  - Video URL: ${selected.videoUrl}`);
+            console.log(`  - Video ID: ${selected.videoId}`);
+            console.log(`  - Video URL: ${videoUrl}`);
 
             const overlay = document.getElementById('videoOverlay');
             // Clear any existing video
@@ -602,9 +668,9 @@
 
             // Use preloaded element if available (clone to keep cache warm)
             const preloadedList = preloadedVideoElements.get(eventType) || [];
-            const preloadedEntry = preloadedList.find(x => x.url === selected.videoUrl);
+            const preloadedEntry = preloadedList.find(x => x.url === videoUrl);
             const video = document.createElement('video');
-            video.src = selected.videoUrl;
+            video.src = videoUrl;
             video.autoplay = true;
             video.controls = false;
             video.playsInline = true;
@@ -694,13 +760,39 @@
             
             video.addEventListener('ended', cleanupVideo, { once: true });
             video.addEventListener('error', () => {
-                console.error('Error during video playback for', eventType, selected.videoUrl);
+                console.error('Error during video playback for', eventType, {
+                    projectId: selected.projectId,
+                    videoId: selected.videoId,
+                    videoUrl
+                });
                 cleanupVideo();
             }, { once: true });
 
             // Start playback
             tryPlay();
             return true;
+        }
+
+        function playVideoOrShowAlert(alertData) {
+            const eventType = alertData?.eventType;
+            const eventData = alertData?.eventData || null;
+            if (!eventType) {
+                console.warn('playVideoOrShowAlert called without a valid eventType', alertData);
+                showAlert(alertData);
+                return Promise.resolve(false);
+            }
+            return playHeygenVideoForEvent(eventType, eventData)
+                .then(played => {
+                    if (!played) {
+                        showAlert(alertData);
+                    }
+                    return played;
+                })
+                .catch(err => {
+                    console.error(`Failed to play HeyGen video for ${eventType}:`, err);
+                    showAlert(alertData);
+                    return false;
+                });
         }
 
         // Check if event meets the configured conditions
@@ -873,11 +965,8 @@
                 eventType: eventType,
                 eventData: eventData
             };
-            // Try to play Heygen video for this event type first; fallback to text alert
-            const played = playHeygenVideoForEvent(eventType, eventData);
-            if (!played) {
-                showAlert(testData);
-            }
+            // Try to play HeyGen video for this event type first; fallback to text alert
+            playVideoOrShowAlert(testData);
         };
 
         // Helper function to show usage instructions
@@ -932,10 +1021,7 @@
                     };
                     
                     // Test both video and text alert
-                    const played = playHeygenVideoForEvent('channel.cheer', eventData);
-                    if (!played) {
-                        showAlert(testData);
-                    }
+                    playVideoOrShowAlert(testData);
                 }, index * 3000);
             });
         };
@@ -964,10 +1050,7 @@
                     };
                     
                     // Test both video and text alert
-                    const played = playHeygenVideoForEvent('channel.channel_points_custom_reward_redemption', eventData);
-                    if (!played) {
-                        showAlert(testData);
-                    }
+                    playVideoOrShowAlert(testData);
                 }, index * 3000);
             });
         };

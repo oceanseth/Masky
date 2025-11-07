@@ -3,7 +3,7 @@ frameworkVersion: '3.40.0'
 
 provider:
   name: aws
-  runtime: nodejs18.x
+  runtime: nodejs20.x
   stage: ${opt:stage, 'production'}
   region: us-east-1
   environment:

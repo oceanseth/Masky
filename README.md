@@ -19,7 +19,7 @@ AI-powered stream alert system for Twitch streamers featuring lifelike avatars, 
 - Responsive design
 
 ### Backend
-- **Runtime**: Node.js 18.x
+- **Runtime**: Node.js 20.x
 - **Framework**: Serverless Framework (AWS Lambda)
 - **Authentication**: Firebase Admin SDK + Twitch OAuth
 - **Payment Processing**: Stripe
@@ -40,7 +40,7 @@ AI-powered stream alert system for Twitch streamers featuring lifelike avatars, 
 
 Before you begin, ensure you have the following:
 
-- Node.js 18.x or higher
+- Node.js 20.x or higher
 - AWS CLI configured with appropriate credentials
 - Serverless Framework CLI (`npm install -g serverless`)
 - Firebase project with Admin SDK credentials

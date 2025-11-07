@@ -1,5 +1,7 @@
 # Local Development - Quick Start
 
+> **Prerequisite:** Install Node.js 20 LTS (or newer). Several Firebase packages require Node 20+, and the Serverless backend deploys with `nodejs20.x`.
+
 ## Setup (First Time Only)
 
 ### Option A: Auto-Load from AWS SSM (Recommended)

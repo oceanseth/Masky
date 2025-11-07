@@ -1204,6 +1204,30 @@ async function handleHeygenGenerate(event, headers) {
             avatarStyle = 'normal'
         } = body;
 
+        const trainingPendingResponse = ({ trainingStatus, groupDocId, heygenGroupId: responseHeygenGroupId } = {}) => {
+            const statusEndpoint = groupDocId
+                ? `/api/heygen/avatar-group/training-status?group_id=${encodeURIComponent(groupDocId)}`
+                : null;
+            return {
+                statusCode: 202,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: 'training_pending',
+                    message: 'Avatar training is still in progress. Video generation will begin automatically once training completes.',
+                    trainingStatus: trainingStatus?.status || null,
+                    progress: typeof trainingStatus?.progress === 'number' ? trainingStatus.progress : null,
+                    groupId: groupDocId || null,
+                    heygenGroupId: responseHeygenGroupId || null,
+                    retryAfterSeconds: 10,
+                    statusEndpoint,
+                    canPoll: !!statusEndpoint
+                })
+            };
+        };
+
         console.log('🎬 Generate request received:', {
             projectId,
             heygenAvatarId: heygenAvatarId || '(not provided)',
@@ -1314,26 +1338,28 @@ async function handleHeygenGenerate(event, headers) {
                             
                             // If no avatars, check training status
                             if (!groupAvatars || groupAvatars.length === 0) {
-                            console.log('📊 No avatars found, checking training status...');
-                            let trainingStatus = null;
-                            try {
-                                trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
-                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
-                            } catch (statusErr) {
-                                console.log('Could not get training status:', statusErr.message);
-                            }
-                            
-                            // If training is in progress, throw clear error
-                            if (trainingStatus && trainingStatus.status && trainingStatus.status !== 'completed') {
-                                throw new Error(`Avatar training is ${trainingStatus.status}. Please wait for training to complete before generating videos. This typically takes 5-10 minutes. Check status at: http://localhost:3001/api/heygen/avatar-group/training-status?group_id=${avatarGroupIdInput}`);
-                            }
-                            
-                            // If training is completed but no avatars, something went wrong
-                            if (trainingStatus && trainingStatus.status === 'completed') {
-                                throw new Error(`Training is marked as completed but no avatars found in the group. This may indicate a HeyGen API issue. Please try re-uploading the image.`);
-                            }
-                            
-                                // If no training status at all, training was never started
+                                console.log('📊 No avatars found, checking training status...');
+                                let trainingStatus = null;
+                                try {
+                                    trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                    console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                                } catch (statusErr) {
+                                    console.log('Could not get training status:', statusErr.message);
+                                }
+                                
+                                if (trainingStatus && trainingStatus.status && trainingStatus.status !== 'completed') {
+                                    console.log('Avatar training still in progress; returning 202 response to client.');
+                                    return trainingPendingResponse({
+                                        trainingStatus,
+                                        groupDocId: avatarGroupIdInput,
+                                        heygenGroupId
+                                    });
+                                }
+                                
+                                if (trainingStatus && trainingStatus.status === 'completed') {
+                                    throw new Error('Training is marked as completed but no avatars found in the group. This may indicate a HeyGen API issue. Please try re-uploading the image.');
+                                }
+                                
                                 throw new Error('No avatars found and training status unknown. Please ensure the avatar was uploaded correctly and training was initiated.');
                             }
                             
@@ -1397,19 +1423,23 @@ async function handleHeygenGenerate(event, headers) {
                         console.log('Selected avatar from group:', resolvedAvatarId);
                         
                         // Check if avatar needs training
-                        if (selected.status && selected.status !== 'completed') {
-                            console.warn('Avatar may not be fully trained. Status:', selected.status);
-                            // Try to get training status
-                            try {
-                                const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
-                                console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
-                                if (trainingStatus.status && trainingStatus.status !== 'completed') {
-                                    throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
+                                if (selected.status && selected.status !== 'completed') {
+                                    console.warn('Avatar may not be fully trained. Status:', selected.status);
+                                    try {
+                                        const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
+                                        console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
+                                        if (trainingStatus?.status && trainingStatus.status !== 'completed') {
+                                            console.log('Avatar group still training; returning 202 response.');
+                                            return trainingPendingResponse({
+                                                trainingStatus,
+                                                groupDocId: avatarGroupIdInput,
+                                                heygenGroupId
+                                            });
+                                        }
+                                    } catch (trainingErr) {
+                                        console.warn('Could not check training status:', trainingErr.message);
+                                    }
                                 }
-                            } catch (trainingErr) {
-                                console.warn('Could not check training status:', trainingErr.message);
-                            }
-                        }
                     } else {
                         console.error('No avatars found in group:', heygenGroupId);
                     }
@@ -1428,8 +1458,10 @@ async function handleHeygenGenerate(event, headers) {
             // Use avatar groups flow - lookup group for this asset
             const groupsRef = userRef.collection('heygenAvatarGroups');
             const existing = await groupsRef.where('avatarUrl', '==', userAvatarUrl).limit(1).get();
+            let groupDocIdForLegacy = null;
             
             if (!existing.empty) {
+                groupDocIdForLegacy = existing.docs[0].id;
                 heygenGroupId = existing.docs[0].data().avatar_group_id || existing.docs[0].data().groupId;
                 console.log('Found existing group by avatarUrl:', heygenGroupId);
             } else {
@@ -1437,12 +1469,13 @@ async function handleHeygenGenerate(event, headers) {
                 console.log('Creating new avatar group for user:', userId);
                 const groupName = `masky_${userId}`;
                 heygenGroupId = await heygen.createPhotoAvatarGroup(groupName);
-                await groupsRef.add({
+                const createdGroupDoc = await groupsRef.add({
                     userId,
                     avatarUrl: userAvatarUrl,
                     avatar_group_id: heygenGroupId,
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 });
+                groupDocIdForLegacy = createdGroupDoc.id;
                 await heygen.addLooksToPhotoAvatarGroup(heygenGroupId, [{ url: userAvatarUrl }]);
                 
                 // Start training the avatar group (required before avatars can be used)
@@ -1473,12 +1506,16 @@ async function handleHeygenGenerate(event, headers) {
                 // Check if avatar needs training
                 if (selected.status && selected.status !== 'completed') {
                     console.warn('Avatar group avatar may not be fully trained. Status:', selected.status);
-                    // Try to get training status
                     try {
                         const trainingStatus = await heygen.getTrainingJobStatus(heygenGroupId);
                         console.log('Training status:', JSON.stringify(trainingStatus, null, 2));
-                        if (trainingStatus.status && trainingStatus.status !== 'completed') {
-                            throw new Error(`Avatar group is still training. Status: ${trainingStatus.status}. Please wait for training to complete before generating videos.`);
+                        if (trainingStatus?.status && trainingStatus.status !== 'completed') {
+                            console.log('Legacy avatar group still training; returning 202 response.');
+                            return trainingPendingResponse({
+                                trainingStatus,
+                                groupDocId: groupDocIdForLegacy,
+                                heygenGroupId
+                            });
                         }
                     } catch (trainingErr) {
                         // If training status check fails, log but continue

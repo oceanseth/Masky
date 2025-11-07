@@ -13,7 +13,6 @@ export default defineConfig({
         main: './index.html',
         membership: './membership.html',
         twitchevent: './twitchevent.html',
-        about: './about.html'
       }
     }
   },

@@ -1193,7 +1193,7 @@ async function handleHeygenGenerate(event, headers) {
             body = event.body || {};
         }
 
-        const {
+        let {
             projectId,
             voiceUrl: voiceUrlInput,
             heygenAvatarId,  // This might be a HeyGen avatar ID OR a Firestore asset ID

@@ -54,8 +54,8 @@ export const config = {
     // Stripe Price IDs (not Product IDs)
     // Get these from Stripe Dashboard -> Products -> Click on product -> Copy the Price ID (starts with price_)
     prices: {
-      standard: 'price_1SJV5lJwtIxwToTZ1YxaxW78', // Update with your actual Standard plan price ID
-      pro: 'price_1SJV61JwtIxwToTZmIKUYjEu'      // Update with your actual Pro plan price ID
+      standard: 'price_1SQyPfJwtIxwToTZ7hgQGdRF', // Update with your actual Standard plan price ID
+      pro: 'price_1SQyR0JwtIxwToTZCbDhQUu7'      // Update with your actual Pro plan price ID
     },
     // Product IDs (for reference)
     products: {

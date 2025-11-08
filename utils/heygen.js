@@ -535,7 +535,39 @@ class HeygenClient {
     async listAvatarsInAvatarGroup(groupId) {
         const path = `/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`;
         const json = await this.requestJson(path, { method: 'GET' });
-        return json?.data?.avatars || [];
+
+        if (!json) {
+            return [];
+        }
+
+        if (json?.error) {
+            console.error('[listAvatarsInAvatarGroup] HeyGen API error:', json.error);
+            return [];
+        }
+
+        const data = json?.data ?? json;
+
+        if (Array.isArray(data?.avatars)) {
+            return data.avatars;
+        }
+
+        if (Array.isArray(data?.avatar_list)) {
+            return data.avatar_list;
+        }
+
+        if (Array.isArray(data)) {
+            return data;
+        }
+
+        if (Array.isArray(json?.avatars)) {
+            return json.avatars;
+        }
+
+        if (Array.isArray(json?.avatar_list)) {
+            return json.avatar_list;
+        }
+
+        return [];
     }
 
     async trainPhotoAvatarGroup(groupId) {

@@ -64,7 +64,10 @@ class ProjectWizard {
             avatarFile: null,
             twitchSubscription: null,
             videoUrl: '',
-            projectId: null
+            projectId: null,
+            avatarWidth: null,
+            avatarHeight: null,
+            avatarAspectRatio: null
         };
         
         this.mediaRecorder = null;
@@ -535,6 +538,9 @@ class ProjectWizard {
             updates.avatarGroupId = this.projectData.avatarGroupId || null;
             updates.avatarAssetId = this.projectData.avatarAssetId || null;
             updates.avatarGroupName = this.projectData.avatarGroupName || null;
+            updates.avatarWidth = this.projectData.avatarWidth || null;
+            updates.avatarHeight = this.projectData.avatarHeight || null;
+            updates.avatarAspectRatio = this.projectData.avatarAspectRatio || null;
             hasUpdates = true;
         }
 
@@ -1014,17 +1020,25 @@ class ProjectWizard {
         
         // Show preview
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             const previewImg = document.getElementById('previewImg');
             const imagePreview = document.getElementById('imagePreview');
             const uploadArea = document.getElementById('uploadArea');
             
-            if (previewImg) previewImg.src = e.target.result;
+            const imageSrc = e.target.result;
+            if (previewImg) previewImg.src = imageSrc;
             if (imagePreview) imagePreview.style.display = 'block';
             if (uploadArea) uploadArea.style.display = 'none';
 
+            try {
+                const { width, height } = await this.getImageDimensions(imageSrc);
+                this.setProjectAvatarDimensions(width, height);
+            } catch (dimensionErr) {
+                console.warn('Unable to determine uploaded avatar dimensions:', dimensionErr?.message || dimensionErr);
+            }
+
             // Immediately upload and save the avatar; no separate confirmation button
-            this.saveAvatar();
+            await this.saveAvatar();
         };
         reader.readAsDataURL(file);
         
@@ -1057,6 +1071,25 @@ class ProjectWizard {
             });
             const imageUrl = await getDownloadURL(storageRef);
 
+            // Determine avatar dimensions
+            let assetWidth = this.projectData.avatarWidth;
+            let assetHeight = this.projectData.avatarHeight;
+            if (!Number.isFinite(assetWidth) || assetWidth <= 0 || !Number.isFinite(assetHeight) || assetHeight <= 0) {
+                try {
+                    const dims = await this.getImageDimensions(imageUrl);
+                    assetWidth = dims.width;
+                    assetHeight = dims.height;
+                    this.setProjectAvatarDimensions(assetWidth, assetHeight);
+                } catch (dimensionErr) {
+                    console.warn('Failed to resolve avatar dimensions after upload:', dimensionErr?.message || dimensionErr);
+                    assetWidth = null;
+                    assetHeight = null;
+                }
+            }
+            const aspectRatio = (Number.isFinite(assetWidth) && Number.isFinite(assetHeight) && assetWidth > 0 && assetHeight > 0)
+                ? Number((assetWidth / assetHeight).toFixed(6))
+                : null;
+
             // Save asset to Firestore
             const { db, collection, addDoc, doc, updateDoc } = await import('./firebase.js');
             const assetsRef = collection(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets');
@@ -1064,13 +1097,20 @@ class ProjectWizard {
                 url: imageUrl,
                 fileName: this.projectData.avatarFile.name,
                 userId: user.uid,
-                createdAt: new Date()
+                width: assetWidth ? Math.round(assetWidth) : null,
+                height: assetHeight ? Math.round(assetHeight) : null,
+                aspectRatio,
+                createdAt: new Date(),
+                updatedAt: new Date()
             });
             const assetId = assetDocRef.id;
             
             // Update the group's avatarUrl
             await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), { 
-                avatarUrl: imageUrl, 
+                avatarUrl: imageUrl,
+                avatarWidth: assetWidth ? Math.round(assetWidth) : null,
+                avatarHeight: assetHeight ? Math.round(assetHeight) : null,
+                avatarAspectRatio: aspectRatio,
                 updatedAt: new Date() 
             });
 
@@ -1099,7 +1139,7 @@ class ProjectWizard {
             if (group) {
                 const asset = group.assets.find(a => a.id === assetId);
                 if (asset) {
-                    this.selectAvatarAsset(groupId, assetId, imageUrl, group.displayName);
+                    await this.selectAvatarAsset(groupId, assetId, imageUrl, group.displayName);
                 }
             }
             
@@ -1701,7 +1741,9 @@ class ProjectWizard {
         
         // If a selection exists, update the preview
         if (selectedUrl) {
-            this.selectAvatarByUrl(selectedUrl);
+            this.selectAvatarByUrl(selectedUrl).catch(err => {
+                console.warn('Failed to auto-select avatar by URL:', err?.message || err);
+            });
         }
     }
     
@@ -1711,13 +1753,122 @@ class ProjectWizard {
         })[s]);
     }
 
-    selectAvatarAsset(groupId, assetId, url, groupName) {
+    setProjectAvatarDimensions(width, height) {
+        const parsedWidth = Number(width);
+        const parsedHeight = Number(height);
+        if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight) || parsedWidth <= 0 || parsedHeight <= 0) {
+            return;
+        }
+
+        const roundedWidth = Math.round(parsedWidth);
+        const roundedHeight = Math.round(parsedHeight);
+        this.projectData.avatarWidth = roundedWidth;
+        this.projectData.avatarHeight = roundedHeight;
+
+        if (roundedHeight > 0) {
+            const ratio = roundedWidth / roundedHeight;
+            if (Number.isFinite(ratio) && ratio > 0) {
+                this.projectData.avatarAspectRatio = Number(ratio.toFixed(6));
+            }
+        }
+    }
+
+    async getImageDimensions(src) {
+        if (!src) {
+            throw new Error('Image source is required to determine dimensions');
+        }
+
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const width = img.naturalWidth || img.width;
+                const height = img.naturalHeight || img.height;
+                if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+                    resolve({ width, height });
+                } else {
+                    reject(new Error('Image dimensions could not be determined'));
+                }
+            };
+            img.onerror = (err) => {
+                reject(err instanceof Error ? err : new Error('Failed to load image for dimension detection'));
+            };
+
+            // Allow naturalWidth access when loading from remote hosts
+            if (typeof src === 'string' && !src.startsWith('data:')) {
+                img.crossOrigin = 'anonymous';
+            }
+
+            img.src = src;
+        });
+    }
+
+    async persistAssetDimensions(groupId, assetId, width, height) {
+        try {
+            if (!groupId || !assetId) return;
+            const parsedWidth = Number(width);
+            const parsedHeight = Number(height);
+            if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight) || parsedWidth <= 0 || parsedHeight <= 0) {
+                return;
+            }
+
+            const user = getCurrentUser();
+            if (!user) return;
+
+            const { db, doc, updateDoc } = await import('./firebase.js');
+            const assetRef = doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId, 'assets', assetId);
+
+            await updateDoc(assetRef, {
+                width: Math.round(parsedWidth),
+                height: Math.round(parsedHeight),
+                aspectRatio: Number((parsedWidth / parsedHeight).toFixed(6)),
+                updatedAt: new Date()
+            });
+        } catch (err) {
+            console.warn('Failed to persist asset dimensions to Firestore:', err?.message || err);
+        }
+    }
+
+    async ensureAssetDimensions(groupId, asset, url) {
+        if (asset && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0) {
+            this.setProjectAvatarDimensions(asset.width, asset.height);
+            return asset;
+        }
+
+        try {
+            const { width, height } = await this.getImageDimensions(url);
+            this.setProjectAvatarDimensions(width, height);
+
+            if (asset) {
+                asset.width = Math.round(width);
+                asset.height = Math.round(height);
+                asset.aspectRatio = this.projectData.avatarAspectRatio || null;
+            }
+
+            if (groupId && asset?.id) {
+                await this.persistAssetDimensions(groupId, asset.id, width, height);
+            }
+        } catch (err) {
+            console.warn('Could not determine avatar dimensions:', err?.message || err);
+        }
+
+        return asset;
+    }
+
+    async selectAvatarAsset(groupId, assetId, url, groupName) {
         this.projectData.avatarUrl = url;
         this.projectData.avatarGroupId = groupId;
         this.projectData.avatarAssetId = assetId;
         this.projectData.avatarGroupName = groupName;
         this.dirtyFlags.avatar = true;
-        
+
+        let selectedAsset = null;
+        if (this.avatarGroups) {
+            const group = this.avatarGroups.find(g => g.id === groupId);
+            if (group) {
+                selectedAsset = group.assets.find(a => a.id === assetId) || null;
+            }
+        }
+
         // Show preview section
         const imagePreview = document.getElementById('imagePreview');
         const uploadArea = document.getElementById('uploadArea');
@@ -1737,27 +1888,29 @@ class ProjectWizard {
             selectedCard.style.borderColor = '#16a34a';
         }
         
+        await this.ensureAssetDimensions(groupId, selectedAsset || { id: assetId }, url);
+
         this.validateStep3();
     }
 
-    selectAvatar(avatarId, url) {
+    async selectAvatar(avatarId, url) {
         // Legacy method - redirect to new method
-        this.selectAvatarAsset('', avatarId, url, 'Unknown Group');
+        await this.selectAvatarAsset('', avatarId, url, 'Unknown Group');
     }
 
-    selectAvatarByUrl(url) {
+    async selectAvatarByUrl(url) {
         // Find the asset with this URL
         if (this.avatarGroups) {
             for (const group of this.avatarGroups) {
                 const asset = group.assets.find(a => a.url === url);
                 if (asset) {
-                    this.selectAvatarAsset(group.id, asset.id, url, group.displayName);
+                    await this.selectAvatarAsset(group.id, asset.id, url, group.displayName);
                     return;
                 }
             }
         }
         // Fallback to legacy method
-        this.selectAvatar('', url);
+        await this.selectAvatar('', url);
     }
 
     /**
@@ -2294,6 +2447,14 @@ class ProjectWizard {
                 avatarUrl: this.projectData.avatarUrl || null
             };
 
+            if (Number.isFinite(this.projectData.avatarWidth) && Number.isFinite(this.projectData.avatarHeight)) {
+                requestPayload.width = this.projectData.avatarWidth;
+                requestPayload.height = this.projectData.avatarHeight;
+            }
+            if (Number.isFinite(this.projectData.avatarAspectRatio)) {
+                requestPayload.aspectRatio = this.projectData.avatarAspectRatio;
+            }
+
             // Attempt generation, waiting for avatar training if necessary
             while (true) {
                 const idToken = await user.getIdToken();
@@ -2524,6 +2685,9 @@ class ProjectWizard {
             avatarGroupId: this.projectData.avatarGroupId || null,
             avatarAssetId: this.projectData.avatarAssetId || null,
             avatarGroupName: this.projectData.avatarGroupName || null,
+            avatarWidth: this.projectData.avatarWidth || null,
+            avatarHeight: this.projectData.avatarHeight || null,
+            avatarAspectRatio: this.projectData.avatarAspectRatio || null,
             videoUrl: null,
             heygenVideoId: null,
             alertConfig: this.projectData.alertConfig || {},
@@ -2826,9 +2990,10 @@ class ProjectWizard {
 
 // Global functions for HTML onclick handlers
 window.selectAvatarAsset = function(groupId, assetId, url, groupName) {
-    if (window.projectWizard) {
-        window.projectWizard.selectAvatarAsset(groupId, assetId, url, groupName);
-    }
+    if (!window.projectWizard) return;
+    window.projectWizard.selectAvatarAsset(groupId, assetId, url, groupName).catch(err => {
+        console.warn('Global selectAvatarAsset handler failed:', err?.message || err);
+    });
 };
 
 window.startNewRecording = function() {

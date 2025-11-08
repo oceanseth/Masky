@@ -126,8 +126,8 @@ export async function renderAvatars(container) {
             const addBtn = card.querySelector('[data-role="upload-to-group"]');
             deleteBtn.onclick = () => deleteGroup(g.id, g.displayName || 'Untitled Avatar');
             addBtn.onclick = () => openUploadForGroup(g.id);
-            // Sync and load assets
-            syncAndLoadAssets(g.id);
+            // Load assets directly from Firestore to avoid unnecessary sync round-trips
+            loadAssets(g.id);
         });
     }
 

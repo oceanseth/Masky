@@ -1199,10 +1199,25 @@ async function handleHeygenGenerate(event, headers) {
             heygenAvatarId,  // This might be a HeyGen avatar ID OR a Firestore asset ID
             userAvatarUrl: userAvatarUrlInput,
             avatarGroupId: avatarGroupIdInput,
-            width = 720,   // Default to 720p for HeyGen free/basic tier compatibility
-            height = 1280, // Portrait orientation
-            avatarStyle = 'normal'
+            width: rawWidth,
+            height: rawHeight,
+            avatarStyle = 'normal',
+            aspectRatio: rawAspectRatio
         } = body;
+
+        let width = Number(rawWidth);
+        let height = Number(rawHeight);
+        if (!Number.isFinite(width) || width <= 0) {
+            width = 720;   // Default to 720p width for HeyGen free/basic tier compatibility
+        }
+        if (!Number.isFinite(height) || height <= 0) {
+            height = 1280; // Default to portrait orientation
+        }
+
+        let requestedAspectRatio = Number(rawAspectRatio);
+        if (!Number.isFinite(requestedAspectRatio) || requestedAspectRatio <= 0) {
+            requestedAspectRatio = null;
+        }
 
         const trainingPendingResponse = ({ trainingStatus, groupDocId, heygenGroupId: responseHeygenGroupId } = {}) => {
             const statusEndpoint = groupDocId
@@ -1313,17 +1328,26 @@ async function handleHeygenGenerate(event, headers) {
                         });
                         
                         // If we have the HeyGen photo avatar ID saved, use it directly!
-                        if (assetData.heygenPhotoAvatarId) {
+                            if (assetData.heygenPhotoAvatarId) {
                             resolvedAvatarId = assetData.heygenPhotoAvatarId;
                             console.log('✅ Using saved HeyGen photo avatar ID:', resolvedAvatarId);
                             console.log('   Status:', assetData.heygenStatus || 'unknown');
                             
                             // Use the asset's original dimensions if available
-                            if (assetData.width && assetData.height) {
-                                width = assetData.width;
-                                height = assetData.height;
-                                console.log('   Using asset dimensions:', width, 'x', height);
-                            }
+                                if (assetData.width && assetData.height) {
+                                    const assetWidth = Number(assetData.width);
+                                    const assetHeight = Number(assetData.height);
+                                    if (Number.isFinite(assetWidth) && Number.isFinite(assetHeight) && assetWidth > 0 && assetHeight > 0) {
+                                        width = assetWidth;
+                                        height = assetHeight;
+                                        console.log('   Using asset dimensions:', width, 'x', height);
+                                        if (assetData.aspectRatio && Number.isFinite(Number(assetData.aspectRatio)) && Number(assetData.aspectRatio) > 0) {
+                                            requestedAspectRatio = Number(assetData.aspectRatio);
+                                        } else {
+                                            requestedAspectRatio = Number((width / height).toFixed(6));
+                                        }
+                                    }
+                                }
                             
                             // Check if the photo avatar is ready
                             if (assetData.heygenStatus === 'pending') {
@@ -1581,6 +1605,29 @@ async function handleHeygenGenerate(event, headers) {
         
         const planMaxDimension = hasSubscription ? MAX_DIMENSION_1080P : MAX_DIMENSION_720P;
         const effectiveMaxDimension = Math.min(userMaxDimension, planMaxDimension);
+
+        if (requestedAspectRatio && Number.isFinite(requestedAspectRatio) && requestedAspectRatio > 0) {
+            const currentRatio = Number.isFinite(width) && Number.isFinite(height) && height !== 0
+                ? width / height
+                : null;
+
+            if (!Number.isFinite(currentRatio) || Math.abs(currentRatio - requestedAspectRatio) > 0.01) {
+                const longSide = Math.max(width, height, effectiveMaxDimension);
+                if (requestedAspectRatio >= 1) {
+                    width = longSide;
+                    height = Math.max(1, Math.round(longSide / requestedAspectRatio));
+                } else {
+                    height = longSide;
+                    width = Math.max(1, Math.round(longSide * requestedAspectRatio));
+                }
+                console.log('🔁 Adjusted dimensions to honor requested aspect ratio:', {
+                    requestedAspectRatio,
+                    adjustedWidth: width,
+                    adjustedHeight: height
+                });
+            }
+        }
+
         const originalWidth = width;
         const originalHeight = height;
         const normalizedDimensions = heygen.normalizeDimensions(width, height, effectiveMaxDimension, {
@@ -1590,10 +1637,13 @@ async function handleHeygenGenerate(event, headers) {
         
         width = normalizedDimensions.width;
         height = normalizedDimensions.height;
+        requestedAspectRatio = Number.isFinite(width) && Number.isFinite(height) && height !== 0
+            ? Number((width / height).toFixed(6))
+            : requestedAspectRatio;
         
         console.log('📊 Subscription tier:', subscriptionTier, '→ User max dimension:', userMaxDimension);
         console.log('🏷️ Assumed HeyGen plan max dimension:', planMaxDimension, '→ Effective cap:', effectiveMaxDimension);
-        console.log('📐 Original dimensions:', originalWidth, 'x', originalHeight);
+        console.log('📐 Original dimensions:', originalWidth, 'x', originalHeight, requestedAspectRatio ? `(aspect ${requestedAspectRatio})` : '');
         
         if (normalizedDimensions.wasAdjusted) {
             console.log('📐 Scaled down:', originalWidth, 'x', originalHeight, '→', width, 'x', height, '(preserving aspect ratio)');
@@ -1605,7 +1655,8 @@ async function handleHeygenGenerate(event, headers) {
             avatarId: resolvedAvatarId,
             isPhotoAvatar: isPhotoAvatar,
             avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
-            dimensions: `${width}x${height}`
+            dimensions: `${width}x${height}`,
+            aspectRatio: requestedAspectRatio || 'n/a'
         });
         
         const videoId = await heygen.generateVideoWithAudio({

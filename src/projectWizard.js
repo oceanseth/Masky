@@ -1,6 +1,14 @@
 import { getCurrentUser } from './firebase.js';
 import { config } from './config.js';
 
+function sanitizeStorageUid(uid = '') {
+    return String(uid).replace(/[/:.]/g, '_');
+}
+
+function buildUserStorageBasePath(uid = '') {
+    return `userData/${sanitizeStorageUid(uid)}`;
+}
+
 /**
  * Project Wizard - Single consolidated module for creating and editing projects
  */
@@ -56,7 +64,7 @@ class ProjectWizard {
         
         this.wizardId = `wizard_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         this.currentStep = 1;
-        this.projectData = this.options.projectData || {
+        this.projectData = {
             platform: 'twitch', // Default to Twitch
             projectName: '',
             eventType: 'channel.follow', // Set default value
@@ -67,7 +75,11 @@ class ProjectWizard {
             projectId: null,
             avatarWidth: null,
             avatarHeight: null,
-            avatarAspectRatio: null
+            avatarAspectRatio: null,
+            projectType: 'generate',
+            uploadedVideoFile: null,
+            videoStoragePath: null,
+            ...this.options.projectData
         };
         
         this.mediaRecorder = null;
@@ -80,7 +92,9 @@ class ProjectWizard {
         this.dirtyFlags = {
             commandTrigger: false,
             voice: false,
-            avatar: false
+            avatar: false,
+            video: false,
+            projectType: false
         };
     }
 
@@ -169,6 +183,25 @@ class ProjectWizard {
                         </div>
                         <div class="step-content">
                             <div class="form-group">
+                                <label>Project Type:</label>
+                                <div class="project-type-options">
+                                    <label class="project-type-option">
+                                        <input type="radio" name="projectType" value="generate" checked>
+                                        <div class="option-copy">
+                                            <div class="option-title">Generate from Avatar and Voice</div>
+                                            <div class="option-description">Use AI voice and avatar to generate your alert video.</div>
+                                        </div>
+                                    </label>
+                                    <label class="project-type-option">
+                                        <input type="radio" name="projectType" value="upload">
+                                        <div class="option-copy">
+                                            <div class="option-title">Upload Video</div>
+                                            <div class="option-description">Use a pre-recorded video for this alert.</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label for="platformSelect">Select your streaming platform:</label>
                                 <select id="platformSelect" class="form-select">
                                     <option value="twitch" selected>Twitch</option>
@@ -197,6 +230,30 @@ class ProjectWizard {
                             <div class="form-group" id="commandTriggerGroup" style="display: none;">
                                 <label for="commandTriggerInput">Command Trigger (text after !maskyai):</label>
                                 <input type="text" id="commandTriggerInput" class="form-input" placeholder="e.g., bacon">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 (Upload Flow): Upload Video -->
+                    <div class="wizard-step" id="uploadStep" style="display: none;">
+                        <div class="step-header">
+                            <div class="step-number">2</div>
+                            <div class="step-title">Upload Your Video</div>
+                        </div>
+                        <div class="step-content">
+                            <div class="video-upload">
+                                <div class="upload-area" id="videoUploadArea">
+                                    <div class="upload-icon">🎬</div>
+                                    <p>Drag & drop a video here or click to browse</p>
+                                    <input type="file" id="videoFile" accept="video/*" style="display: none;">
+                                </div>
+                                <div class="video-preview" id="videoPreview" style="display: none;">
+                                    <video id="previewVideo" controls playsinline style="width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4);"></video>
+                                    <div class="video-actions" style="margin-top: 12px; display: flex; gap: 8px;">
+                                        <button class="btn btn-secondary" type="button" onclick="projectWizard.retryVideoUpload()">Choose Different</button>
+                                    </div>
+                                    <div class="video-status" id="videoStatus" style="margin-top: 8px; color: rgba(255,255,255,0.7); font-size: 0.9rem;"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -373,6 +430,14 @@ class ProjectWizard {
             platformSelect.value = 'twitch';
             this.projectData.platform = 'twitch';
         }
+
+        // Set default project type
+        const projectType = this.projectData.projectType || 'generate';
+        this.projectData.projectType = projectType;
+        const projectTypeInputs = document.querySelectorAll('input[name="projectType"]');
+        projectTypeInputs.forEach(input => {
+            input.checked = input.value === projectType;
+        });
         
         // Set default event type
         const eventTypeSelect = document.getElementById('eventType');
@@ -392,6 +457,7 @@ class ProjectWizard {
         // Trigger validation after setting defaults
         setTimeout(() => {
             this.validateStep1();
+            this.updateWorkflowForProjectType();
         }, 100);
     }
 
@@ -407,6 +473,26 @@ class ProjectWizard {
                 this.validateStep1();
             });
         }
+
+        // Project type selection
+        const projectTypeInputs = document.querySelectorAll('input[name="projectType"]');
+        projectTypeInputs.forEach(input => {
+            input.addEventListener('change', (e) => {
+                if (!e.target.checked) return;
+                const newType = e.target.value;
+                if (this.projectData.projectType !== newType) {
+                    this.projectData.projectType = newType;
+                    this.dirtyFlags.projectType = true;
+                    
+                    if (newType === 'upload') {
+                        // Reset generation-specific fields
+                        this.projectData.heygenVideoId = null;
+                    }
+                }
+                this.updateWorkflowForProjectType();
+                this.validateStep1();
+            });
+        });
 
         // Project name
         const projectName = document.getElementById('projectName');
@@ -462,6 +548,16 @@ class ProjectWizard {
             avatarFile.addEventListener('change', (e) => this.handleFileSelect(e));
         }
 
+        // Video upload (upload flow)
+        const videoUploadArea = document.getElementById('videoUploadArea');
+        const videoFileInput = document.getElementById('videoFile');
+        if (videoUploadArea && videoFileInput) {
+            videoUploadArea.addEventListener('click', () => videoFileInput.click());
+            videoUploadArea.addEventListener('dragover', (e) => this.handleVideoDragOver(e));
+            videoUploadArea.addEventListener('drop', (e) => this.handleVideoDrop(e));
+            videoFileInput.addEventListener('change', (e) => this.handleVideoFileSelect(e));
+        }
+
         // Video URL input
         const videoUrl = document.getElementById('videoUrl');
         if (videoUrl) {
@@ -483,12 +579,18 @@ class ProjectWizard {
         const eventType = document.getElementById('eventType');
         const videoUrl = document.getElementById('videoUrl');
         const commandTriggerInput = document.getElementById('commandTriggerInput');
+        const projectTypeInputs = document.querySelectorAll('input[name="projectType"]');
 
         if (platformSelect) platformSelect.value = this.projectData.platform || '';
         if (projectName) projectName.value = this.projectData.projectName || '';
         if (eventType) eventType.value = this.projectData.eventType || 'channel.follow';
         if (videoUrl) videoUrl.value = this.projectData.videoUrl || '';
         if (commandTriggerInput) commandTriggerInput.value = this.projectData.commandTrigger || '';
+        const projectType = this.projectData.projectType || 'generate';
+        this.projectData.projectType = projectType;
+        projectTypeInputs.forEach(input => {
+            input.checked = input.value === projectType;
+        });
         
         // Ensure projectData has the correct values
         this.projectData.eventType = this.projectData.eventType || 'channel.follow';
@@ -506,6 +608,8 @@ class ProjectWizard {
 
         // Validate step 1
         this.validateStep1();
+        this.updateWorkflowForProjectType();
+        this.renderUploadVideoState();
     }
 
     /**
@@ -520,6 +624,11 @@ class ProjectWizard {
         // Build update object with only dirty fields
         const updates = { updatedAt: new Date() };
         let hasUpdates = false;
+
+        if (this.dirtyFlags.projectType) {
+            updates.projectType = this.projectData.projectType || 'generate';
+            hasUpdates = true;
+        }
 
         if (this.dirtyFlags.commandTrigger) {
             updates.commandTrigger = this.projectData.commandTrigger || null;
@@ -544,6 +653,13 @@ class ProjectWizard {
             hasUpdates = true;
         }
 
+        if (this.dirtyFlags.video) {
+            updates.videoUrl = this.projectData.videoUrl || null;
+            updates.videoStoragePath = this.projectData.videoStoragePath || null;
+            updates.heygenVideoId = this.projectData.heygenVideoId || null;
+            hasUpdates = true;
+        }
+
         // Only update if there are dirty fields
         if (hasUpdates) {
             try {
@@ -552,9 +668,11 @@ class ProjectWizard {
                 await updateDoc(projectRef, updates);
                 
                 // Clear dirty flags after successful persistence
+                if (this.dirtyFlags.projectType) this.dirtyFlags.projectType = false;
                 if (this.dirtyFlags.commandTrigger) this.dirtyFlags.commandTrigger = false;
                 if (this.dirtyFlags.voice) this.dirtyFlags.voice = false;
                 if (this.dirtyFlags.avatar) this.dirtyFlags.avatar = false;
+                if (this.dirtyFlags.video) this.dirtyFlags.video = false;
                 
                 console.log('Persisted dirty fields to project:', updates);
             } catch (error) {
@@ -567,21 +685,89 @@ class ProjectWizard {
     /**
      * Step Navigation
      */
+    getMaxStep() {
+        return this.projectData.projectType === 'upload' ? 2 : 5;
+    }
+
+    getStepIdForNumber(stepNumber) {
+        if (stepNumber === 1) return 'step1';
+        if (this.projectData.projectType === 'upload') {
+            if (stepNumber === 2) return 'uploadStep';
+            return null;
+        }
+
+        const map = {
+            2: 'step2',
+            3: 'step3',
+            4: 'step4',
+            5: 'step5'
+        };
+        return map[stepNumber] || null;
+    }
+
+    updateWorkflowForProjectType() {
+        const type = this.projectData.projectType || 'generate';
+        const uploadStep = document.getElementById('uploadStep');
+        const generateStepIds = ['step2', 'step3', 'step4', 'step5'];
+        const generateSteps = generateStepIds
+            .map(id => document.getElementById(id))
+            .filter(Boolean);
+
+        if (type === 'upload') {
+            if (uploadStep) {
+                uploadStep.style.display = 'block';
+            }
+            generateSteps.forEach(step => {
+                step.style.display = 'none';
+                step.classList.remove('active');
+            });
+
+            // Reset to a valid step within the upload flow
+            if (this.currentStep > this.getMaxStep()) {
+                this.currentStep = this.getMaxStep();
+            }
+            this.renderUploadVideoState();
+        } else {
+            if (uploadStep) {
+                uploadStep.style.display = 'none';
+                uploadStep.classList.remove('active');
+            }
+            generateSteps.forEach(step => {
+                step.style.display = 'block';
+            });
+
+            if (this.currentStep > this.getMaxStep()) {
+                this.currentStep = this.getMaxStep();
+            }
+            if (uploadStep) {
+                const videoStatus = document.getElementById('videoStatus');
+                if (videoStatus) {
+                    videoStatus.textContent = '';
+                }
+            }
+        }
+
+        this.showStep(this.currentStep);
+        this.updateNavigationButtons();
+    }
+
     async nextStep() {
         if (this.validateCurrentStep()) {
             // Persist dirty fields before moving to next step
             await this.persistDirtyFields();
             
-            if (this.currentStep < 5) {
+            if (this.currentStep < this.getMaxStep()) {
                 this.currentStep++;
                 this.showStep(this.currentStep);
                 this.updateNavigationButtons();
                 
-                // Auto-execute step actions
-                if (this.currentStep === 4) {
-                    this.connectToTwitch();
-                } else if (this.currentStep === 5) {
-                    this.generateContent();
+                // Auto-execute step actions for generate flow only
+                if (this.projectData.projectType !== 'upload') {
+                    if (this.currentStep === 4) {
+                        this.connectToTwitch();
+                    } else if (this.currentStep === 5) {
+                        this.generateContent();
+                    }
                 }
             }
         }
@@ -602,13 +788,17 @@ class ProjectWizard {
         });
         
         // Show current step
-        const stepElement = document.getElementById(`step${stepNumber}`);
+        const stepId = this.getStepIdForNumber(stepNumber);
+        const stepElement = stepId ? document.getElementById(stepId) : null;
         if (stepElement) {
             stepElement.classList.add('active');
+            stepElement.style.display = 'block';
         }
         
         // Handle step-specific logic
-        if (stepNumber === 2) {
+        if (this.projectData.projectType === 'upload' && stepNumber === 2) {
+            this.validateUploadStep();
+        } else if (stepNumber === 2) {
             // Ensure voice management is properly initialized for step 2
             this.initializeVoiceManagement();
         } else if (stepNumber === 3) {
@@ -650,25 +840,43 @@ class ProjectWizard {
         const prevBtn = document.getElementById('prevBtn');
         const nextBtn = document.getElementById('nextBtn');
         const finishBtn = document.getElementById('finishBtn');
+        const maxStep = this.getMaxStep();
 
         if (prevBtn) {
             prevBtn.style.display = this.currentStep > 1 ? 'block' : 'none';
         }
         
-        if (this.currentStep === 5) {
+        if (this.currentStep === maxStep) {
             if (nextBtn) {
                 nextBtn.style.display = 'none';
             }
             if (finishBtn) {
                 finishBtn.style.display = 'block';
             }
+            this.updateFinishButtonState();
         } else {
             if (nextBtn) {
                 nextBtn.style.display = 'block';
             }
             if (finishBtn) {
                 finishBtn.style.display = 'none';
+                finishBtn.disabled = false;
+                finishBtn.style.opacity = '1';
             }
+        }
+    }
+
+    updateFinishButtonState() {
+        const finishBtn = document.getElementById('finishBtn');
+        if (!finishBtn) return;
+
+        if (this.projectData.projectType === 'upload') {
+            const isValid = this.validateUploadStep(true);
+            finishBtn.disabled = !isValid;
+            finishBtn.style.opacity = isValid ? '1' : '0.5';
+        } else {
+            finishBtn.disabled = false;
+            finishBtn.style.opacity = '1';
         }
     }
 
@@ -680,8 +888,14 @@ class ProjectWizard {
             case 1:
                 return this.validateStep1();
             case 2:
+                if (this.projectData.projectType === 'upload') {
+                    return this.validateUploadStep();
+                }
                 return this.validateStep2();
             case 3:
+                if (this.projectData.projectType === 'upload') {
+                    return true;
+                }
                 return this.validateStep3();
             case 4:
                 return true; // Auto-executed
@@ -717,6 +931,18 @@ class ProjectWizard {
 
     validateStep3() {
         return this.projectData.avatarFile !== null || this.projectData.avatarUrl !== null;
+    }
+
+    validateUploadStep(silent = false) {
+        const hasVideo = Boolean(this.projectData.videoUrl);
+        if (!silent) {
+            const finishBtn = document.getElementById('finishBtn');
+            if (finishBtn) {
+                finishBtn.disabled = !hasVideo;
+                finishBtn.style.opacity = hasVideo ? '1' : '0.5';
+            }
+        }
+        return hasVideo;
     }
 
     /**
@@ -1045,6 +1271,190 @@ class ProjectWizard {
         this.validateStep3();
     }
 
+    handleVideoDragOver(e) {
+        e.preventDefault();
+        if (e.currentTarget) {
+            e.currentTarget.style.borderColor = '#c084fc';
+        }
+    }
+
+    handleVideoDrop(e) {
+        e.preventDefault();
+        if (e.currentTarget) {
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+        }
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            this.handleVideoFile(files[0]);
+        }
+    }
+
+    handleVideoFileSelect(e) {
+        const file = e.target.files?.[0];
+        if (file) {
+            this.handleVideoFile(file);
+        }
+    }
+
+    async handleVideoFile(file) {
+        if (!file.type.startsWith('video/')) {
+            alert('Please select a video file.');
+            return;
+        }
+
+        this.projectData.uploadedVideoFile = file;
+
+        const videoUploadArea = document.getElementById('videoUploadArea');
+        const videoPreview = document.getElementById('videoPreview');
+        const previewVideo = document.getElementById('previewVideo');
+        const videoStatus = document.getElementById('videoStatus');
+
+        if (videoUploadArea) {
+            videoUploadArea.style.display = 'none';
+        }
+
+        if (videoPreview) {
+            videoPreview.style.display = 'block';
+        }
+
+        if (previewVideo) {
+            previewVideo.src = URL.createObjectURL(file);
+            previewVideo.load();
+        }
+
+        if (videoStatus) {
+            videoStatus.textContent = 'Uploading video...';
+        }
+
+        try {
+            const videoUrl = await this.saveUploadedVideo(file);
+            this.projectData.videoUrl = videoUrl;
+            this.projectData.heygenVideoId = null;
+            this.dirtyFlags.video = true;
+
+            if (previewVideo) {
+                previewVideo.src = videoUrl;
+                previewVideo.load();
+            }
+
+            if (videoStatus) {
+                videoStatus.textContent = 'Upload complete! Preview your video above.';
+            }
+
+            this.validateUploadStep();
+        } catch (error) {
+            console.error('Error uploading video:', error);
+            if (videoStatus) {
+                videoStatus.textContent = 'Upload failed. Please try again.';
+            }
+            alert('Failed to upload video: ' + error.message);
+            this.retryVideoUpload();
+        }
+    }
+
+    async saveUploadedVideo(file) {
+        const user = getCurrentUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+        const storage = getStorage();
+        const extension = (file.name.split('.').pop() || 'mp4').toLowerCase();
+        const objectPath = `${buildUserStorageBasePath(user.uid)}/videos/video_${Date.now()}.${extension}`;
+        const storageRef = ref(storage, objectPath);
+
+        await uploadBytes(storageRef, file, {
+            contentType: file.type || 'video/mp4'
+        });
+
+        const url = await getDownloadURL(storageRef);
+        this.projectData.videoStoragePath = objectPath;
+        return url;
+    }
+
+    retryVideoUpload() {
+        const videoUploadArea = document.getElementById('videoUploadArea');
+        const videoPreview = document.getElementById('videoPreview');
+        const previewVideo = document.getElementById('previewVideo');
+        const videoStatus = document.getElementById('videoStatus');
+        const videoFileInput = document.getElementById('videoFile');
+
+        if (videoFileInput) {
+            videoFileInput.value = '';
+        }
+
+        if (previewVideo) {
+            previewVideo.pause();
+            previewVideo.removeAttribute('src');
+            previewVideo.load();
+        }
+
+        if (videoPreview) {
+            videoPreview.style.display = 'none';
+        }
+
+        if (videoUploadArea) {
+            videoUploadArea.style.display = 'block';
+            videoUploadArea.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+        }
+
+        if (videoStatus) {
+            videoStatus.textContent = '';
+        }
+
+        this.projectData.uploadedVideoFile = null;
+        this.projectData.videoUrl = null;
+        this.projectData.videoStoragePath = null;
+        this.projectData.heygenVideoId = null;
+        this.dirtyFlags.video = true;
+
+        this.validateUploadStep();
+    }
+
+    renderUploadVideoState() {
+        if (this.projectData.projectType !== 'upload') {
+            return;
+        }
+
+        const videoUploadArea = document.getElementById('videoUploadArea');
+        const videoPreview = document.getElementById('videoPreview');
+        const previewVideo = document.getElementById('previewVideo');
+        const videoStatus = document.getElementById('videoStatus');
+
+        if (this.projectData.videoUrl) {
+            if (videoUploadArea) {
+                videoUploadArea.style.display = 'none';
+            }
+            if (videoPreview) {
+                videoPreview.style.display = 'block';
+            }
+            if (previewVideo) {
+                previewVideo.src = this.projectData.videoUrl;
+                previewVideo.load();
+            }
+            if (videoStatus) {
+                videoStatus.textContent = 'Existing uploaded video in use.';
+            }
+            this.validateUploadStep();
+        } else {
+            if (videoUploadArea) {
+                videoUploadArea.style.display = 'block';
+                videoUploadArea.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            }
+            if (videoPreview) {
+                videoPreview.style.display = 'none';
+            }
+            if (videoStatus) {
+                videoStatus.textContent = '';
+            }
+            const videoFileInput = document.getElementById('videoFile');
+            if (videoFileInput) {
+                videoFileInput.value = '';
+            }
+            this.validateUploadStep();
+        }
+    }
+
     async saveAvatar() {
         if (!this.projectData.avatarFile) return;
         
@@ -1064,7 +1474,7 @@ class ProjectWizard {
             const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
             const storage = getStorage();
             const fileExt = this.projectData.avatarFile.name.split('.').pop() || 'jpg';
-            const objectPath = `avatars/avatar_${user.uid}_${Date.now()}.${fileExt}`;
+            const objectPath = `${buildUserStorageBasePath(user.uid)}/avatars/avatar_${Date.now()}.${fileExt}`;
             const storageRef = ref(storage, objectPath);
             await uploadBytes(storageRef, this.projectData.avatarFile, { 
                 contentType: this.projectData.avatarFile.type || 'image/jpeg' 
@@ -2367,6 +2777,10 @@ class ProjectWizard {
      * Step 5: Content Generation
      */
     async generateContent() {
+        if (this.projectData.projectType === 'upload') {
+            return;
+        }
+
         const generationStatus = document.getElementById('generationStatus');
         const generationResult = document.getElementById('generationResult');
         
@@ -2677,6 +3091,7 @@ class ProjectWizard {
             platform: this.projectData.platform,
             projectName: this.projectData.projectName,
             eventType: this.projectData.eventType,
+            projectType: this.projectData.projectType || 'generate',
             commandTrigger: this.projectData.commandTrigger || null,
             voiceUrl: this.projectData.voiceUrl || null,
             voiceId: this.projectData.voiceId || null,
@@ -2688,8 +3103,9 @@ class ProjectWizard {
             avatarWidth: this.projectData.avatarWidth || null,
             avatarHeight: this.projectData.avatarHeight || null,
             avatarAspectRatio: this.projectData.avatarAspectRatio || null,
-            videoUrl: null,
-            heygenVideoId: null,
+            videoUrl: this.projectData.videoUrl || null,
+            heygenVideoId: this.projectData.projectType === 'upload' ? null : (this.projectData.heygenVideoId || null),
+            videoStoragePath: this.projectData.videoStoragePath || null,
             alertConfig: this.projectData.alertConfig || {},
             twitchSubscription: true, // Set to true since we connected in step 4
             isActive: true,
@@ -2863,6 +3279,11 @@ class ProjectWizard {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
 
+            if (this.projectData.projectType === 'upload' && !this.projectData.videoUrl) {
+                alert('Please upload a video before finishing your project.');
+                return;
+            }
+
             // Persist any dirty fields before finishing (for edit mode)
             await this.persistDirtyFields();
 
@@ -2875,6 +3296,7 @@ class ProjectWizard {
                     platform: this.projectData.platform,
                     projectName: this.projectData.projectName,
                     eventType: this.projectData.eventType,
+                    projectType: this.projectData.projectType || 'generate',
                     commandTrigger: this.projectData.commandTrigger || null,
                     voiceUrl: this.projectData.voiceUrl || null,
                     voiceId: this.projectData.voiceId || null,
@@ -2885,6 +3307,7 @@ class ProjectWizard {
                     avatarGroupName: this.projectData.avatarGroupName || null,
                     videoUrl: this.projectData.videoUrl || null,
                     heygenVideoId: this.projectData.heygenVideoId || null,
+                    videoStoragePath: this.projectData.videoStoragePath || null,
                     alertConfig: this.projectData.alertConfig || {},
                     twitchSubscription: true, // Always true since we connected in step 4
                     updatedAt: new Date()
@@ -3023,6 +3446,12 @@ window.saveVoice = function() {
 window.retryRecording = function() {
     if (window.projectWizard) {
         window.projectWizard.retryRecording();
+    }
+};
+
+window.retryVideoUpload = function() {
+    if (window.projectWizard) {
+        window.projectWizard.retryVideoUpload();
     }
 };
 

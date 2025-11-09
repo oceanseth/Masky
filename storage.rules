@@ -6,22 +6,46 @@ service firebase.storage {
     function isAuthenticated() {
       return request.auth != null;
     }
+
+    function sanitize(uid) {
+      return uid.split(':').join('_')
+                .split('/').join('_')
+                .split('.').join('_');
+    }
+
+    function isAllowedUserCollection(collection) {
+      return collection == 'avatars' ||
+             collection == 'videos' ||
+             collection == 'voices' ||
+             collection == 'projects';
+    }
     
     // Helper function to check if user owns the resource
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
-    // Voice files - users can only upload/access their own voice files
+    // User-scoped data folders
+    match /userData/{userId}/{collection}/{fileName} {
+      allow read, write: if isAuthenticated() &&
+        isAllowedUserCollection(collection) &&
+        sanitize(userId) == sanitize(request.auth.uid);
+    }
+    
+    // Legacy paths (to be removed after migration)
     match /voices/{fileName} {
       allow read, write: if isAuthenticated() && 
         fileName.matches('voice_' + request.auth.uid + '_.*');
     }
     
-    // Avatar images - users can only upload/access their own avatar images
     match /avatars/{fileName} {
       allow read, write: if isAuthenticated() && 
         fileName.matches('avatar_' + request.auth.uid + '_.*');
+    }
+    
+    match /videos/{fileName} {
+      allow read, write: if isAuthenticated() &&
+        fileName.matches('video_' + request.auth.uid + '_.*');
     }
     
     // Project-specific files - users can only access files for their own projects

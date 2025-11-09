@@ -2471,11 +2471,14 @@ async function handleVoiceUpload(event) {
         // Generate filename
         const timestamp = Date.now();
         const fileExtension = uploadedFile.fileName.split('.').pop() || 'wav';
-        const fileName = `voice_${userId}_${timestamp}.${fileExtension}`;
+        const sanitizedUserId = userId.replace(/[:/.]/g, '_');
+        const basePath = `userData/${sanitizedUserId}/voices`;
+        const fileName = `voice_${sanitizedUserId}_${timestamp}.${fileExtension}`;
 
         // Upload to Firebase Storage
         const bucket = admin.storage().bucket();
-        const file = bucket.file(`voices/${fileName}`);
+        const objectPath = `${basePath}/${fileName}`;
+        const file = bucket.file(objectPath);
         await file.save(uploadedFile.data, {
             metadata: {
                 contentType: uploadedFile.contentType,
@@ -2491,7 +2494,7 @@ async function handleVoiceUpload(event) {
         await file.makePublic();
 
         // Get public URL
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/voices/${fileName}`;
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
 
         // Save voice metadata to Firestore
         const db = admin.firestore();
@@ -2598,11 +2601,14 @@ async function handleAvatarUpload(event) {
         // Generate filename
         const timestamp = Date.now();
         const fileExtension = uploadedFile.fileName.split('.').pop() || 'jpg';
-        const fileName = `avatar_${userId}_${timestamp}.${fileExtension}`;
+        const sanitizedUserId = userId.replace(/[:/.]/g, '_');
+        const basePath = `userData/${sanitizedUserId}/avatars`;
+        const fileName = `avatar_${sanitizedUserId}_${timestamp}.${fileExtension}`;
 
         // Upload to Firebase Storage
         const bucket = admin.storage().bucket();
-        const file = bucket.file(`avatars/${fileName}`);
+        const objectPath = `${basePath}/${fileName}`;
+        const file = bucket.file(objectPath);
         await file.save(uploadedFile.data, {
             metadata: {
                 contentType: uploadedFile.contentType,
@@ -2618,7 +2624,7 @@ async function handleAvatarUpload(event) {
         await file.makePublic();
 
         // Get public URL
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/avatars/${fileName}`;
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${objectPath}`;
 
         console.log('Avatar uploaded successfully:', publicUrl);
 

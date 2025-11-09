@@ -584,7 +584,7 @@
 
     <script type="module">
         import { renderHeader, updateHeaderAuthState, setActiveNavLink } from '/src/header.js';
-        import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs, doc, updateDoc } from '/src/firebase.js';
+        import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs, doc, updateDoc, deleteDoc } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
         import { renderProjectCard, bindProjectCard } from '/src/projectCard.js';
         
@@ -662,7 +662,7 @@
             projects.forEach(project => {
                 const card = projectsGrid.querySelector(`.project-card[data-id="${project.projectId}"]`);
                 if (card) {
-                    bindProjectCard(card, project, openProjectEditor, toggleProjectStatus);
+                    bindProjectCard(card, project, openProjectEditor, toggleProjectStatus, handleDeleteProject);
                 }
             });
         }
@@ -674,6 +674,30 @@
                 twitchSubscription: isActive,
                 updatedAt: new Date()
             });
+        }
+
+        async function handleDeleteProject(project, triggerButton) {
+            const projectName = project.projectName ? `"${project.projectName}"` : 'this project';
+            const confirmed = window.confirm(`Are you sure you want to permanently delete ${projectName}? This action cannot be undone.`);
+            if (!confirmed) return;
+
+            const originalText = triggerButton?.innerHTML;
+            if (triggerButton) {
+                triggerButton.disabled = true;
+                triggerButton.innerHTML = 'Deleting...';
+            }
+
+            try {
+                await deleteDoc(doc(db, 'projects', project.projectId));
+                await loadRecentProjects();
+            } catch (error) {
+                console.error('Failed to delete project', error);
+                alert('Failed to delete project. Please try again.');
+                if (triggerButton) {
+                    triggerButton.disabled = false;
+                    triggerButton.innerHTML = originalText || 'Delete';
+                }
+            }
         }
 
         // Open project in editor (wizard) for editing

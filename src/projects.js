@@ -162,7 +162,7 @@ export function renderProjectsManager(container) {
         projects.forEach(p => {
             const card = grid.querySelector(`.project-card[data-id="${p.projectId}"]`);
             if (card) {
-                bindProjectCard(card, p, openWizard, toggleProjectStatus);
+                bindProjectCard(card, p, openWizard, toggleProjectStatus, handleDeleteProject);
             }
         });
     }
@@ -173,6 +173,31 @@ export function renderProjectsManager(container) {
             twitchSubscription: isActive,
             updatedAt: new Date()
         });
+    }
+
+    async function handleDeleteProject(project, triggerButton) {
+        const projectName = project.projectName ? `"${project.projectName}"` : 'this project';
+        const confirmed = window.confirm(`Are you sure you want to permanently delete ${projectName}? This action cannot be undone.`);
+        if (!confirmed) return;
+
+        const originalText = triggerButton?.innerHTML;
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.innerHTML = 'Deleting...';
+        }
+
+        try {
+            const { db, doc, deleteDoc } = await import('./firebase.js');
+            await deleteDoc(doc(db, 'projects', project.projectId));
+            await loadProjects();
+        } catch (err) {
+            console.error('[Projects] Failed to delete project:', err);
+            alert('Failed to delete project. Please try again.');
+            if (triggerButton) {
+                triggerButton.disabled = false;
+                triggerButton.innerHTML = originalText || 'Delete';
+            }
+        }
     }
 
     function openWizard(project = null) {

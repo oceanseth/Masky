@@ -1,6 +1,14 @@
 import { getCurrentUser } from './firebase.js';
 import { config } from './config.js';
 
+function sanitizeStorageUid(uid = '') {
+    return String(uid).replace(/[/:.]/g, '_');
+}
+
+function userStorageBasePath(uid = '') {
+    return `userData/${sanitizeStorageUid(uid)}`;
+}
+
 // Lazily imported firestore helpers to reduce initial bundle size
 async function getFirestore() {
     const mod = await import('./firebase.js');
@@ -310,7 +318,7 @@ export async function renderAvatars(container) {
                 const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
                 const storage = getStorage();
                 const suffix = extFromFile(fileToUpload.name);
-                const objectPath = `avatars/avatar_${user.uid}_${Date.now()}.${suffix}`;
+                const objectPath = `${userStorageBasePath(user.uid)}/avatars/avatar_${Date.now()}.${suffix}`;
                 const storageRef = ref(storage, objectPath);
                 await uploadBytes(storageRef, fileToUpload, { 
                     contentType: fileToUpload.type || 'image/jpeg' 

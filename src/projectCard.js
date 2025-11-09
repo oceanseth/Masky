@@ -23,12 +23,18 @@ export function renderProjectCard(project) {
                     <div class="project-name" style="font-weight:600; font-size: 1.1rem; margin-bottom: 4px;">${projectName}</div>
                     <div class="project-platform" style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">${platform}${eventType ? ` - ${eventType}` : ''}</div>
                 </div>
-                <div class="project-status" style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
-                    <span class="status-label" style="font-size:0.8rem;">${isActive ? 'Active' : 'Inactive'}</span>
-                    <label class="status-toggle">
-                        <input type="checkbox" ${isActive ? 'checked' : ''} data-role="status-toggle">
-                        <span class="status-slider"></span>
-                    </label>
+                <div class="project-status" style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;" onclick="event.stopPropagation();">
+                    <div class="project-status-toggle" style="display:flex; align-items:center; gap:6px;">
+                        <span class="status-label" style="font-size:0.8rem;">${isActive ? 'Active' : 'Inactive'}</span>
+                        <label class="status-toggle">
+                            <input type="checkbox" ${isActive ? 'checked' : ''} data-role="status-toggle">
+                            <span class="status-slider"></span>
+                        </label>
+                    </div>
+                    <button class="btn btn-danger project-delete-btn" data-role="delete-project" style="display:${isActive ? 'none' : 'flex'}; align-items:center; justify-content:center; gap:6px; padding: 0.35rem 0.75rem; font-size:0.8rem; border-radius:6px;">
+                        <span aria-hidden="true">🗑️</span>
+                        <span>Delete</span>
+                    </button>
                 </div>
             </div>
 
@@ -62,7 +68,7 @@ export function renderProjectCard(project) {
  * @param {Function} onEdit - Callback when card is clicked to edit
  * @param {Function} onToggleStatus - Callback when status is toggled
  */
-export function bindProjectCard(card, project, onEdit, onToggleStatus) {
+export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete) {
     if (!card) return;
     
     // Click card to edit (except for interactive elements)
@@ -112,6 +118,19 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus) {
     const statusToggle = card.querySelector('[data-role="status-toggle"]');
     const statusLabel = card.querySelector('.status-label');
     const statusToggleWrapper = card.querySelector('.status-toggle');
+    const deleteButton = card.querySelector('[data-role="delete-project"]');
+
+    if (deleteButton) {
+        if (typeof onDelete === 'function') {
+            deleteButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onDelete(project, deleteButton);
+            });
+            deleteButton.style.display = project.twitchSubscription ? 'none' : 'flex';
+        } else {
+            deleteButton.remove();
+        }
+    }
     
     if (statusToggle && onToggleStatus) {
         statusToggle.addEventListener('change', async (e) => {
@@ -125,11 +144,17 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus) {
                 
                 // Update label
                 if (statusLabel) statusLabel.textContent = checked ? 'Active' : 'Inactive';
+                if (deleteButton && typeof onDelete === 'function') {
+                    deleteButton.style.display = checked ? 'none' : 'flex';
+                }
             } catch (err) {
                 console.error('Failed to toggle status', err);
                 // Revert on error
                 e.target.checked = !checked;
                 if (statusLabel) statusLabel.textContent = !checked ? 'Active' : 'Inactive';
+                if (deleteButton && typeof onDelete === 'function') {
+                    deleteButton.style.display = !checked ? 'none' : 'flex';
+                }
             } finally {
                 // Remove loading state
                 if (statusToggleWrapper) statusToggleWrapper.classList.remove('updating');

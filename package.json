@@ -36,6 +36,8 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.927.0",
+    "@aws-sdk/client-ssm": "^3.927.0",
     "aws-sdk": "^2.1692.0",
     "firebase": "^12.4.0",
     "firebase-admin": "^13.5.0",

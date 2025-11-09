@@ -367,6 +367,11 @@ exports.handler = async (event, context) => {
             return await handleHeygenAvatarGroupClaim(event, headers);
         }
 
+    // Connected social hook verification
+    if (path.includes('/social-hooks/verify') && method === 'POST') {
+        return await handleSocialHooksVerify(event, headers);
+    }
+
     // Handle Twitch OAuth (legacy - direct access token)
     if (path.includes('/twitch_oauth') && method === 'POST') {
         const response = await handleTwitchOAuth(event);
@@ -1919,6 +1924,283 @@ async function getSubscriptionStatus(event) {
                 message: error.message 
             })
         };
+    }
+}
+
+async function handleSocialHooksVerify(event, headers) {
+    try {
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ error: 'Unauthorized' })
+            };
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const userId = decoded.uid;
+
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = bodyString ? JSON.parse(bodyString) : {};
+        } else {
+            body = event.body || {};
+        }
+
+        const rawSubscriptions = Array.isArray(body.subscriptions)
+            ? body.subscriptions
+            : (body.subscription ? [body.subscription] : []);
+
+        if (!rawSubscriptions.length) {
+            return {
+                statusCode: 400,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ error: 'No subscriptions provided' })
+            };
+        }
+
+        const groupedByProvider = rawSubscriptions.reduce((acc, sub) => {
+            const provider = (sub.provider || '').toLowerCase() || 'unknown';
+            if (!acc[provider]) acc[provider] = [];
+            acc[provider].push(sub);
+            return acc;
+        }, {});
+
+        const db = admin.firestore();
+        const results = [];
+
+        if (groupedByProvider.twitch) {
+            const twitchResults = await verifyTwitchSubscriptions(groupedByProvider.twitch, {
+                admin,
+                db,
+                userId
+            });
+            results.push(...twitchResults);
+        }
+
+        for (const [provider, items] of Object.entries(groupedByProvider)) {
+            if (provider === 'twitch') continue;
+            for (const item of items) {
+                results.push({
+                    provider,
+                    docId: item.docId || item.id || null,
+                    subscriptionId: item.subscriptionId || item.id || null,
+                    eventType: item.eventType || null,
+                    error: 'unsupported_provider'
+                });
+            }
+        }
+
+        return {
+            statusCode: 200,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ results })
+        };
+    } catch (error) {
+        console.error('handleSocialHooksVerify error:', error);
+        return {
+            statusCode: 500,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                error: 'SocialHooksVerificationFailed',
+                message: error.message
+            })
+        };
+    }
+}
+
+async function verifyTwitchSubscriptions(items, { admin, db, userId }) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return [];
+    }
+
+    const results = [];
+    let appToken;
+    let clientId;
+
+    try {
+        await twitchInitializer.initialize();
+        const credentials = twitchInitializer.getCredentials();
+        clientId = credentials.clientId;
+        appToken = await twitchInitializer.getAppAccessToken();
+    } catch (err) {
+        console.error('Failed to prepare Twitch verification:', err);
+        return items.map(item => ({
+            provider: 'twitch',
+            docId: item.docId || item.id || null,
+            subscriptionId: item.subscriptionId || item.id || null,
+            eventType: item.eventType || null,
+            error: 'twitch_credentials_error',
+            message: err.message
+        }));
+    }
+
+    for (const item of items) {
+        const docId = item.docId || item.id || (item.eventType ? `twitch_${item.eventType}` : null);
+        const subscriptionId = item.subscriptionId || item.id || null;
+        const eventType = item.eventType || null;
+
+        const result = {
+            provider: 'twitch',
+            docId,
+            subscriptionId,
+            eventType
+        };
+
+        if (!subscriptionId) {
+            result.error = 'missing_subscription_id';
+            results.push(result);
+            continue;
+        }
+
+        try {
+            const url = new URL('https://api.twitch.tv/helix/eventsub/subscriptions');
+            url.searchParams.set('id', subscriptionId);
+
+            let response = await fetch(url.toString(), {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${appToken}`,
+                    'Client-Id': clientId
+                }
+            });
+
+            if (response.status === 401) {
+                console.warn('Twitch verification token expired, refreshing...');
+                appToken = await twitchInitializer.getAppAccessToken();
+                response = await fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${appToken}`,
+                        'Client-Id': clientId
+                    }
+                });
+            }
+
+            if (!response.ok) {
+                const text = await response.text();
+                console.warn('Twitch verification failed', {
+                    subscriptionId,
+                    status: response.status,
+                    body: text
+                });
+                result.error = 'twitch_request_failed';
+                result.statusCode = response.status;
+                result.details = safeParseJsonForSocialHooks(text);
+                await markSubscriptionStatus(db, admin, userId, docId, {
+                    isActive: false,
+                    status: 'verification_failed',
+                    lastVerificationError: typeof result.details === 'object' ? result.details?.message || null : result.details
+                });
+                results.push(result);
+                continue;
+            }
+
+            const payload = await response.json();
+            const subscription = Array.isArray(payload.data) && payload.data.length > 0 ? payload.data[0] : null;
+
+            if (!subscription) {
+                result.error = 'not_found';
+                result.found = false;
+                await markSubscriptionStatus(db, admin, userId, docId, {
+                    isActive: false,
+                    status: 'not_found'
+                });
+                results.push(result);
+                continue;
+            }
+
+            result.subscription = subscription;
+            result.status = subscription.status || null;
+            result.found = true;
+
+            const expiresAt = subscription.expires_at ? new Date(subscription.expires_at) : null;
+            const createdAt = subscription.created_at ? new Date(subscription.created_at) : null;
+
+            await markSubscriptionStatus(db, admin, userId, docId, {
+                provider: 'twitch',
+                eventType: subscription.type,
+                twitchSubscription: subscription,
+                status: subscription.status || null,
+                isActive: subscription.status === 'enabled',
+                condition: subscription.condition || null,
+                transport: subscription.transport || null,
+                expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : undefined,
+                createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : undefined
+            });
+        } catch (err) {
+            console.error('Error verifying Twitch subscription:', {
+                subscriptionId,
+                error: err
+            });
+            result.error = 'exception';
+            result.message = err.message || 'Unknown error';
+            await markSubscriptionStatus(db, admin, userId, docId, {
+                isActive: false,
+                status: 'verification_error',
+                lastVerificationError: err.message || 'Unknown error'
+            });
+        }
+
+        results.push(result);
+    }
+
+    return results;
+}
+
+async function markSubscriptionStatus(db, admin, userId, docId, updates = {}) {
+    if (!docId) return;
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const payload = { ...updates };
+
+    if (!('updatedAt' in payload)) {
+        payload.updatedAt = now;
+    }
+    if (!('lastVerifiedAt' in payload)) {
+        payload.lastVerifiedAt = now;
+    }
+
+    if ('expiresAt' in payload && payload.expiresAt === undefined) {
+        delete payload.expiresAt;
+    }
+    if ('createdAt' in payload && payload.createdAt === undefined) {
+        delete payload.createdAt;
+    }
+
+    await db.collection('users')
+        .doc(userId)
+        .collection('subscriptions')
+        .doc(docId)
+        .set(payload, { merge: true });
+}
+
+function safeParseJsonForSocialHooks(text) {
+    if (!text) return null;
+    try {
+        return JSON.parse(text);
+    } catch (err) {
+        return text;
     }
 }
 

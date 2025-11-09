@@ -300,24 +300,33 @@
                 // Store project configurations and build video cache
                 eventVideoCache = new Map();
                 processedEventDocIds = new Map();
-                // Debug: list projects
+                projectConfigs = new Map();
                 const debugProjectsList = [];
                 snapshot.docs.forEach(doc => {
                     const projectData = doc.data();
                     const eventType = projectData.eventType;
 
-                    // Store the alert configuration for this event type
-                    if (projectData.alertConfig && projectData.alertConfig[eventType]) {
-                        projectConfigs.set(eventType, projectData.alertConfig[eventType]);
-                        console.log(`Loaded alert config for ${eventType}:`, projectData.alertConfig[eventType]);
-                    } else {
-                        // Fallback to default configuration
-                        projectConfigs.set(eventType, getDefaultAlertConfig(eventType));
-                    }
+                    const alertConfigSource = (projectData.alertConfig && projectData.alertConfig[eventType])
+                        ? projectData.alertConfig[eventType]
+                        : getDefaultAlertConfig(eventType);
+                    const alertConfig = JSON.parse(JSON.stringify(alertConfigSource));
 
-                    // Collect HeyGen identifiers (URLs fetched dynamically per playback)
+                    if (!projectConfigs.has(eventType)) {
+                        projectConfigs.set(eventType, []);
+                    }
+                    projectConfigs.get(eventType).push({
+                        projectId: doc.id,
+                        config: alertConfig
+                    });
+
+                    if (!eventVideoCache.has(eventType)) {
+                        eventVideoCache.set(eventType, []);
+                    }
+                    const cacheList = eventVideoCache.get(eventType);
+
                     const heygenVideoId = projectData.heygenVideoId || null;
                     const storedVideoUrl = extractHeygenVideoUrl(projectData);
+
                     debugProjectsList.push({
                         projectId: doc.id,
                         eventType,
@@ -327,20 +336,31 @@
                         twitchSubscription: projectData.twitchSubscription,
                         isActive: projectData.isActive
                     });
+
                     if (heygenVideoId) {
-                        if (!eventVideoCache.has(eventType)) eventVideoCache.set(eventType, []);
-                        eventVideoCache.get(eventType).push({
+                        cacheList.push({
                             projectId: doc.id,
+                            type: 'heygen',
                             videoId: heygenVideoId,
                             currentUrl: null,
-                            lastFetched: 0
+                            lastFetched: 0,
+                            config: alertConfig
                         });
-                    } else {
-                        if (storedVideoUrl) {
-                            console.warn(`Project ${doc.id} (${eventType}) has a stored HeyGen video URL but no video ID; skipping until ID is saved.`);
-                        } else {
-                            console.warn(`Project ${doc.id} (${eventType}) missing HeyGen video ID and video URL`);
-                        }
+                    }
+
+                    if (storedVideoUrl) {
+                        cacheList.push({
+                            projectId: doc.id,
+                            type: 'uploaded',
+                            videoId: null,
+                            currentUrl: storedVideoUrl,
+                            videoUrl: storedVideoUrl,
+                            config: alertConfig
+                        });
+                    }
+
+                    if (!heygenVideoId && !storedVideoUrl) {
+                        console.warn(`Project ${doc.id} (${eventType}) missing video sources (no HeyGen ID or uploaded URL).`);
                     }
                 });
                 console.groupCollapsed(`Loading projects for user ${currentUserId}`);
@@ -358,7 +378,8 @@
                 console.log('Active projects found:', snapshot.size);
                 console.log('Event types to monitor:', eventTypes);
                 console.log('User ID from hash:', currentUserId);
-                console.log('Project configurations loaded:', projectConfigs.size);
+                const totalConfigs = Array.from(projectConfigs.values()).reduce((sum, arr) => sum + arr.length, 0);
+                console.log('Project configurations loaded:', totalConfigs);
 
                 // Set up listeners for each event type
                 for (const eventType of eventTypes) {
@@ -436,6 +457,14 @@
             }
         }
 
+        async function resolveVideoUrl(cacheEntry) {
+            if (!cacheEntry) return null;
+            if (cacheEntry.type === 'uploaded') {
+                return cacheEntry.currentUrl || cacheEntry.videoUrl || null;
+            }
+            return await refreshHeygenVideoUrl(cacheEntry);
+        }
+
         // Preload all videos into detached video elements to warm cache
         async function preloadAllEventVideos() {
             preloadedVideoElements = new Map();
@@ -444,11 +473,12 @@
                 const list = [];
                 await Promise.all(items.map(async (item) => {
                     try {
-                        const videoUrl = await refreshHeygenVideoUrl(item);
+                        const videoUrl = await resolveVideoUrl(item);
                         if (!videoUrl) {
-                            console.warn('No HeyGen video URL available for preloading', {
+                            console.warn('No video URL available for preloading', {
                                 projectId: item.projectId,
-                                videoId: item.videoId
+                                videoId: item.videoId,
+                                type: item.type
                             });
                             return;
                         }
@@ -604,31 +634,30 @@
 
         // Play a random preloaded Heygen video for the given event type
         async function playHeygenVideoForEvent(eventType, eventData = null) {
-            // Get config and check conditions first
-            const eventConfig = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
-            
-            // Skip if disabled
-            if (!eventConfig.enabled) {
-                console.log(`Video alert disabled for event type: ${eventType}`);
-                return false;
-            }
-            
-            // Check if event meets conditions
-            if (eventData && !meetsConditions(eventType, eventData, eventConfig)) {
-                return false; // Conditions not met, skip video
-            }
-            
             const items = eventVideoCache.get(eventType) || [];
             if (!items.length) {
-                console.log(`No Heygen videos cached for event type: ${eventType}`);
+                console.log(`No videos cached for event type: ${eventType}`);
                 return false;
             }
 
-            const randomIndex = Math.floor(Math.random() * items.length);
-            const selected = items[randomIndex];
-            const videoUrl = await refreshHeygenVideoUrl(selected);
+            const eligibleItems = items.filter(item => {
+                const cfg = item?.config || getDefaultAlertConfig(eventType);
+                if (!cfg.enabled) return false;
+                if (eventData && !meetsConditions(eventType, eventData, cfg)) return false;
+                return true;
+            });
+
+            if (!eligibleItems.length) {
+                console.log(`No eligible videos (after filtering by config/conditions) for event type: ${eventType}`);
+                return false;
+            }
+
+            const randomIndex = Math.floor(Math.random() * eligibleItems.length);
+            const selected = eligibleItems[randomIndex];
+            const selectedConfig = selected?.config || getDefaultAlertConfig(eventType);
+            const videoUrl = await resolveVideoUrl(selected);
             if (!videoUrl) {
-                console.warn(`No playable HeyGen video URL available for event type: ${eventType}`, {
+                console.warn(`No playable video URL available for event type: ${eventType}`, {
                     projectId: selected.projectId,
                     videoId: selected.videoId,
                     lastStatus: selected.lastStatus
@@ -638,25 +667,16 @@
             
             console.log(`🎲 Random video selection for ${eventType}:`);
             console.log(`  - Available videos: ${items.length}`);
+            console.log(`  - Eligible videos: ${eligibleItems.length}`);
             console.log(`  - Random index: ${randomIndex}`);
             console.log(`  - Selected project: ${selected.projectId}`);
-            console.log(`  - Video ID: ${selected.videoId}`);
+            console.log(`  - Video type: ${selected.type}`);
+            console.log(`  - Video ID: ${selected.videoId || 'N/A'}`);
             console.log(`  - Video URL: ${videoUrl}`);
 
             const overlay = document.getElementById('videoOverlay');
-            // Clear any existing video
             overlay.innerHTML = '';
 
-            // Get the configuration for this event type
-            const config = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
-            
-            // Skip if disabled
-            if (!config.enabled) {
-                console.log(`Video playback disabled for event type: ${eventType}`);
-                return false;
-            }
-
-            // Create video container
             const videoContainer = document.createElement('div');
             videoContainer.style.position = 'relative';
             videoContainer.style.display = 'flex';
@@ -666,7 +686,6 @@
             videoContainer.style.maxWidth = '90vw';
             videoContainer.style.maxHeight = '90vh';
 
-            // Use preloaded element if available (clone to keep cache warm)
             const preloadedList = preloadedVideoElements.get(eventType) || [];
             const preloadedEntry = preloadedList.find(x => x.url === videoUrl);
             const video = document.createElement('video');
@@ -674,23 +693,18 @@
             video.autoplay = true;
             video.controls = false;
             video.playsInline = true;
-            video.muted = false; // attempt to play with sound in OBS
+            video.muted = false;
             video.style.maxWidth = '90vw';
             video.style.maxHeight = '90vh';
             video.style.borderRadius = '12px';
             video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
             video.style.pointerEvents = 'none';
 
-            // Create text message below the video
             let messageElement = null;
-            if (config.message && eventData) {
-                // Build message from template
-                let message = config.message;
-                
-                // Replace placeholders with actual data
+            if (selectedConfig.message && eventData) {
+                let message = selectedConfig.message;
                 message = message.replace('{username}', eventData.user_name || eventData.from_broadcaster_user_name || 'Someone');
-                
-                // Handle event-specific placeholders
+
                 if (eventType === 'channel.cheer') {
                     message = message.replace('{bits}', eventData.bits || '0');
                 } else if (eventType === 'channel.raid') {
@@ -705,10 +719,10 @@
                 messageElement = document.createElement('div');
                 messageElement.textContent = message;
                 messageElement.style.cssText = `
-                    background: ${config.backgroundColor};
-                    color: ${config.textColor};
-                    font-size: ${config.fontSize};
-                    font-weight: ${config.fontWeight};
+                    background: ${selectedConfig.backgroundColor};
+                    color: ${selectedConfig.textColor};
+                    font-size: ${selectedConfig.fontSize};
+                    font-weight: ${selectedConfig.fontWeight};
                     padding: 1rem 2rem;
                     border-radius: 12px;
                     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -723,7 +737,6 @@
                 `;
             }
 
-            // Fallback: if autoplay with sound blocked, retry muted
             const tryPlay = async () => {
                 try {
                     await video.play();
@@ -738,7 +751,6 @@
                 }
             };
 
-            // Assemble the video container - always place message below video
             videoContainer.appendChild(video);
             if (messageElement) {
                 videoContainer.appendChild(messageElement);
@@ -746,12 +758,10 @@
 
             overlay.appendChild(videoContainer);
 
-            // If we had a preloaded element, help the browser by priming with currentTime
             if (preloadedEntry?.el?.readyState >= 2) {
-                // do nothing special; browser cache should already be warm
+                // already preloaded
             }
             
-            // Remove when finished or on error
             const cleanupVideo = () => {
                 if (videoContainer && videoContainer.parentNode) {
                     videoContainer.parentNode.removeChild(videoContainer);
@@ -768,8 +778,7 @@
                 cleanupVideo();
             }, { once: true });
 
-            // Start playback
-            tryPlay();
+            await tryPlay();
             return true;
         }
 
@@ -861,18 +870,21 @@
         function showAlert(alertData) {
             const { eventType, eventData } = alertData;
             
-            // Get the configuration for this event type
-            const config = projectConfigs.get(eventType) || getDefaultAlertConfig(eventType);
-            
-            // Skip if disabled
-            if (!config.enabled) {
-                console.log(`Alert disabled for event type: ${eventType}`);
-                return;
-            }
-            
-            // Check if event meets conditions
-            if (!meetsConditions(eventType, eventData, config)) {
-                return; // Conditions not met, skip alert
+            const configEntries = projectConfigs.get(eventType) || [];
+            const eligibleConfigs = configEntries
+                .map(entry => entry?.config || entry)
+                .filter(cfg => cfg && cfg.enabled && meetsConditions(eventType, eventData, cfg));
+
+            let config;
+            if (eligibleConfigs.length) {
+                config = eligibleConfigs[Math.floor(Math.random() * eligibleConfigs.length)];
+            } else {
+                const fallbackConfig = getDefaultAlertConfig(eventType);
+                if (!fallbackConfig.enabled || !meetsConditions(eventType, eventData, fallbackConfig)) {
+                    console.log(`Alert disabled or conditions not met for event type: ${eventType}`);
+                    return;
+                }
+                config = fallbackConfig;
             }
             
             // Build message from template

@@ -106,6 +106,7 @@ class ProjectWizard {
         this.setupEventListeners();
         this.setDefaultValues();
         this.updateNavigationButtons();
+        this.showStep(this.currentStep);
         
         // Resume wizard state after Twitch OAuth popup
         const storedStateRaw = sessionStorage.getItem('projectWizardState');
@@ -707,43 +708,21 @@ class ProjectWizard {
 
     updateWorkflowForProjectType() {
         const type = this.projectData.projectType || 'generate';
-        const uploadStep = document.getElementById('uploadStep');
-        const generateStepIds = ['step2', 'step3', 'step4', 'step5'];
-        const generateSteps = generateStepIds
-            .map(id => document.getElementById(id))
-            .filter(Boolean);
+
+        // Sanity check the current step fits within the permitted flow.
+        const maxStep = this.getMaxStep();
+        if (this.currentStep > maxStep) {
+            this.currentStep = maxStep;
+        }
 
         if (type === 'upload') {
-            if (uploadStep) {
-                uploadStep.style.display = 'block';
-            }
-            generateSteps.forEach(step => {
-                step.style.display = 'none';
-                step.classList.remove('active');
-            });
-
-            // Reset to a valid step within the upload flow
-            if (this.currentStep > this.getMaxStep()) {
-                this.currentStep = this.getMaxStep();
-            }
+            // Reset the upload step UI to match stored data
             this.renderUploadVideoState();
         } else {
-            if (uploadStep) {
-                uploadStep.style.display = 'none';
-                uploadStep.classList.remove('active');
-            }
-            generateSteps.forEach(step => {
-                step.style.display = 'block';
-            });
-
-            if (this.currentStep > this.getMaxStep()) {
-                this.currentStep = this.getMaxStep();
-            }
-            if (uploadStep) {
-                const videoStatus = document.getElementById('videoStatus');
-                if (videoStatus) {
-                    videoStatus.textContent = '';
-                }
+            // Clear any lingering upload step messaging when switching back
+            const videoStatus = document.getElementById('videoStatus');
+            if (videoStatus) {
+                videoStatus.textContent = '';
             }
         }
 
@@ -782,18 +761,24 @@ class ProjectWizard {
     }
 
     showStep(stepNumber) {
-        // Hide all steps
-        document.querySelectorAll('.wizard-step').forEach(step => {
-            step.classList.remove('active');
-        });
-        
-        // Show current step
         const stepId = this.getStepIdForNumber(stepNumber);
-        const stepElement = stepId ? document.getElementById(stepId) : null;
-        if (stepElement) {
-            stepElement.classList.add('active');
-            stepElement.style.display = 'block';
+
+        // If the requested step isn't available for the current project type,
+        // fall back to the nearest valid step (always at least step 1).
+        if (!stepId) {
+            this.currentStep = 1;
+            return this.showStep(this.currentStep);
         }
+
+        document.querySelectorAll('.wizard-step').forEach(step => {
+            if (step.id === stepId) {
+                step.classList.add('active');
+                step.style.display = 'block';
+            } else {
+                step.classList.remove('active');
+                step.style.display = 'none';
+            }
+        });
         
         // Handle step-specific logic
         if (this.projectData.projectType === 'upload' && stepNumber === 2) {

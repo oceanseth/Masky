@@ -1856,7 +1856,6 @@ class ProjectWizard {
                         <p><strong>Type:</strong> ${result.subscription.type}</p>
                         <p><strong>Status:</strong> ${result.subscription.status}</p>
                         <p><strong>ID:</strong> ${result.subscription.id}</p>
-                        <p><strong>Message:</strong> ${result.message}</p>
                     `;
                 }
             } else {
@@ -1960,6 +1959,69 @@ class ProjectWizard {
             'channel.channel_points_custom_reward_redemption': '1'
         };
         return versions[eventType] || '1';
+    }
+
+    async ensureCurrentEventSubscription() {
+        const platform = this.projectData.platform || 'twitch';
+        const eventType = this.projectData.eventType;
+        if (platform !== 'twitch' || !eventType || eventType === 'channel.chat_command') {
+            return;
+        }
+
+        const user = getCurrentUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const idToken = await user.getIdToken();
+        const response = await fetch(`${config.api.baseUrl}/api/twitch-eventsub`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                type: eventType,
+                version: this.getEventSubVersionForType(eventType),
+                condition: {
+                    broadcaster_user_id: user.uid.replace('twitch:', '')
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('ensureCurrentEventSubscription failed:', response.status, errorData);
+            throw new Error(errorData.message || errorData.error || 'Failed to create Twitch subscription');
+        }
+
+        const data = await response.json();
+        if (data?.subscription) {
+            this.projectData.subscriptionInfo = data.subscription;
+        }
+    }
+
+    async refreshSubscriptionStatus() {
+        try {
+            const platform = this.projectData.platform || 'twitch';
+            if (platform !== 'twitch') return;
+
+            const eventType = this.projectData.eventType;
+            if (!eventType || eventType === 'channel.chat_command') return;
+
+            const user = getCurrentUser();
+            if (!user) return;
+
+            const { db, doc, getDoc } = await import('./firebase.js');
+            const subscriptionRef = doc(db, 'users', user.uid, 'subscriptions', `twitch_${eventType}`);
+            const subscriptionSnap = await getDoc(subscriptionRef);
+            if (subscriptionSnap.exists()) {
+                const data = subscriptionSnap.data();
+                if (data?.twitchSubscription) {
+                    this.projectData.subscriptionInfo = data.twitchSubscription;
+                }
+            }
+        } catch (error) {
+            console.warn('ProjectWizard refreshSubscriptionStatus error:', error);
+        }
     }
 
     retryConnection() {
@@ -2778,6 +2840,9 @@ class ProjectWizard {
                 await this.saveProjectToFirestore();
             }
 
+            await this.ensureCurrentEventSubscription();
+            await this.refreshSubscriptionStatus();
+
             // Check if we already have a completed video
             if (this.projectData.videoUrl && this.projectData.heygenVideoId) {
                 console.log('Video already exists, showing preview');
@@ -3303,6 +3368,9 @@ class ProjectWizard {
                 console.warn('Project was not created in step 5, creating now...');
                 await this.saveProjectToFirestore();
             }
+
+            await this.ensureCurrentEventSubscription();
+            await this.refreshSubscriptionStatus();
 
             // Update the project URL with the user's UID (not project ID)
             const projectUrl = document.getElementById('projectUrl');

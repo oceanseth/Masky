@@ -2056,15 +2056,15 @@ async function verifyTwitchSubscriptions(items, { admin, db, userId }) {
     }
 
     for (const item of items) {
-        const docId = item.docId || item.id || (item.eventType ? `twitch_${item.eventType}` : null);
+        const expectedEventType = item.eventType || null;
+        const docId = item.docId || item.id || (expectedEventType ? `twitch_${expectedEventType}` : null);
         const subscriptionId = item.subscriptionId || item.id || null;
-        const eventType = item.eventType || null;
 
         const result = {
             provider: 'twitch',
             docId,
             subscriptionId,
-            eventType
+            eventType: expectedEventType
         };
 
         if (!subscriptionId) {
@@ -2137,9 +2137,19 @@ async function verifyTwitchSubscriptions(items, { admin, db, userId }) {
             const expiresAt = subscription.expires_at ? new Date(subscription.expires_at) : null;
             const createdAt = subscription.created_at ? new Date(subscription.created_at) : null;
 
-            await markSubscriptionStatus(db, admin, userId, docId, {
+            const actualType = subscription.type || expectedEventType;
+            const actualDocId = actualType ? `twitch_${actualType}` : docId;
+
+            result.eventType = actualType;
+            if (actualDocId !== docId) {
+                result.mismatchedType = true;
+                result.expectedEventType = expectedEventType;
+                result.correctedDocId = actualDocId;
+            }
+
+            await markSubscriptionStatus(db, admin, userId, actualDocId, {
                 provider: 'twitch',
-                eventType: subscription.type,
+                eventType: actualType,
                 twitchSubscription: subscription,
                 status: subscription.status || null,
                 isActive: subscription.status === 'enabled',
@@ -2148,6 +2158,15 @@ async function verifyTwitchSubscriptions(items, { admin, db, userId }) {
                 expiresAt: expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : undefined,
                 createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : undefined
             });
+
+            if (actualDocId !== docId && docId) {
+                try {
+                    await db.collection('users').doc(userId).collection('subscriptions').doc(docId).delete();
+                    console.log('Removed outdated subscription document', docId, 'after type correction to', actualType);
+                } catch (cleanupError) {
+                    console.warn('Failed to remove outdated subscription doc', docId, cleanupError);
+                }
+            }
         } catch (err) {
             console.error('Error verifying Twitch subscription:', {
                 subscriptionId,

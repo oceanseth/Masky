@@ -21,7 +21,8 @@ import {
   doc,
   updateDoc,
   addDoc,
-  deleteDoc
+  deleteDoc,
+  getDoc
 } from 'firebase/firestore';
 import { config } from './config';
 
@@ -306,7 +307,8 @@ export {
   doc,
   updateDoc,
   addDoc,
-  deleteDoc
+  deleteDoc,
+  getDoc
 };
 
 // Expose Firebase to window for debugging in browser console
@@ -329,6 +331,7 @@ if (typeof window !== 'undefined') {
       updateDoc,
       addDoc,
       deleteDoc,
+      getDoc,
       getFirestore
     },
     // Helper function to check avatar groups

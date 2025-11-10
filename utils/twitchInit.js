@@ -1,5 +1,6 @@
 const AWS = require('aws-sdk');
 const https = require('https');
+const { URL } = require('url');
 
 AWS.config.update({ region: 'us-east-1' });
 
@@ -286,78 +287,54 @@ class TwitchInitializer {
         };
       }
 
-      // Check if subscription already exists for this user and event type
-      const subscriptionKey = `twitch_${type}`;
-      const userSubscriptionsRef = db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey);
-      const existingSubscription = await userSubscriptionsRef.get();
+      // Initialize Twitch credentials from SSM
+      const { clientId, clientSecret } = await this.initialize();
+      const appToken = await this.getAppAccessToken();
+      console.log('Using APP token for EventSub ensure');
 
-      let subscription;
+      const targetCondition = { ...condition };
+      if (type === 'channel.follow' && !targetCondition.moderator_user_id) {
+        targetCondition.moderator_user_id = customClaims.twitchId;
+      }
 
-      if (existingSubscription.exists) {
-        const existingData = existingSubscription.data();
-        const existing = existingData.twitchSubscription || {};
-        // Reuse only if same type and currently enabled
-        if (existing.type === type && existing.status === 'enabled') {
-          subscription = existing;
-          console.log('Using existing enabled subscription:', subscription.id);
-        } else {
-          console.log('Existing subscription not enabled or mismatched; will (re)create');
+      let createdSubscription = null;
+
+      const requiredScopesByType = {
+        'channel.subscribe': ['channel:read:subscriptions'],
+        'channel.cheer': ['bits:read']
+      };
+      const requiredScopes = requiredScopesByType[type] || [];
+      if (requiredScopes.length > 0) {
+        try {
+          const validation = await this.validateToken(customClaims.twitchAccessToken);
+          const granted = Array.isArray(validation.scopes) ? validation.scopes : [];
+          const missing = requiredScopes.filter(s => !granted.includes(s));
+          if (missing.length > 0) {
+            return {
+              statusCode: 400,
+              body: JSON.stringify({
+                error: `Missing required Twitch scopes: ${missing.join(', ')}`,
+                code: 'TWITCH_SCOPES_MISSING'
+              })
+            };
+          }
+        } catch (e) {
+          console.warn('Failed to validate user token scopes; proceeding may fail:', e.message);
         }
       }
 
-      if (!subscription) {
-        // Initialize Twitch credentials from SSM
-        const { clientId, clientSecret } = await this.initialize();
-        
-        // Webhooks MUST use an app access token per Twitch docs
-        // https://dev.twitch.tv/docs/eventsub/manage-subscriptions/
-        const appToken = await this.getAppAccessToken();
-        console.log('Using APP token for EventSub creation');
-        
-        // For channel.follow events, we need to add moderator_user_id to the condition
-        let requestBody = {
-          type,
-          version,
-          condition,
-          transport: {
-            method: 'webhook',
-            callback: 'https://masky.ai/api/twitch-webhook',
-            secret: clientSecret
-          }
-        };
-
-        // For channel.follow events, add moderator_user_id (the user's Twitch ID)
-        if (type === 'channel.follow') {
-          requestBody.condition.moderator_user_id = customClaims.twitchId;
+      const requestBody = {
+        type,
+        version,
+        condition: { ...targetCondition },
+        transport: {
+          method: 'webhook',
+          callback: 'https://masky.ai/api/twitch-webhook',
+          secret: clientSecret
         }
+      };
 
-        // Validate that the user granted required scopes for scoped events
-        // Note: Even though the create call uses an app token, Twitch requires the user to have authorized the scopes to your client ID
-        const requiredScopesByType = {
-          'channel.subscribe': ['channel:read:subscriptions'],
-          'channel.cheer': ['bits:read']
-        };
-        const requiredScopes = requiredScopesByType[type] || [];
-        if (requiredScopes.length > 0) {
-          try {
-            const validation = await this.validateToken(customClaims.twitchAccessToken);
-            const granted = Array.isArray(validation.scopes) ? validation.scopes : [];
-            const missing = requiredScopes.filter(s => !granted.includes(s));
-            if (missing.length > 0) {
-              return {
-                statusCode: 400,
-                body: JSON.stringify({
-                  error: `Missing required Twitch scopes: ${missing.join(', ')}`,
-                  code: 'TWITCH_SCOPES_MISSING'
-                })
-              };
-            }
-          } catch (e) {
-            console.warn('Failed to validate user token scopes; proceeding may fail:', e.message);
-          }
-        }
-        
-        // Create EventSub subscription using app access token
+      const attemptCreateSubscription = async () => {
         const twitchResponse = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
           method: 'POST',
           headers: {
@@ -369,43 +346,92 @@ class TwitchInitializer {
         });
 
         if (!twitchResponse.ok) {
-          const errorData = await twitchResponse.json();
-          
-          // Handle specific Twitch API errors
+          const errorData = await twitchResponse.json().catch(() => ({}));
+
+          if (twitchResponse.status === 409 && errorData?.message?.includes('subscription already exists')) {
+            console.log(`[TwitchInit] Subscription for ${type} already exists. Proceeding to sync existing subscriptions.`);
+            return null;
+          }
+
           if (errorData.message && errorData.message.includes('Client ID and OAuth token do not match')) {
             return {
-              statusCode: 400,
-              body: JSON.stringify({ 
-                error: 'Twitch access token is invalid or expired. Please reconnect your Twitch account.',
-                code: 'TWITCH_TOKEN_MISSING'
-              })
+              error: {
+                statusCode: 400,
+                body: JSON.stringify({
+                  error: 'Twitch access token is invalid or expired. Please reconnect your Twitch account.',
+                  code: 'TWITCH_TOKEN_MISSING'
+                })
+              }
             };
           }
-          
+
           throw new Error(`Twitch API error: ${errorData.message || 'Unknown error'}`);
         }
 
         const subscriptionData = await twitchResponse.json();
-        subscription = subscriptionData.data[0];
-        
-        // Save subscription to user's subscriptions collection
-        await userSubscriptionsRef.set({
-          provider: 'twitch',
-          eventType: type,
-          twitchSubscription: subscription,
-          isActive: true, // Default to active
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        
-        console.log('Created new subscription:', subscription.id);
+        createdSubscription = subscriptionData.data ? subscriptionData.data[0] : null;
+        return null;
+      };
+
+      const createError = await attemptCreateSubscription();
+      if (createError) {
+        return createError.error;
+      }
+
+      const subscriptions = await this.fetchBroadcasterSubscriptions(appToken, clientId, targetCondition.broadcaster_user_id);
+      await this.syncTwitchSubscriptionsToFirestore(admin, db, userId, subscriptions);
+
+      const conditionMatches = (subCondition = {}) => {
+        return Object.entries(targetCondition).every(([key, value]) => subCondition[key] === value);
+      };
+
+      let matchingSubscription = subscriptions.find(sub => sub.type === type && conditionMatches(sub.condition));
+
+      if (!matchingSubscription) {
+        // Remove any conflicting subscriptions of this type for this broadcaster and retry once.
+        const conflictingSubs = subscriptions.filter(sub => sub.type === type && sub.transport?.callback && this.isOurCallback(sub.transport.callback));
+        for (const sub of conflictingSubs) {
+          try {
+            await fetch(`https://api.twitch.tv/helix/eventsub/subscriptions?id=${encodeURIComponent(sub.id)}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${appToken}`,
+                'Client-Id': clientId
+              }
+            });
+            console.log('[TwitchInit] Deleted conflicting Twitch subscription', sub.id, sub.type);
+          } catch (deleteErr) {
+            console.warn('[TwitchInit] Failed to delete conflicting subscription', sub.id, deleteErr);
+          }
+        }
+
+        const retryError = await attemptCreateSubscription();
+        if (retryError) {
+          return retryError.error;
+        }
+
+        const retrySubscriptions = await this.fetchBroadcasterSubscriptions(appToken, clientId, targetCondition.broadcaster_user_id);
+        await this.syncTwitchSubscriptionsToFirestore(admin, db, userId, retrySubscriptions);
+        matchingSubscription = retrySubscriptions.find(sub => sub.type === type && conditionMatches(sub.condition));
+
+        if (!matchingSubscription) {
+          throw new Error(`Failed to create Twitch subscription for ${type}. Twitch did not report the subscription after creation.`);
+        }
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            subscription: matchingSubscription,
+            subscriptions: retrySubscriptions
+          })
+        };
       }
 
       return {
         statusCode: 200,
-        body: JSON.stringify({ 
-          subscription,
-          message: existingSubscription.exists ? 'Using existing subscription' : 'EventSub subscription created successfully' 
+        body: JSON.stringify({
+          subscription: matchingSubscription,
+          subscriptions
         })
       };
 
@@ -418,6 +444,83 @@ class TwitchInitializer {
           message: error.message 
         })
       };
+    }
+  }
+
+  isOurCallback(callbackUrl = '') {
+    if (!callbackUrl) return false;
+    const allowedCallbacks = [
+      'https://masky.ai/api/twitch-webhook',
+      'https://masky.net/api/twitch-webhook'
+    ];
+    return allowedCallbacks.includes(callbackUrl);
+  }
+
+  async fetchBroadcasterSubscriptions(appToken, clientId, broadcasterUserId) {
+    const results = [];
+    let cursor = null;
+
+    do {
+      const url = new URL('https://api.twitch.tv/helix/eventsub/subscriptions');
+      url.searchParams.set('first', '100');
+      if (cursor) url.searchParams.set('after', cursor);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${appToken}`,
+          'Client-Id': clientId
+        }
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Failed to fetch Twitch subscriptions: ${response.status} ${text}`);
+      }
+
+      const data = await response.json();
+      if (Array.isArray(data.data)) {
+        results.push(
+          ...data.data.filter(sub => {
+            const condition = sub.condition || {};
+            return condition.broadcaster_user_id === broadcasterUserId && this.isOurCallback(sub.transport?.callback);
+          })
+        );
+      }
+
+      cursor = data.pagination?.cursor || null;
+    } while (cursor);
+
+    return results;
+  }
+
+  async syncTwitchSubscriptionsToFirestore(admin, db, userId, subscriptions) {
+    const subsCollection = db.collection('users').doc(userId).collection('subscriptions');
+    const desiredDocIds = new Set();
+
+    for (const sub of subscriptions) {
+      const docId = `twitch_${sub.type}`;
+      desiredDocIds.add(docId);
+      await subsCollection.doc(docId).set({
+        provider: 'twitch',
+        eventType: sub.type,
+        twitchSubscription: sub,
+        isActive: sub.status === 'enabled',
+        condition: sub.condition || null,
+        transport: sub.transport || null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    const existingDocs = await subsCollection.where('provider', '==', 'twitch').get();
+    for (const doc of existingDocs.docs) {
+      if (!desiredDocIds.has(doc.id)) {
+        try {
+          await doc.ref.delete();
+        } catch (err) {
+          console.warn('[TwitchInit] Failed to remove outdated Twitch subscription doc', doc.id, err);
+        }
+      }
     }
   }
 

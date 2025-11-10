@@ -313,7 +313,7 @@ export function renderProjectsManager(container) {
         if (icon) icon.textContent = nextExpanded ? '▲' : '▼';
 
         if (nextExpanded) {
-            loadSocialHooks({ showLoading: true, forceRefresh: true, verifyWithProviders: true });
+            loadSocialHooks({ showLoading: true, forceRefresh: true });
         }
     }
 
@@ -347,8 +347,7 @@ export function renderProjectsManager(container) {
                 pendingSocialHooksRefresh = true;
                 pendingSocialHooksOptions = {
                     showLoading: true,
-                    forceRefresh: true,
-                    verifyWithProviders
+                    forceRefresh: true
                 };
             }
             return;
@@ -377,7 +376,7 @@ export function renderProjectsManager(container) {
                 snap = await getDocs(subsRef);
             }
 
-            const normalized = snap.docs.map(normalizeSubscriptionDoc);
+            const normalized = dedupeSocialHookItems(snap.docs.map(normalizeSubscriptionDoc));
             normalized.sort((a, b) => {
                 const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
                 const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
@@ -412,7 +411,7 @@ export function renderProjectsManager(container) {
         } finally {
             socialHooksLoading = false;
             if (pendingSocialHooksRefresh) {
-                const queuedOptions = pendingSocialHooksOptions || { showLoading: true, forceRefresh: true, verifyWithProviders: true };
+                const queuedOptions = pendingSocialHooksOptions || { showLoading: true, forceRefresh: true };
                 pendingSocialHooksRefresh = false;
                 pendingSocialHooksOptions = null;
                 setTimeout(() => loadSocialHooks(queuedOptions), 0);
@@ -456,7 +455,7 @@ export function renderProjectsManager(container) {
             if (retryBtn) {
                 retryBtn.onclick = (event) => {
                     event.preventDefault();
-                    loadSocialHooks({ showLoading: true, forceRefresh: true, verifyWithProviders: true });
+                    loadSocialHooks({ showLoading: true, forceRefresh: true });
                 };
             }
             return;
@@ -482,7 +481,7 @@ export function renderProjectsManager(container) {
         if (refreshBtn) {
             refreshBtn.onclick = (event) => {
                 event.preventDefault();
-                loadSocialHooks({ showLoading: true, forceRefresh: true, verifyWithProviders: true });
+                loadSocialHooks({ showLoading: true, forceRefresh: true });
             };
         }
 
@@ -490,7 +489,7 @@ export function renderProjectsManager(container) {
         if (retryBtn) {
             retryBtn.onclick = (event) => {
                 event.preventDefault();
-                loadSocialHooks({ showLoading: true, forceRefresh: true, verifyWithProviders: true });
+                loadSocialHooks({ showLoading: true, forceRefresh: true });
             };
         }
     }
@@ -516,7 +515,11 @@ export function renderProjectsManager(container) {
             }
 
             const verified = await verifySingleSocialHook(baseItem, token);
-            socialHooksItems.push(verified);
+            if (verified && verified.subscriptionId) {
+                socialHooksItems = dedupeSocialHookItems([...socialHooksItems, verified]);
+            } else if (verified) {
+                socialHooksItems.push(verified);
+            }
             socialHooksVerificationProgress += 1;
             updateSocialHooksDisplay();
         }
@@ -731,6 +734,34 @@ export function renderProjectsManager(container) {
             return 'Stored record';
         }
         return '—';
+    }
+
+    function dedupeSocialHookItems(items) {
+        if (!Array.isArray(items) || items.length === 0) return [];
+        const bySubscription = new Map();
+        const byDoc = new Map();
+        const result = [];
+
+        for (const item of items) {
+            if (!item || typeof item !== 'object') continue;
+            const subscriptionKey = item.subscriptionId || item.providerSubscription?.id || null;
+            const docKey = item.id || `${item.provider || 'unknown'}:${item.eventType || 'unknown'}:${JSON.stringify(item.condition || {})}`;
+
+            if (subscriptionKey) {
+                if (bySubscription.has(subscriptionKey)) {
+                    continue;
+                }
+                bySubscription.set(subscriptionKey, true);
+            } else if (byDoc.has(docKey)) {
+                continue;
+            } else {
+                byDoc.set(docKey, true);
+            }
+
+            result.push(item);
+        }
+
+        return result;
     }
 
     function normalizeSubscriptionDoc(doc) {

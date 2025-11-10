@@ -333,6 +333,254 @@ exports.handler = async (event, context) => {
         }
     }
 
+    // Unified user event configuration (across providers)
+    if (path === '/users/events' && method === 'GET') {
+        try {
+            const buildUrlFromEvent = () => {
+                if (event.rawUrl) return new URL(event.rawUrl);
+                const origin = requestOrigin && requestOrigin !== '*' ? requestOrigin : 'https://masky.ai';
+                const rawPath = event.rawPath || path || '/users/events';
+                const query = event.rawQueryString ? `?${event.rawQueryString}` : '';
+                return new URL(`${origin}${rawPath}${query}`);
+            };
+
+            let url;
+            try {
+                url = buildUrlFromEvent();
+            } catch (err) {
+                console.warn('Failed to construct URL object for /users/events request:', err.message);
+            }
+
+            const queryParams = event.queryStringParameters || {};
+            const userId = url?.searchParams?.get('userId') || url?.searchParams?.get('uid') || queryParams.userId || queryParams.uid;
+
+            if (!userId || typeof userId !== 'string') {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing userId parameter' })
+                };
+            }
+
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const db = admin.firestore();
+
+            const serializeTimestamp = (value) => {
+                if (!value) return null;
+                if (typeof value.toDate === 'function') {
+                    try { return value.toDate().toISOString(); } catch { return null; }
+                }
+                if (value instanceof Date) {
+                    return value.toISOString();
+                }
+                if (typeof value === 'string') {
+                    return value;
+                }
+                return null;
+            };
+
+            const providerGroups = {};
+            const heygenTasks = [];
+            const projectsSnapshot = await db.collection('projects')
+                .where('userId', '==', userId)
+                .where('isActive', '==', true)
+                .get();
+
+            if (projectsSnapshot.empty) {
+                const emptyResponse = {
+                    userId,
+                    providers: {},
+                    eventTypes: [],
+                    generatedAt: new Date().toISOString()
+                };
+
+                return {
+                    statusCode: 200,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-store'
+                    },
+                    body: JSON.stringify(emptyResponse)
+                };
+            }
+
+            const allEventTypes = new Set();
+            const nowIso = new Date().toISOString();
+
+            projectsSnapshot.docs.forEach((doc) => {
+                const data = doc.data() || {};
+                const platform = (data.platform || 'unknown').toLowerCase();
+                const eventType = data.eventType || 'channel.follow';
+                const projectType = data.projectType || (data.videoStoragePath ? 'upload' : 'generate');
+
+                if (!providerGroups[platform]) {
+                    providerGroups[platform] = {
+                        eventTypes: new Set(),
+                        projects: []
+                    };
+                }
+
+                const activeAlertConfig = data.alertConfig?.[eventType] || null;
+                const projectRecord = {
+                    projectId: doc.id,
+                    projectName: data.projectName || null,
+                    platform,
+                    eventType,
+                    projectType,
+                    commandTrigger: data.commandTrigger || null,
+                    isActive: !!data.isActive,
+                    twitchSubscription: !!data.twitchSubscription,
+                    alertConfig: data.alertConfig || {},
+                    activeAlertConfig,
+                    videoSources: [],
+                    heygen: data.heygenVideoId ? {
+                        videoId: data.heygenVideoId,
+                        status: data.heygenStatus || data.heygenLastStatus || null,
+                        ready: !!data.heygenVideoReady,
+                        lastCheckedAt: serializeTimestamp(data.heygenLastCheckedAt) || null
+                    } : null,
+                    metadata: {
+                        videoStoragePath: data.videoStoragePath || null,
+                        createdAt: serializeTimestamp(data.createdAt),
+                        updatedAt: serializeTimestamp(data.updatedAt)
+                    }
+                };
+
+                providerGroups[platform].eventTypes.add(eventType);
+                providerGroups[platform].projects.push(projectRecord);
+                allEventTypes.add(`${platform}:${eventType}`);
+
+                if (projectType === 'upload' && data.videoUrl) {
+                    projectRecord.videoSources.push({
+                        type: 'uploaded',
+                        url: data.videoUrl,
+                        storagePath: data.videoStoragePath || null,
+                        lastCheckedAt: nowIso
+                    });
+                }
+
+                if (data.heygenVideoId) {
+                    const task = {
+                        projectRecord,
+                        videoId: data.heygenVideoId,
+                        lastKnownStatus: data.heygenStatus || data.heygenLastStatus || null
+                    };
+                    heygenTasks.push(task);
+                }
+            });
+
+            if (heygenTasks.length) {
+                await Promise.all(heygenTasks.map(async (task) => {
+                    const { projectRecord, videoId, lastKnownStatus } = task;
+                    try {
+                        const payload = await heygen.getVideoStatus(videoId);
+                        const data = payload?.data || payload || {};
+                        const signedUrl = data.video_signed_url?.url || null;
+                        const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
+                        const directUrl = data.video_url || data.videoUrl || null;
+                        const resolvedUrl = signedUrl || directUrl || null;
+                        const status = data.status || payload?.status || lastKnownStatus || null;
+
+                        const normalizeExpiry = (value) => {
+                            if (!value) return null;
+                            if (typeof value === 'string') {
+                                const parsed = Number(value);
+                                if (Number.isFinite(parsed)) {
+                                    return parsed > 1e12 ? new Date(parsed).toISOString() : new Date(parsed * 1000).toISOString();
+                                }
+                                const dateValue = Date.parse(value);
+                                if (!Number.isNaN(dateValue)) {
+                                    return new Date(dateValue).toISOString();
+                                }
+                                return value;
+                            }
+                            if (typeof value === 'number') {
+                                return value > 1e12 ? new Date(value).toISOString() : new Date(value * 1000).toISOString();
+                            }
+                            if (value instanceof Date) {
+                                return value.toISOString();
+                            }
+                            return null;
+                        };
+
+                        if (!projectRecord.heygen) {
+                            projectRecord.heygen = { videoId, status: null, ready: false, lastCheckedAt: null };
+                        }
+                        projectRecord.heygen.status = status || null;
+                        projectRecord.heygen.ready = resolvedUrl ? true : false;
+                        projectRecord.heygen.lastCheckedAt = new Date().toISOString();
+
+                        projectRecord.videoSources.push({
+                            type: 'heygen',
+                            videoId,
+                            status,
+                            url: resolvedUrl,
+                            lastCheckedAt: new Date().toISOString(),
+                            expiresAt: normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null),
+                            raw: {
+                                video_url: data.video_url || null,
+                                video_signed_url: data.video_signed_url || null
+                            }
+                        });
+                    } catch (err) {
+                        console.error(`Failed to refresh HeyGen URL for video ${videoId}:`, err.message);
+                        if (!projectRecord.heygen) {
+                            projectRecord.heygen = { videoId, status: lastKnownStatus || null, ready: false, lastCheckedAt: null };
+                        }
+                        projectRecord.heygen.status = lastKnownStatus || projectRecord.heygen.status || 'error';
+                        projectRecord.heygen.ready = false;
+                        projectRecord.heygen.lastCheckedAt = new Date().toISOString();
+                        projectRecord.videoSources.push({
+                            type: 'heygen',
+                            videoId,
+                            status: 'error',
+                            url: null,
+                            lastCheckedAt: new Date().toISOString(),
+                            error: err.message || 'Unknown error'
+                        });
+                    }
+                }));
+            }
+
+            const providers = {};
+            Object.entries(providerGroups).forEach(([platform, info]) => {
+                providers[platform] = {
+                    eventTypes: Array.from(info.eventTypes),
+                    projects: info.projects
+                };
+            });
+
+            const responseBody = {
+                userId,
+                providers,
+                eventTypes: Array.from(allEventTypes),
+                generatedAt: new Date().toISOString()
+            };
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-store'
+                },
+                body: JSON.stringify(responseBody)
+            };
+        } catch (err) {
+            console.error('Failed to load user events:', err);
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({
+                    error: 'Failed to load user events',
+                    message: err.message
+                })
+            };
+        }
+    }
+
     // HeyGen: generate video (audio source as voice)
     if (path.includes('/heygen/generate') && method === 'POST') {
         const response = await handleHeygenGenerate(event, headers);

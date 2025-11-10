@@ -79,6 +79,9 @@ class ProjectWizard {
             projectType: 'generate',
             uploadedVideoFile: null,
             videoStoragePath: null,
+            heygenVideoReady: false,
+            heygenLastStatus: null,
+            heygenLastCheckedAt: null,
             ...this.options.projectData
         };
         
@@ -87,6 +90,7 @@ class ProjectWizard {
         this.userVoices = [];
         this.userAvatars = [];
         this.avatarGroups = [];
+        this.voiceSaveInProgress = false;
         
         // Dirty flags to track changes that need to be persisted
         this.dirtyFlags = {
@@ -224,7 +228,7 @@ class ProjectWizard {
                                     <option value="channel.subscribe">New Subscriber</option>
                                     <option value="channel.cheer">New Cheer</option>
                                     <option value="channel.raid">New Raid</option>
-                                    <option value="channel.channel_points_custom_reward_redemption">Channel Points Redeem</option>
+                                    <option value="channel.channel_points_custom_reward_redemption.add">Channel Points Redeem</option>
                                     <option value="channel.chat_command">Chat Command</option>
                                 </select>
                             </div>
@@ -300,10 +304,11 @@ class ProjectWizard {
                                                 <input type="text" id="voiceName" placeholder="e.g., Thank You Voice" maxlength="50">
                                             </div>
                                             <div class="voice-buttons">
-                                                <button class="btn btn-primary" onclick="projectWizard.saveVoice()">Save Voice</button>
-                                                <button class="btn btn-secondary" onclick="projectWizard.retryRecording()">Retry</button>
-                                                <button class="btn btn-secondary" onclick="projectWizard.cancelRecording()">Cancel</button>
+                                                <button class="btn btn-primary" id="saveVoiceButton" onclick="projectWizard.saveVoice()">Save Voice</button>
+                                                <button class="btn btn-secondary" id="retryVoiceButton" onclick="projectWizard.retryRecording()">Retry</button>
+                                                <button class="btn btn-secondary" id="cancelVoiceButton" onclick="projectWizard.cancelRecording()">Cancel</button>
                                             </div>
+                                            <div class="voice-save-status" id="voiceSaveStatus" style="display: none; margin-top: 0.75rem; color: rgba(255,255,255,0.85); font-size: 0.95rem;"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -442,9 +447,10 @@ class ProjectWizard {
         
         // Set default event type
         const eventTypeSelect = document.getElementById('eventType');
-        if (eventTypeSelect && !eventTypeSelect.value) {
-            eventTypeSelect.value = 'channel.follow';
-            this.projectData.eventType = 'channel.follow';
+        const normalizedEventType = this.normalizeEventType(this.projectData.eventType || eventTypeSelect?.value || 'channel.follow');
+        this.projectData.eventType = normalizedEventType;
+        if (eventTypeSelect) {
+            eventTypeSelect.value = normalizedEventType;
         }
         
         // Set default project name if empty
@@ -508,7 +514,11 @@ class ProjectWizard {
         const eventType = document.getElementById('eventType');
         if (eventType) {
             eventType.addEventListener('change', (e) => {
-                this.projectData.eventType = e.target.value;
+                const normalized = this.normalizeEventType(e.target.value);
+                this.projectData.eventType = normalized;
+                if (eventType.value !== normalized) {
+                    eventType.value = normalized;
+                }
                 
                 // Update project name if it's still the default
                 const projectNameInput = document.getElementById('projectName');
@@ -584,7 +594,11 @@ class ProjectWizard {
 
         if (platformSelect) platformSelect.value = this.projectData.platform || '';
         if (projectName) projectName.value = this.projectData.projectName || '';
-        if (eventType) eventType.value = this.projectData.eventType || 'channel.follow';
+        const normalizedEventType = this.normalizeEventType(this.projectData.eventType || 'channel.follow');
+        this.projectData.eventType = normalizedEventType;
+        if (eventType) {
+            eventType.value = normalizedEventType;
+        }
         if (videoUrl) videoUrl.value = this.projectData.videoUrl || '';
         if (commandTriggerInput) commandTriggerInput.value = this.projectData.commandTrigger || '';
         const projectType = this.projectData.projectType || 'generate';
@@ -594,7 +608,7 @@ class ProjectWizard {
         });
         
         // Ensure projectData has the correct values
-        this.projectData.eventType = this.projectData.eventType || 'channel.follow';
+        this.projectData.eventType = normalizedEventType;
 
         // Ensure command trigger group visibility matches current event type
         const cmdGroup = document.getElementById('commandTriggerGroup');
@@ -655,9 +669,22 @@ class ProjectWizard {
         }
 
         if (this.dirtyFlags.video) {
-            updates.videoUrl = this.projectData.videoUrl || null;
-            updates.videoStoragePath = this.projectData.videoStoragePath || null;
-            updates.heygenVideoId = this.projectData.heygenVideoId || null;
+            const isUploadProject = this.projectData.projectType === 'upload';
+            if (isUploadProject) {
+                updates.videoUrl = this.projectData.videoUrl || null;
+                updates.videoStoragePath = this.projectData.videoStoragePath || null;
+                updates.heygenVideoId = null;
+                updates.heygenVideoReady = null;
+                updates.heygenLastStatus = null;
+                updates.heygenLastCheckedAt = null;
+            } else {
+                updates.videoUrl = null;
+                updates.videoStoragePath = null;
+                updates.heygenVideoId = this.projectData.heygenVideoId || null;
+                updates.heygenVideoReady = Boolean(this.projectData.heygenVideoReady);
+                updates.heygenLastStatus = this.projectData.heygenLastStatus || null;
+                updates.heygenLastCheckedAt = new Date();
+            }
             hasUpdates = true;
         }
 
@@ -910,6 +937,14 @@ class ProjectWizard {
         return isValid;
     }
 
+    normalizeEventType(eventType) {
+        if (!eventType) return eventType;
+        if (eventType === 'channel.channel_points_custom_reward_redemption') {
+            return 'channel.channel_points_custom_reward_redemption.add';
+        }
+        return eventType;
+    }
+
     validateStep2() {
         return this.projectData.voiceUrl !== null;
     }
@@ -1112,6 +1147,14 @@ class ProjectWizard {
             return;
         }
 
+        if (this.voiceSaveInProgress) {
+            console.warn('Voice save already in progress, ignoring duplicate request.');
+            return;
+        }
+
+        this.voiceSaveInProgress = true;
+        this.setVoiceSavingState(true);
+
         try {
             const user = getCurrentUser();
             if (!user) throw new Error('User not authenticated');
@@ -1175,6 +1218,9 @@ class ProjectWizard {
         } catch (error) {
             console.error('Error saving voice:', error);
             alert('Error saving voice: ' + error.message);
+        } finally {
+            this.voiceSaveInProgress = false;
+            this.setVoiceSavingState(false);
         }
     }
 
@@ -1194,6 +1240,46 @@ class ProjectWizard {
         }
         
         this.projectData.voiceFile = null;
+    }
+
+    setVoiceSavingState(isSaving) {
+        const saveBtn = document.getElementById('saveVoiceButton');
+        const retryBtn = document.getElementById('retryVoiceButton');
+        const cancelBtn = document.getElementById('cancelVoiceButton');
+        const voiceNameInput = document.getElementById('voiceName');
+        const statusEl = document.getElementById('voiceSaveStatus');
+
+        if (saveBtn) {
+            if (!saveBtn.dataset.originalText) {
+                saveBtn.dataset.originalText = saveBtn.textContent.trim();
+            }
+            saveBtn.disabled = isSaving;
+            saveBtn.textContent = isSaving ? 'Saving...' : (saveBtn.dataset.originalText || 'Save Voice');
+            saveBtn.setAttribute('aria-busy', isSaving ? 'true' : 'false');
+        }
+
+        [retryBtn, cancelBtn].forEach(btn => {
+            if (btn) {
+                btn.disabled = isSaving;
+            }
+        });
+
+        if (voiceNameInput) {
+            voiceNameInput.disabled = isSaving;
+        }
+
+        if (statusEl) {
+            statusEl.setAttribute('aria-live', 'polite');
+            statusEl.setAttribute('role', 'status');
+            if (isSaving) {
+                statusEl.innerHTML = '<span style="margin-right: 0.5rem;">⏳</span>Uploading voice recording...';
+                statusEl.style.display = 'flex';
+                statusEl.style.alignItems = 'center';
+            } else {
+                statusEl.style.display = 'none';
+                statusEl.textContent = '';
+            }
+        }
     }
 
     /**
@@ -1729,8 +1815,11 @@ class ProjectWizard {
             const currentUser = getCurrentUser();
             if (!currentUser) throw new Error('User not authenticated');
             
+            const normalizedEventType = this.normalizeEventType(this.projectData.eventType);
+            this.projectData.eventType = normalizedEventType;
+
             const idToken = await currentUser.getIdToken();
-            if (this.projectData.eventType === 'channel.chat_command') {
+            if (normalizedEventType === 'channel.chat_command') {
                 // Ensure chatbot via user token
                 const connectionError = document.getElementById('connectionError');
                 const response = await fetch(`${config.api.baseUrl}/api/twitch-chatbot-ensure`, {
@@ -1823,7 +1912,7 @@ class ProjectWizard {
             }
 
             // Determine EventSub type based on selected event
-            const eventsubType = this.projectData.eventType;
+            const eventsubType = normalizedEventType;
 
             const response = await fetch(`${config.api.baseUrl}/api/twitch-eventsub`, {
                 method: 'POST',
@@ -1906,7 +1995,7 @@ class ProjectWizard {
                     }));
 
                     // Determine extra scopes needed for the selected event type
-                    const extraScopes = this.getRequiredTwitchScopesForEvent(this.projectData.eventType);
+                    const extraScopes = this.getRequiredTwitchScopesForEvent(normalizedEventType);
 
                     const { signInWithTwitch } = await import('./firebase.js');
                     if (connectionStatus) {
@@ -1937,33 +2026,38 @@ class ProjectWizard {
      * Map event types to required Twitch OAuth scopes
      */
     getRequiredTwitchScopesForEvent(eventType) {
+        const normalized = this.normalizeEventType(eventType);
         const map = {
             'channel.subscribe': ['channel:read:subscriptions'],
             'channel.cheer': ['bits:read'],
+            'channel.channel_points_custom_reward_redemption.add': ['channel:read:redemptions'],
             'channel.channel_points_custom_reward_redemption': ['channel:read:redemptions'],
             // channel.follow handled by moderator:read:followers which is already in base scopes
             'channel.follow': ['moderator:read:followers']
         };
-        return map[eventType] || [];
+        return map[normalized] || map[eventType] || [];
     }
 
     /**
      * Map event types to the correct EventSub version
      */
     getEventSubVersionForType(eventType) {
+        const normalized = this.normalizeEventType(eventType);
         const versions = {
             'channel.follow': '2',
             'channel.subscribe': '1',
             'channel.cheer': '1',
             'channel.raid': '1',
+            'channel.channel_points_custom_reward_redemption.add': '1',
             'channel.channel_points_custom_reward_redemption': '1'
         };
-        return versions[eventType] || '1';
+        return versions[normalized] || versions[eventType] || '1';
     }
 
     async ensureCurrentEventSubscription() {
         const platform = this.projectData.platform || 'twitch';
-        const eventType = this.projectData.eventType;
+        const eventType = this.normalizeEventType(this.projectData.eventType);
+        this.projectData.eventType = eventType;
         if (platform !== 'twitch' || !eventType || eventType === 'channel.chat_command') {
             return;
         }
@@ -2004,15 +2098,18 @@ class ProjectWizard {
             const platform = this.projectData.platform || 'twitch';
             if (platform !== 'twitch') return;
 
-            const eventType = this.projectData.eventType;
+            const eventType = this.normalizeEventType(this.projectData.eventType);
+            this.projectData.eventType = eventType;
             if (!eventType || eventType === 'channel.chat_command') return;
 
             const user = getCurrentUser();
             if (!user) return;
 
             const { db, doc, getDoc } = await import('./firebase.js');
-            const subscriptionRef = doc(db, 'users', user.uid, 'subscriptions', `twitch_${eventType}`);
-            const subscriptionSnap = await getDoc(subscriptionRef);
+            let subscriptionSnap = await getDoc(doc(db, 'users', user.uid, 'subscriptions', `twitch_${eventType}`));
+            if (!subscriptionSnap.exists() && eventType === 'channel.channel_points_custom_reward_redemption.add') {
+                subscriptionSnap = await getDoc(doc(db, 'users', user.uid, 'subscriptions', 'twitch_channel.channel_points_custom_reward_redemption'));
+            }
             if (subscriptionSnap.exists()) {
                 const data = subscriptionSnap.data();
                 if (data?.twitchSubscription) {
@@ -2794,6 +2891,7 @@ class ProjectWizard {
             'channel.bits.use': 'Bits Use',
             'channel.raid': 'Raid',
             'channel.channel_points_custom_reward_redemption': 'Channel Points',
+            'channel.channel_points_custom_reward_redemption.add': 'Channel Points',
             'channel.chat_command': 'Chat Command'
         };
         
@@ -3136,6 +3234,8 @@ class ProjectWizard {
 
         const { db, addDoc, collection } = await import('./firebase.js');
         
+        const isUploadProject = this.projectData.projectType === 'upload';
+
         const projectData = {
             userId: user.uid,
             platform: this.projectData.platform,
@@ -3153,15 +3253,25 @@ class ProjectWizard {
             avatarWidth: this.projectData.avatarWidth || null,
             avatarHeight: this.projectData.avatarHeight || null,
             avatarAspectRatio: this.projectData.avatarAspectRatio || null,
-            videoUrl: this.projectData.videoUrl || null,
-            heygenVideoId: this.projectData.projectType === 'upload' ? null : (this.projectData.heygenVideoId || null),
-            videoStoragePath: this.projectData.videoStoragePath || null,
+            videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
+            heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
+            videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
             alertConfig: this.projectData.alertConfig || {},
             twitchSubscription: true, // Set to true since we connected in step 4
             isActive: true,
             createdAt: new Date(),
             updatedAt: new Date()
         };
+
+        if (!isUploadProject) {
+            projectData.heygenVideoReady = Boolean(this.projectData.heygenVideoReady);
+            projectData.heygenLastStatus = this.projectData.heygenLastStatus || null;
+            projectData.heygenLastCheckedAt = this.projectData.heygenLastCheckedAt || null;
+        } else {
+            projectData.heygenVideoReady = null;
+            projectData.heygenLastStatus = null;
+            projectData.heygenLastCheckedAt = null;
+        }
 
         const projectsRef = collection(db, 'projects');
         const createdRef = await addDoc(projectsRef, projectData);
@@ -3211,12 +3321,20 @@ class ProjectWizard {
                 if (status === 'completed' && videoUrl) {
                     // Video is ready!
                     this.projectData.videoUrl = videoUrl;
+                    this.projectData.heygenVideoReady = true;
+                    this.projectData.heygenLastStatus = status || 'completed';
+                    this.projectData.heygenLastCheckedAt = new Date();
+                    this.dirtyFlags.video = false;
                     
-                    // Save video URL to Firestore
+                    // Update Firestore metadata without storing the signed URL
                     const { db, doc, updateDoc } = await import('./firebase.js');
                     const projectRef = doc(db, 'projects', this.projectData.projectId);
                     await updateDoc(projectRef, {
-                        videoUrl: videoUrl,
+                        videoUrl: null,
+                        videoStoragePath: null,
+                        heygenVideoReady: true,
+                        heygenLastStatus: status || 'completed',
+                        heygenLastCheckedAt: new Date(),
                         updatedAt: new Date()
                     });
 
@@ -3342,6 +3460,8 @@ class ProjectWizard {
             // Project should already be created in step 5, just update it
             if (this.projectData.projectId) {
                 const projectRef = doc(db, 'projects', this.projectData.projectId);
+                const isUploadProject = this.projectData.projectType === 'upload';
+
                 const projectData = {
                     platform: this.projectData.platform,
                     projectName: this.projectData.projectName,
@@ -3355,13 +3475,23 @@ class ProjectWizard {
                     avatarGroupId: this.projectData.avatarGroupId || null,
                     avatarAssetId: this.projectData.avatarAssetId || null,
                     avatarGroupName: this.projectData.avatarGroupName || null,
-                    videoUrl: this.projectData.videoUrl || null,
-                    heygenVideoId: this.projectData.heygenVideoId || null,
-                    videoStoragePath: this.projectData.videoStoragePath || null,
+                    videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
+                    heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
+                    videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
                     alertConfig: this.projectData.alertConfig || {},
                     twitchSubscription: true, // Always true since we connected in step 4
                     updatedAt: new Date()
                 };
+
+                if (!isUploadProject) {
+                    projectData.heygenVideoReady = Boolean(this.projectData.heygenVideoReady);
+                    projectData.heygenLastStatus = this.projectData.heygenLastStatus || null;
+                    projectData.heygenLastCheckedAt = new Date();
+                } else {
+                    projectData.heygenVideoReady = null;
+                    projectData.heygenLastStatus = null;
+                    projectData.heygenLastCheckedAt = null;
+                }
                 await updateDoc(projectRef, projectData);
             } else {
                 // Fallback: create project if it somehow wasn't created in step 5

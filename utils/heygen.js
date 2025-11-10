@@ -725,20 +725,23 @@ class HeygenClient {
     }
 
     async resolveEffectiveMaxDimension(maxDimensionOverride, planMaxDimensionOverride = null) {
-        let planMax = null;
+        const actualPlanMax = await this.getPlanMaxDimension();
+
+        let effectivePlanMax = Number.isFinite(actualPlanMax) && actualPlanMax > 0
+            ? actualPlanMax
+            : DEFAULT_PLAN_MAX_DIMENSION;
+
         const overridePlan = Number(planMaxDimensionOverride);
         if (Number.isFinite(overridePlan) && overridePlan > 0) {
-            planMax = overridePlan;
-        } else {
-            planMax = await this.getPlanMaxDimension();
+            effectivePlanMax = Math.min(effectivePlanMax, overridePlan);
         }
+
         const overrideValue = Number(maxDimensionOverride);
-
         if (Number.isFinite(overrideValue) && overrideValue > 0) {
-            return Math.min(planMax, overrideValue);
+            return Math.min(effectivePlanMax, overrideValue);
         }
 
-        return planMax;
+        return effectivePlanMax;
     }
 
     async generateVideoWithAudio(params) {

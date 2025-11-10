@@ -2,6 +2,7 @@ import { getCurrentUser, onAuthChange } from './firebase.js';
 import { showProjectWizard } from './projectWizard.js';
 import { config } from './config.js';
 import { renderProjectCard, bindProjectCard } from './projectCard.js';
+import { getEventTypeLabel } from './eventTypeLabels.js';
 
 export function renderProjectsManager(container) {
     const containerElement = typeof container === 'string' ? document.querySelector(container) : container;
@@ -611,7 +612,7 @@ export function renderProjectsManager(container) {
 
         item.subscriptionId = subscription.id || item.subscriptionId;
         item.eventType = subscription.type || item.eventType;
-        item.eventLabel = formatEventType(item.eventType);
+        item.eventLabel = formatEventType(item.eventType, item.provider);
 
         const status = subscription.status || item.statusRaw || '';
         item.statusRaw = status;
@@ -790,7 +791,7 @@ export function renderProjectsManager(container) {
             provider,
             providerLabel,
             eventType,
-            eventLabel: formatEventType(eventType),
+            eventLabel: formatEventType(eventType, provider),
             statusRaw: statusString,
             statusLower,
             isActive,
@@ -849,9 +850,8 @@ export function renderProjectsManager(container) {
         }
     }
 
-    function formatEventType(value) {
-        if (!value) return 'Unknown Event';
-        return formatLabel(value);
+    function formatEventType(value, provider) {
+        return getEventTypeLabel(value, provider);
     }
 
     function formatLabel(value) {

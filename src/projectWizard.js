@@ -82,8 +82,26 @@ class ProjectWizard {
             heygenVideoReady: false,
             heygenLastStatus: null,
             heygenLastCheckedAt: null,
+            channelPointsMinimumCost: 0,
+            alertConfig: {},
             ...this.options.projectData
         };
+
+        if (!this.projectData || typeof this.projectData !== 'object') {
+            this.projectData = {
+                platform: 'twitch',
+                eventType: 'channel.follow'
+            };
+        }
+
+        if (!this.projectData.alertConfig || typeof this.projectData.alertConfig !== 'object') {
+            this.projectData.alertConfig = {};
+        }
+
+        this.projectData.channelPointsMinimumCost = this.parseNonNegativeInteger(
+            this.projectData.channelPointsMinimumCost,
+            this.extractInitialChannelPointsMinimumCost(this.projectData)
+        );
         
         this.mediaRecorder = null;
         this.audioChunks = [];
@@ -98,7 +116,8 @@ class ProjectWizard {
             voice: false,
             avatar: false,
             video: false,
-            projectType: false
+            projectType: false,
+            channelPointsMinimum: false
         };
     }
 
@@ -119,8 +138,16 @@ class ProjectWizard {
                 const stored = JSON.parse(storedStateRaw);
                 if (stored && stored.projectData) {
                     this.projectData = stored.projectData;
+                    if (!this.projectData.alertConfig || typeof this.projectData.alertConfig !== 'object') {
+                        this.projectData.alertConfig = {};
+                    }
+                    this.projectData.channelPointsMinimumCost = this.parseNonNegativeInteger(
+                        this.projectData.channelPointsMinimumCost,
+                        0
+                    );
                     this.currentStep = stored.currentStep || this.currentStep;
                     this.showStep(this.currentStep);
+                    this.updateChannelPointsMinimumUI();
                     this.updateNavigationButtons();
                 }
             } catch (e) {
@@ -235,6 +262,10 @@ class ProjectWizard {
                             <div class="form-group" id="commandTriggerGroup" style="display: none;">
                                 <label for="commandTriggerInput">Command Trigger (text after !maskyai):</label>
                                 <input type="text" id="commandTriggerInput" class="form-input" placeholder="e.g., bacon">
+                            </div>
+                            <div class="form-group" id="channelPointsMinimumGroup" style="display: none;">
+                                <label for="channelPointsMinimumInput">Minimum Amount (Channel Points):</label>
+                                <input type="number" id="channelPointsMinimumInput" class="form-input" min="0" step="1" placeholder="0">
                             </div>
                         </div>
                     </div>
@@ -452,6 +483,8 @@ class ProjectWizard {
         if (eventTypeSelect) {
             eventTypeSelect.value = normalizedEventType;
         }
+        this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
+        this.updateChannelPointsMinimumUI();
         
         // Set default project name if empty
         const projectNameInput = document.getElementById('projectName');
@@ -464,6 +497,7 @@ class ProjectWizard {
         // Trigger validation after setting defaults
         setTimeout(() => {
             this.validateStep1();
+            this.updateChannelPointsMinimumUI();
             this.updateWorkflowForProjectType();
         }, 100);
     }
@@ -514,6 +548,8 @@ class ProjectWizard {
         const eventType = document.getElementById('eventType');
         if (eventType) {
             eventType.addEventListener('change', (e) => {
+                const previousEventType = this.projectData.eventType;
+                const previousNormalized = this.normalizeEventType(previousEventType);
                 const normalized = this.normalizeEventType(e.target.value);
                 this.projectData.eventType = normalized;
                 if (eventType.value !== normalized) {
@@ -531,8 +567,23 @@ class ProjectWizard {
                 // Show/hide command trigger field for chat commands
                 const cmdGroup = document.getElementById('commandTriggerGroup');
                 if (cmdGroup) {
-                    cmdGroup.style.display = (e.target.value === 'channel.chat_command') ? 'block' : 'none';
+                    cmdGroup.style.display = (normalized === 'channel.chat_command') ? 'block' : 'none';
                 }
+
+                if (this.isChannelPointsEventType(normalized)) {
+                    const sanitized = this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
+                    const minInput = document.getElementById('channelPointsMinimumInput');
+                    if (minInput) {
+                        minInput.value = sanitized;
+                    }
+                } else if (this.isChannelPointsEventType(previousNormalized)) {
+                    if (this.projectData.channelPointsMinimumCost !== 0) {
+                        this.projectData.channelPointsMinimumCost = 0;
+                    }
+                    this.dirtyFlags.channelPointsMinimum = true;
+                }
+
+                this.updateChannelPointsMinimumUI();
                 
                 this.validateStep1();
             });
@@ -545,6 +596,23 @@ class ProjectWizard {
                 this.projectData.commandTrigger = e.target.value.trim();
                 this.dirtyFlags.commandTrigger = true;
                 this.validateStep1();
+            });
+        }
+
+        const channelPointsMinimumInput = document.getElementById('channelPointsMinimumInput');
+        if (channelPointsMinimumInput) {
+            channelPointsMinimumInput.addEventListener('input', (e) => {
+                const sanitized = this.setChannelPointsMinimumCost(e.target.value);
+                if (`${sanitized}` !== e.target.value) {
+                    e.target.value = sanitized;
+                }
+            });
+
+            channelPointsMinimumInput.addEventListener('blur', (e) => {
+                const sanitized = this.setChannelPointsMinimumCost(e.target.value, false);
+                if (`${sanitized}` !== e.target.value) {
+                    e.target.value = sanitized;
+                }
             });
         }
 
@@ -616,10 +684,15 @@ class ProjectWizard {
             cmdGroup.style.display = (this.projectData.eventType === 'channel.chat_command') ? 'block' : 'none';
         }
 
+        this.projectData.channelPointsMinimumCost = this.extractInitialChannelPointsMinimumCost(this.projectData);
+        this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
+        this.updateChannelPointsMinimumUI();
+
         // Reset dirty flags when loading existing data
         this.dirtyFlags.commandTrigger = false;
         this.dirtyFlags.voice = false;
         this.dirtyFlags.avatar = false;
+        this.dirtyFlags.channelPointsMinimum = false;
 
         // Validate step 1
         this.validateStep1();
@@ -647,6 +720,13 @@ class ProjectWizard {
 
         if (this.dirtyFlags.commandTrigger) {
             updates.commandTrigger = this.projectData.commandTrigger || null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.channelPointsMinimum) {
+            updates.channelPointsMinimumCost = this.isChannelPointsEventType(this.projectData.eventType)
+                ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
+                : null;
             hasUpdates = true;
         }
 
@@ -698,6 +778,7 @@ class ProjectWizard {
                 // Clear dirty flags after successful persistence
                 if (this.dirtyFlags.projectType) this.dirtyFlags.projectType = false;
                 if (this.dirtyFlags.commandTrigger) this.dirtyFlags.commandTrigger = false;
+                if (this.dirtyFlags.channelPointsMinimum) this.dirtyFlags.channelPointsMinimum = false;
                 if (this.dirtyFlags.voice) this.dirtyFlags.voice = false;
                 if (this.dirtyFlags.avatar) this.dirtyFlags.avatar = false;
                 if (this.dirtyFlags.video) this.dirtyFlags.video = false;
@@ -806,6 +887,10 @@ class ProjectWizard {
                 step.style.display = 'none';
             }
         });
+
+        if (stepNumber === 1) {
+            this.updateChannelPointsMinimumUI();
+        }
         
         // Handle step-specific logic
         if (this.projectData.projectType === 'upload' && stepNumber === 2) {
@@ -943,6 +1028,71 @@ class ProjectWizard {
             return 'channel.channel_points_custom_reward_redemption.add';
         }
         return eventType;
+    }
+
+    isChannelPointsEventType(eventType) {
+        const normalized = this.normalizeEventType(eventType);
+        return normalized === 'channel.channel_points_custom_reward_redemption.add';
+    }
+
+    parseNonNegativeInteger(value, fallback = 0) {
+        if (value === null || value === undefined || value === '') {
+            return fallback;
+        }
+
+        const num = typeof value === 'number' ? value : Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+            return fallback;
+        }
+
+        return Math.floor(num);
+    }
+
+    extractInitialChannelPointsMinimumCost(source = {}) {
+        const direct = this.parseNonNegativeInteger(source?.channelPointsMinimumCost, null);
+        if (direct !== null) {
+            return direct;
+        }
+
+        const normalizedEventType = this.normalizeEventType(
+            source?.eventType || this.projectData?.eventType || 'channel.follow'
+        );
+        const alertConfig = source?.alertConfig || {};
+        const configEntry = alertConfig[normalizedEventType] || alertConfig['channel.channel_points_custom_reward_redemption'];
+        const configMinimum = this.parseNonNegativeInteger(configEntry?.conditions?.minimumCost, null);
+        if (configMinimum !== null) {
+            return configMinimum;
+        }
+
+        return 0;
+    }
+
+    updateChannelPointsMinimumUI() {
+        const group = document.getElementById('channelPointsMinimumGroup');
+        const input = document.getElementById('channelPointsMinimumInput');
+        const isChannelPoints = this.isChannelPointsEventType(this.projectData.eventType);
+        if (group) {
+            group.style.display = isChannelPoints ? 'block' : 'none';
+        }
+        if (input) {
+            const value = this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0);
+            input.value = value;
+            input.disabled = !isChannelPoints;
+        }
+    }
+
+    setChannelPointsMinimumCost(value, markDirty = true) {
+        const sanitized = this.parseNonNegativeInteger(value, 0);
+        if (sanitized === this.projectData.channelPointsMinimumCost) {
+            return sanitized;
+        }
+
+        this.projectData.channelPointsMinimumCost = sanitized;
+        if (markDirty && this.isChannelPointsEventType(this.projectData.eventType)) {
+            this.dirtyFlags.channelPointsMinimum = true;
+        }
+
+        return sanitized;
     }
 
     validateStep2() {
@@ -3253,6 +3403,9 @@ class ProjectWizard {
             avatarWidth: this.projectData.avatarWidth || null,
             avatarHeight: this.projectData.avatarHeight || null,
             avatarAspectRatio: this.projectData.avatarAspectRatio || null,
+            channelPointsMinimumCost: this.isChannelPointsEventType(this.projectData.eventType)
+                ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
+                : null,
             videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
             heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
             videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
@@ -3479,6 +3632,9 @@ class ProjectWizard {
                     heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
                     videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
                     alertConfig: this.projectData.alertConfig || {},
+                    channelPointsMinimumCost: this.isChannelPointsEventType(this.projectData.eventType)
+                        ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
+                        : null,
                     twitchSubscription: true, // Always true since we connected in step 4
                     updatedAt: new Date()
                 };

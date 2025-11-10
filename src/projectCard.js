@@ -1,3 +1,5 @@
+import { getEventTypeLabel } from './eventTypeLabels.js';
+
 /**
  * Shared project card rendering utility
  * Provides consistent project card UI across dashboard and projects page
@@ -12,8 +14,10 @@ export function renderProjectCard(project) {
     const escapeHtml = (str) => String(str || '').replace(/[&<>"]+/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s]));
     
     const projectName = escapeHtml(project.projectName || 'Untitled Project');
-    const platform = escapeHtml((project.platform || '').charAt(0).toUpperCase() + (project.platform || '').slice(1));
-    const eventType = escapeHtml(project.eventType || '');
+    const platformRaw = project.platform || project.provider || '';
+    const platformLabel = escapeHtml(platformRaw ? platformRaw.charAt(0).toUpperCase() + platformRaw.slice(1) : 'Unknown');
+    const eventLabelRaw = project.eventType ? getEventTypeLabel(project.eventType, platformRaw) : '';
+    const eventLabel = eventLabelRaw ? ` - ${escapeHtml(eventLabelRaw)}` : '';
     const isActive = project.twitchSubscription;
     
     return `
@@ -21,7 +25,7 @@ export function renderProjectCard(project) {
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom: 12px;">
                 <div>
                     <div class="project-name" style="font-weight:600; font-size: 1.1rem; margin-bottom: 4px;">${projectName}</div>
-                    <div class="project-platform" style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">${platform}${eventType ? ` - ${eventType}` : ''}</div>
+                    <div class="project-platform" style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">${platformLabel}${eventLabel}</div>
                 </div>
                 <div class="project-status" style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;" onclick="event.stopPropagation();">
                     <div class="project-status-toggle" style="display:flex; align-items:center; gap:6px;">

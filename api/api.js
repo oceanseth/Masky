@@ -423,6 +423,10 @@ exports.handler = async (event, context) => {
                 }
 
                 const activeAlertConfig = data.alertConfig?.[eventType] || null;
+                const rawMinimumCost = data.channelPointsMinimumCost;
+                const parsedMinimumCost = typeof rawMinimumCost === 'number'
+                    ? rawMinimumCost
+                    : Number.parseInt(rawMinimumCost, 10);
                 const projectRecord = {
                     projectId: doc.id,
                     projectName: data.projectName || null,
@@ -434,6 +438,9 @@ exports.handler = async (event, context) => {
                     twitchSubscription: !!data.twitchSubscription,
                     alertConfig: data.alertConfig || {},
                     activeAlertConfig,
+                    channelPointsMinimumCost: Number.isFinite(parsedMinimumCost) && parsedMinimumCost >= 0
+                        ? Math.floor(parsedMinimumCost)
+                        : null,
                     videoSources: [],
                     heygen: data.heygenVideoId ? {
                         videoId: data.heygenVideoId,

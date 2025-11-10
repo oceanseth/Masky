@@ -369,6 +369,19 @@
 
                 const alertConfig = JSON.parse(JSON.stringify(alertConfigSource || getDefaultAlertConfig(eventType)));
 
+                if (eventType === 'channel.channel_points_custom_reward_redemption.add') {
+                    const minimumOverrideRaw = project.channelPointsMinimumCost;
+                    const minimumOverride = Number.isFinite(minimumOverrideRaw)
+                        ? minimumOverrideRaw
+                        : Number.parseInt(minimumOverrideRaw, 10);
+                    if (Number.isFinite(minimumOverride) && minimumOverride >= 0) {
+                        if (!alertConfig.conditions) {
+                            alertConfig.conditions = {};
+                        }
+                        alertConfig.conditions.minimumCost = Math.floor(minimumOverride);
+                    }
+                }
+
                 if (!projectConfigs.has(eventType)) {
                     projectConfigs.set(eventType, []);
                 }
@@ -601,7 +614,7 @@
                 duration: 5000,
                 position: 'bottom',
                 conditions: {
-                    minimumCost: 5000, // Only trigger for 5000+ point redeems
+                    minimumCost: 0,
                     maximumCost: null,
                     specificRewardIds: [] // Empty = all rewards, or specify reward IDs
                 }

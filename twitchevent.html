@@ -380,6 +380,18 @@
                         }
                         alertConfig.conditions.minimumCost = Math.floor(minimumOverride);
                     }
+
+                    const rewardTitleOverrideRaw = typeof project.channelPointsRewardTitle === 'string'
+                        ? project.channelPointsRewardTitle.trim()
+                        : '';
+                    if (rewardTitleOverrideRaw && rewardTitleOverrideRaw.toLowerCase() !== 'any') {
+                        if (!alertConfig.conditions) {
+                            alertConfig.conditions = {};
+                        }
+                        alertConfig.conditions.rewardTitle = rewardTitleOverrideRaw;
+                    } else if (alertConfig.conditions && Object.prototype.hasOwnProperty.call(alertConfig.conditions, 'rewardTitle')) {
+                        delete alertConfig.conditions.rewardTitle;
+                    }
                 }
 
                 if (!projectConfigs.has(eventType)) {
@@ -967,6 +979,7 @@
             if (isChannelPointsEvent(normalizedEventType)) {
                 const cost = parseInt(eventData.reward?.cost) || 0;
                 const rewardId = eventData.reward?.id;
+                const rewardTitle = (eventData.reward?.title || '').trim();
                 
                 if (conditions.minimumCost && cost < conditions.minimumCost) {
                     console.log(`Channel points ${cost} below minimum ${conditions.minimumCost}, skipping alert`);
@@ -982,6 +995,24 @@
                 if (conditions.specificRewardIds && conditions.specificRewardIds.length > 0) {
                     if (!conditions.specificRewardIds.includes(rewardId)) {
                         console.log(`Reward ID ${rewardId} not in allowed list, skipping alert`);
+                        return false;
+                    }
+                }
+
+                if (conditions.rewardTitle && typeof conditions.rewardTitle === 'string') {
+                    const configuredTitle = conditions.rewardTitle.trim().toLowerCase();
+                    if (configuredTitle && rewardTitle.toLowerCase() !== configuredTitle) {
+                        console.log(`Reward title "${rewardTitle || '(none)'}" does not match required title "${conditions.rewardTitle}", skipping alert`);
+                        return false;
+                    }
+                }
+
+                if (Array.isArray(conditions.rewardTitles) && conditions.rewardTitles.length > 0) {
+                    const normalizedTitles = conditions.rewardTitles
+                        .filter(title => typeof title === 'string' && title.trim())
+                        .map(title => title.trim().toLowerCase());
+                    if (normalizedTitles.length > 0 && !normalizedTitles.includes(rewardTitle.toLowerCase())) {
+                        console.log(`Reward title "${rewardTitle || '(none)'}" not in allowed list, skipping alert`);
                         return false;
                     }
                 }

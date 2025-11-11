@@ -92,7 +92,14 @@ export async function signInWithTwitch(extraScopes = []) {
         });
         
         // Accept messages from masky.ai domain or localhost (for development)
-        const allowedOrigins = ['https://masky.ai', 'http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
+        const allowedOrigins = [
+          'https://masky.ai',
+          'http://localhost:5173',
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://127.0.0.1:5173',
+          'http://127.0.0.1:3000'
+        ];
         if (!allowedOrigins.includes(event.origin)) {
           console.log('Ignoring message from non-whitelisted origin:', event.origin);
           return;

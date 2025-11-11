@@ -1,5 +1,6 @@
 import { getCurrentUser } from './firebase.js';
 import { config } from './config.js';
+import { getRedemptionTitles, setTwitchFinishedLogin } from './twitch.js';
 
 function sanitizeStorageUid(uid = '') {
     return String(uid).replace(/[/:.]/g, '_');
@@ -83,6 +84,7 @@ class ProjectWizard {
             heygenLastStatus: null,
             heygenLastCheckedAt: null,
             channelPointsMinimumCost: 0,
+            channelPointsRewardTitle: 'any',
             alertConfig: {},
             ...this.options.projectData
         };
@@ -102,6 +104,10 @@ class ProjectWizard {
             this.projectData.channelPointsMinimumCost,
             this.extractInitialChannelPointsMinimumCost(this.projectData)
         );
+        this.projectData.channelPointsRewardTitle = this.normalizeChannelPointsRewardTitle(
+            this.projectData.channelPointsRewardTitle ??
+            this.extractInitialChannelPointsRewardTitle(this.projectData)
+        );
         
         this.mediaRecorder = null;
         this.audioChunks = [];
@@ -109,6 +115,13 @@ class ProjectWizard {
         this.userAvatars = [];
         this.avatarGroups = [];
         this.voiceSaveInProgress = false;
+        this.channelPointsRewardOptions = [];
+        this.channelPointsRewardsLoading = false;
+        this.channelPointsRewardsError = null;
+        this.channelPointsRewardsPromise = null;
+        this.awaitingTwitchOAuth = false;
+        this.awaitingRewardOAuth = false;
+        this.channelPointsRewardsForbidden = false;
         
         // Dirty flags to track changes that need to be persisted
         this.dirtyFlags = {
@@ -117,7 +130,8 @@ class ProjectWizard {
             avatar: false,
             video: false,
             projectType: false,
-            channelPointsMinimum: false
+            channelPointsMinimum: false,
+            channelPointsReward: false
         };
     }
 
@@ -159,23 +173,30 @@ class ProjectWizard {
         window.addEventListener('message', (event) => {
             if (!event || !event.data) return;
             if (event.data.type === 'TWITCH_OAUTH_SUCCESS') {
-                // Restore saved state
-                const stateRaw = sessionStorage.getItem('projectWizardState');
-                if (stateRaw) {
-                    try {
-                        const saved = JSON.parse(stateRaw);
-                        if (saved && saved.projectData) {
-                            this.projectData = saved.projectData;
-                            this.currentStep = saved.currentStep || 4;
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse saved wizard state after OAuth:', e);
-                    }
+                const pendingStep4OAuth = this.awaitingTwitchOAuth;
+                if (!pendingStep4OAuth && !this.awaitingRewardOAuth) {
+                    return;
                 }
-                this.showStep(4);
-                this.updateNavigationButtons();
-                sessionStorage.removeItem('projectWizardState');
-                this.connectToTwitch();
+                this.awaitingTwitchOAuth = false;
+                if (pendingStep4OAuth) {
+                    // Restore saved state and resume Step 4 logic
+                    const stateRaw = sessionStorage.getItem('projectWizardState');
+                    if (stateRaw) {
+                        try {
+                            const saved = JSON.parse(stateRaw);
+                            if (saved && saved.projectData) {
+                                this.projectData = saved.projectData;
+                                this.currentStep = saved.currentStep || 4;
+                            }
+                        } catch (e) {
+                            console.error('Failed to parse saved wizard state after OAuth:', e);
+                        }
+                    }
+                    this.showStep(4);
+                    this.updateNavigationButtons();
+                    sessionStorage.removeItem('projectWizardState');
+                    this.connectToTwitch();
+                }
             }
         });
         
@@ -266,6 +287,13 @@ class ProjectWizard {
                             <div class="form-group" id="channelPointsMinimumGroup" style="display: none;">
                                 <label for="channelPointsMinimumInput">Minimum Amount (Channel Points):</label>
                                 <input type="number" id="channelPointsMinimumInput" class="form-input" min="0" step="1" placeholder="0">
+                            </div>
+                            <div class="form-group" id="channelPointsRewardGroup" style="display: none;">
+                                <label for="channelPointsRewardSelect">Specific Reward Title (optional):</label>
+                                <select id="channelPointsRewardSelect" class="form-select" disabled>
+                                    <option value="any">Any Reward Title</option>
+                                </select>
+                                <div class="form-help" id="channelPointsRewardHelp" style="display: none; margin-top: 6px; font-size: 0.85rem;"></div>
                             </div>
                         </div>
                     </div>
@@ -485,6 +513,12 @@ class ProjectWizard {
         }
         this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
         this.updateChannelPointsMinimumUI();
+        this.updateChannelPointsRewardUI();
+        if (this.isChannelPointsEventType(this.projectData.eventType)) {
+            this.loadChannelPointsRewards().catch(() => {
+                // Errors handled in loadChannelPointsRewards
+            });
+        }
         
         // Set default project name if empty
         const projectNameInput = document.getElementById('projectName');
@@ -616,6 +650,16 @@ class ProjectWizard {
             });
         }
 
+        const channelPointsRewardSelect = document.getElementById('channelPointsRewardSelect');
+        if (channelPointsRewardSelect) {
+            channelPointsRewardSelect.addEventListener('change', (e) => {
+                const sanitized = this.setChannelPointsRewardTitle(e.target.value);
+                if (channelPointsRewardSelect.value !== sanitized) {
+                    channelPointsRewardSelect.value = sanitized;
+                }
+            });
+        }
+
         // Avatar file upload
         const uploadArea = document.getElementById('uploadArea');
         const avatarFile = document.getElementById('avatarFile');
@@ -687,12 +731,21 @@ class ProjectWizard {
         this.projectData.channelPointsMinimumCost = this.extractInitialChannelPointsMinimumCost(this.projectData);
         this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
         this.updateChannelPointsMinimumUI();
-
+        const initialRewardTitle = this.extractInitialChannelPointsRewardTitle(this.projectData);
+        this.setChannelPointsRewardTitle(initialRewardTitle, false);
+        this.updateChannelPointsRewardUI();
+        if (this.isChannelPointsEventType(this.projectData.eventType)) {
+            this.loadChannelPointsRewards().catch(() => {
+                // Errors handled in loader
+            });
+        }
+        
         // Reset dirty flags when loading existing data
         this.dirtyFlags.commandTrigger = false;
         this.dirtyFlags.voice = false;
         this.dirtyFlags.avatar = false;
         this.dirtyFlags.channelPointsMinimum = false;
+        this.dirtyFlags.channelPointsReward = false;
 
         // Validate step 1
         this.validateStep1();
@@ -726,6 +779,13 @@ class ProjectWizard {
         if (this.dirtyFlags.channelPointsMinimum) {
             updates.channelPointsMinimumCost = this.isChannelPointsEventType(this.projectData.eventType)
                 ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
+                : null;
+            hasUpdates = true;
+        }
+
+        if (this.dirtyFlags.channelPointsReward) {
+            updates.channelPointsRewardTitle = this.isChannelPointsEventType(this.projectData.eventType) && this.projectData.channelPointsRewardTitle !== 'any'
+                ? this.projectData.channelPointsRewardTitle
                 : null;
             hasUpdates = true;
         }
@@ -779,6 +839,7 @@ class ProjectWizard {
                 if (this.dirtyFlags.projectType) this.dirtyFlags.projectType = false;
                 if (this.dirtyFlags.commandTrigger) this.dirtyFlags.commandTrigger = false;
                 if (this.dirtyFlags.channelPointsMinimum) this.dirtyFlags.channelPointsMinimum = false;
+                if (this.dirtyFlags.channelPointsReward) this.dirtyFlags.channelPointsReward = false;
                 if (this.dirtyFlags.voice) this.dirtyFlags.voice = false;
                 if (this.dirtyFlags.avatar) this.dirtyFlags.avatar = false;
                 if (this.dirtyFlags.video) this.dirtyFlags.video = false;
@@ -1078,6 +1139,16 @@ class ProjectWizard {
             const value = this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0);
             input.value = value;
             input.disabled = !isChannelPoints;
+        }
+
+        // Keep the reward selector in sync with the event type as well.
+        if (typeof this.updateChannelPointsRewardUI === 'function') {
+            this.updateChannelPointsRewardUI();
+            if (isChannelPoints && !this.channelPointsRewardsLoading && !this.channelPointsRewardOptions.length) {
+                this.loadChannelPointsRewards().catch(() => {
+                    // Errors handled within loadChannelPointsRewards
+                });
+            }
         }
     }
 
@@ -2053,7 +2124,13 @@ class ProjectWizard {
                                 <p>Requesting Twitch chat permissions...</p>
                             `;
                         }
-                        await signInWithTwitch();
+                        this.awaitingTwitchOAuth = true;
+                        try {
+                            await signInWithTwitch();
+                        } catch (authError) {
+                            this.awaitingTwitchOAuth = false;
+                            throw authError;
+                        }
                         return; // Popup will send a message; we'll resume on receipt
                     }
                     // Bubble other errors to standard handler below
@@ -2154,7 +2231,13 @@ class ProjectWizard {
                             <p>Requesting required Twitch permissions...</p>
                         `;
                     }
-                    await signInWithTwitch(extraScopes);
+                    this.awaitingTwitchOAuth = true;
+                    try {
+                        await signInWithTwitch(extraScopes);
+                    } catch (authError) {
+                        this.awaitingTwitchOAuth = false;
+                        throw authError;
+                    }
                     return; // Popup will handle and we'll resume on message
                 }
                 
@@ -3406,6 +3489,11 @@ class ProjectWizard {
             channelPointsMinimumCost: this.isChannelPointsEventType(this.projectData.eventType)
                 ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
                 : null,
+            channelPointsRewardTitle: this.isChannelPointsEventType(this.projectData.eventType)
+                ? (this.projectData.channelPointsRewardTitle !== 'any'
+                    ? this.projectData.channelPointsRewardTitle
+                    : null)
+                : null,
             videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
             heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
             videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
@@ -3635,6 +3723,11 @@ class ProjectWizard {
                     channelPointsMinimumCost: this.isChannelPointsEventType(this.projectData.eventType)
                         ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)
                         : null,
+                    channelPointsRewardTitle: this.isChannelPointsEventType(this.projectData.eventType)
+                        ? (this.projectData.channelPointsRewardTitle !== 'any'
+                            ? this.projectData.channelPointsRewardTitle
+                            : null)
+                        : null,
                     twitchSubscription: true, // Always true since we connected in step 4
                     updatedAt: new Date()
                 };
@@ -3746,6 +3839,270 @@ class ProjectWizard {
         // Clean up module-level reference
         if (projectWizard === this) {
             projectWizard = null;
+        }
+    }
+
+    normalizeChannelPointsRewardTitle(value) {
+        if (typeof value !== 'string') {
+            return 'any';
+        }
+        const trimmed = value.trim();
+        if (!trimmed.length) {
+            return 'any';
+        }
+        if (trimmed.toLowerCase() === 'any') {
+            return 'any';
+        }
+        return trimmed;
+    }
+
+    extractInitialChannelPointsRewardTitle(source = {}) {
+        const direct = source?.channelPointsRewardTitle;
+        if (typeof direct === 'string' && direct.trim()) {
+            return direct.trim();
+        }
+
+        const normalizedEventType = this.normalizeEventType(
+            source?.eventType || this.projectData?.eventType || 'channel.follow'
+        );
+        const alertConfig = source?.alertConfig || {};
+        const configEntry = alertConfig[normalizedEventType] || alertConfig['channel.channel_points_custom_reward_redemption'];
+        const conditions = configEntry?.conditions;
+        if (conditions) {
+            const configuredTitle = conditions.rewardTitle || conditions.specificRewardTitle;
+            if (typeof configuredTitle === 'string' && configuredTitle.trim()) {
+                return configuredTitle.trim();
+            }
+
+            if (Array.isArray(conditions.specificRewardTitles) && conditions.specificRewardTitles.length > 0) {
+                const first = conditions.specificRewardTitles.find(title => typeof title === 'string' && title.trim());
+                if (first) {
+                    return first.trim();
+                }
+            }
+        }
+
+        return 'any';
+    }
+
+    setChannelPointsRewardTitle(value, markDirty = true) {
+        const sanitized = this.normalizeChannelPointsRewardTitle(value);
+        if (sanitized === this.projectData.channelPointsRewardTitle) {
+            return sanitized;
+        }
+
+        this.projectData.channelPointsRewardTitle = sanitized;
+        if (markDirty && this.isChannelPointsEventType(this.projectData.eventType)) {
+            this.dirtyFlags.channelPointsReward = true;
+        }
+
+        return sanitized;
+    }
+
+    updateChannelPointsRewardUI() {
+        const group = document.getElementById('channelPointsRewardGroup');
+        const select = document.getElementById('channelPointsRewardSelect');
+        const isChannelPoints = this.isChannelPointsEventType(this.projectData.eventType);
+
+        if (group) {
+            group.style.display = isChannelPoints ? 'block' : 'none';
+        }
+
+        if (!isChannelPoints) {
+            if (select) {
+                select.disabled = true;
+                select.value = 'any';
+            }
+            this.setChannelPointsRewardTitle('any', false);
+            const help = document.getElementById('channelPointsRewardHelp');
+            if (help) {
+                help.style.display = 'none';
+                help.textContent = '';
+            }
+            return;
+        }
+
+        if (select) {
+            select.disabled = this.channelPointsRewardsLoading || this.channelPointsRewardsForbidden || Boolean(this.channelPointsRewardsError);
+        }
+
+        this.renderChannelPointsRewardOptions();
+    }
+
+    renderChannelPointsRewardOptions() {
+        const select = document.getElementById('channelPointsRewardSelect');
+        const help = document.getElementById('channelPointsRewardHelp');
+        if (!select) {
+            return;
+        }
+
+        const selectedValue = this.projectData.channelPointsRewardTitle || 'any';
+
+        select.innerHTML = '';
+        const addOption = (value, label) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            select.appendChild(option);
+        };
+
+        addOption('any', 'Any Reward Title');
+
+        if (this.channelPointsRewardsLoading) {
+            if (help) {
+                help.style.display = 'block';
+                help.textContent = 'Loading channel point rewards...';
+            }
+            select.value = 'any';
+            return;
+        }
+
+        if (this.channelPointsRewardsError) {
+            if (help) {
+                help.style.display = 'block';
+                help.textContent = this.channelPointsRewardsError;
+            }
+            select.value = 'any';
+            return;
+        }
+
+        const rewards = Array.isArray(this.channelPointsRewardOptions)
+            ? this.channelPointsRewardOptions
+            : [];
+
+        if (rewards.length === 0) {
+            if (help) {
+                help.style.display = 'block';
+                help.textContent = 'No custom reward titles found on your channel yet.';
+            }
+            select.value = 'any';
+            return;
+        }
+
+        if (help) {
+            help.style.display = 'none';
+            help.textContent = '';
+        }
+
+        rewards.forEach(reward => {
+            if (!reward || typeof reward.title !== 'string') return;
+            const title = reward.title.trim();
+            if (!title) return;
+            const option = document.createElement('option');
+            option.value = title;
+            option.textContent = title;
+            select.appendChild(option);
+        });
+
+        if (Array.from(select.options).some(opt => opt.value === selectedValue)) {
+            select.value = selectedValue;
+        } else {
+            select.value = 'any';
+            if (selectedValue !== 'any') {
+                this.setChannelPointsRewardTitle('any', false);
+            }
+        }
+    }
+
+    async loadChannelPointsRewards(options = {}) {
+        if (!this.isChannelPointsEventType(this.projectData.eventType)) {
+            return [];
+        }
+
+        const { forceReload = false } = options;
+
+        if (!forceReload && this.channelPointsRewardOptions.length) {
+            this.updateChannelPointsRewardUI();
+            return this.channelPointsRewardOptions;
+        }
+
+        if (this.channelPointsRewardsLoading && this.channelPointsRewardsPromise) {
+            return this.channelPointsRewardsPromise;
+        }
+
+        this.awaitingRewardOAuth = true;
+        const previousFinishedLogin = setTwitchFinishedLogin(() => {
+            setTwitchFinishedLogin(previousFinishedLogin);
+            this.awaitingRewardOAuth = false;
+            this.channelPointsRewardsLoading = false;
+            this.channelPointsRewardsPromise = null;
+            this.loadChannelPointsRewards({ forceReload: true }).catch(() => {
+                // Errors handled within loadChannelPointsRewards
+            });
+        });
+
+        this.channelPointsRewardsLoading = true;
+        this.channelPointsRewardsError = null;
+        this.updateChannelPointsRewardUI();
+
+        const promise = getRedemptionTitles()
+            .then(rewards => {
+                const filtered = Array.isArray(rewards)
+                    ? rewards.filter(item => item && typeof item.title === 'string' && item.title.trim())
+                    : [];
+
+                filtered.sort((a, b) => {
+                    const titleA = a.title.toLowerCase();
+                    const titleB = b.title.toLowerCase();
+                    if (titleA < titleB) return -1;
+                    if (titleA > titleB) return 1;
+                    return 0;
+                });
+
+                this.channelPointsRewardOptions = filtered.map(item => ({
+                    title: item.title.trim(),
+                    id: item.id,
+                    cost: item.cost,
+                    prompt: item.prompt,
+                    isEnabled: item.isEnabled
+                }));
+
+                this.channelPointsRewardsForbidden = false;
+                this.channelPointsRewardsError = null;
+
+                return this.channelPointsRewardOptions;
+            })
+            .catch(error => {
+                this.channelPointsRewardOptions = [];
+                this.channelPointsRewardsForbidden = error?.code === 'TWITCH_REWARDS_FORBIDDEN';
+                if (!this.channelPointsRewardsForbidden) {
+                    console.error('Failed to load channel point rewards:', error);
+                }
+                this.channelPointsRewardsError = error?.message || 'Failed to load channel point rewards. Please try again.';
+                throw error;
+            })
+            .finally(() => {
+                this.channelPointsRewardsLoading = false;
+                this.channelPointsRewardsPromise = null;
+                this.updateChannelPointsRewardUI();
+            });
+
+        this.channelPointsRewardsPromise = promise;
+
+        try {
+            return await promise;
+        } catch (error) {
+            return [];
+        } finally {
+            this.awaitingRewardOAuth = false;
+            setTwitchFinishedLogin(previousFinishedLogin);
+        }
+    }
+
+    handleChannelPointsRewardEventChange(previousEventType, nextEventType) {
+        const wasChannelPoints = this.isChannelPointsEventType(previousEventType);
+        const isChannelPoints = this.isChannelPointsEventType(nextEventType);
+
+        if (isChannelPoints) {
+            this.updateChannelPointsRewardUI();
+            this.loadChannelPointsRewards().catch(() => {
+                // Errors handled inside loader
+            });
+        } else if (wasChannelPoints) {
+            this.setChannelPointsRewardTitle('any', false);
+            this.updateChannelPointsRewardUI();
+        } else {
+            this.updateChannelPointsRewardUI();
         }
     }
 }

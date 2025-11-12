@@ -51,6 +51,12 @@ export const config = {
     }
   },
   stripe: {
+    currency: 'USD',
+    // Display prices for plans (in USD)
+    displayPrices: {
+      standard: 50,
+      pro: 500
+    },
     // Stripe Price IDs (not Product IDs)
     // Get these from Stripe Dashboard -> Products -> Click on product -> Copy the Price ID (starts with price_)
     prices: {

@@ -7,6 +7,7 @@ let stripePromise = null;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
+    updateDisplayedPrices();
     // Check auth state
     onAuthStateChanged(auth, async (user) => {
         if (user) {
@@ -17,6 +18,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 });
+
+function updateDisplayedPrices() {
+    const { stripe } = config;
+    const displayPrices = stripe?.displayPrices ?? {};
+    const currencyCode = stripe?.currency ?? 'USD';
+
+    const currencyFormatter = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    });
+
+    const amountFormatter = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    });
+
+    const currencySymbol =
+        currencyFormatter
+            .formatToParts(0)
+            .find(part => part.type === 'currency')
+            ?.value ?? '$';
+
+    document.querySelectorAll('.tier-price .currency').forEach((element) => {
+        element.textContent = currencySymbol;
+    });
+
+    const applyAmount = (elementId, amount) => {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return;
+        }
+
+        const numericAmount = Number(amount);
+        if (Number.isFinite(numericAmount)) {
+            element.textContent = amountFormatter.format(numericAmount);
+        } else {
+            element.textContent = '--';
+        }
+    };
+
+    applyAmount('standardMonthlyPrice', displayPrices.standard);
+    applyAmount('proMonthlyPrice', displayPrices.pro);
+}
 
 /**
  * Load user's current subscription status

@@ -16,6 +16,13 @@ service cloud.firestore {
     function isProjectOwner(projectData) {
       return isAuthenticated() && request.auth.uid == projectData.userId;
     }
+
+    function isAdminUser() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/system/adminData)
+        && get(/databases/$(database)/documents/system/adminData).data.adminUsers is list
+        && request.auth.uid in get(/databases/$(database)/documents/system/adminData).data.adminUsers;
+    }
     
     // Users collection - users can only read/write their own data
     match /users/{userId} {
@@ -64,6 +71,16 @@ service cloud.firestore {
           allow read, write: if isOwner(userId);
           allow create: if isOwner(userId) && request.resource.data.userId == userId;
         }
+      }
+    }
+
+    match /system/adminData {
+      allow read: if isAdminUser();
+      allow write: if false;
+
+      match /userTokens/{adminUserId} {
+        allow read: if isAdminUser();
+        allow write: if false;
       }
     }
     

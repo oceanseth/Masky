@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masky Admin Impersonation</title>
+    <meta name="description" content="Masky admin dashboard for viewing users and impersonating accounts to assist with support and debugging.">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/assets/masky-favicon-32.svg">
+    <link rel="apple-touch-icon" href="/assets/masky-favicon-32.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg-gradient: radial-gradient(circle at 10% 20%, rgba(147, 51, 234, 0.25), transparent 45%),
+                           radial-gradient(circle at 90% 10%, rgba(59, 130, 246, 0.2), transparent 40%),
+                           linear-gradient(135deg, #0f0c29, #302b63 55%, #24243e 100%);
+            --surface: rgba(15, 12, 41, 0.75);
+            --surface-hover: rgba(33, 24, 71, 0.8);
+            --border: rgba(192, 132, 252, 0.25);
+            --border-strong: rgba(192, 132, 252, 0.45);
+            --primary: #c084fc;
+            --primary-soft: rgba(192, 132, 252, 0.15);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --shadow: 0 20px 40px rgba(8, 7, 26, 0.45);
+            font-family: 'Inter', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            padding-bottom: 4rem;
+        }
+
+        .admin-nav {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 2rem;
+            backdrop-filter: blur(16px);
+            background: rgba(12, 10, 32, 0.85);
+            border-bottom: 1px solid rgba(192, 132, 252, 0.2);
+        }
+
+        .admin-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.25rem;
+            letter-spacing: 0.12em;
+            cursor: pointer;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        .admin-logo img {
+            height: 28px;
+            width: 28px;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .admin-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2.5rem 1.75rem 4rem;
+        }
+
+        .admin-header {
+            margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .admin-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.2rem;
+            letter-spacing: 0.08em;
+        }
+
+        .admin-subtitle {
+            color: var(--text-secondary);
+            max-width: 720px;
+            line-height: 1.5;
+        }
+
+        .current-admin {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem 1rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+        }
+
+        .current-admin strong {
+            color: var(--primary);
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.75rem;
+            box-shadow: var(--shadow);
+            margin-bottom: 1.75rem;
+        }
+
+        .status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-info {
+            color: var(--text-secondary);
+        }
+
+        .status-success {
+            color: var(--success);
+        }
+
+        .status-danger {
+            color: var(--danger);
+        }
+
+        .status button {
+            flex-shrink: 0;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .controls .search {
+            flex: 1;
+            min-width: 200px;
+            background: rgba(15, 12, 41, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .controls .search:focus {
+            outline: none;
+            border-color: var(--border-strong);
+            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.2);
+        }
+
+        .stat-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.4rem 0.85rem;
+            border-radius: 999px;
+            background: var(--primary-soft);
+            border: 1px solid rgba(192, 132, 252, 0.35);
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .user-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+
+        .user-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            gap: 1rem;
+            padding: 1.1rem 1.2rem;
+            border: 1px solid rgba(192, 132, 252, 0.15);
+            border-radius: 0.85rem;
+            background: rgba(20, 16, 56, 0.65);
+            transition: border 0.2s ease, transform 0.2s ease, background 0.2s ease;
+        }
+
+        .user-row:hover {
+            border-color: var(--border-strong);
+            transform: translateY(-2px);
+            background: rgba(25, 20, 64, 0.8);
+        }
+
+        .user-main {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .user-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .user-fallback {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            background: rgba(147, 51, 234, 0.45);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .user-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .user-meta,
+        .user-scopes {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .user-scopes span {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(192, 132, 252, 0.25);
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+        }
+
+        .user-actions {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            padding: 0.65rem 1.1rem;
+            border-radius: 0.7rem;
+            border: 1px solid transparent;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #c084fc, #9333ea);
+            color: var(--text-primary);
+            box-shadow: 0 12px 24px rgba(192, 132, 252, 0.3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 32px rgba(147, 51, 234, 0.35);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .btn-link {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .empty-state {
+            padding: 2rem;
+            border-radius: 0.75rem;
+            background: rgba(255, 255, 255, 0.04);
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .signed-out-actions {
+            display: flex;
+            justify-content: center;
+            padding: 2.5rem 0 3.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .admin-nav {
+                padding: 1rem 1.25rem;
+            }
+
+            .admin-container {
+                padding: 1.75rem 1.25rem 3rem;
+            }
+
+            .admin-title {
+                font-size: 1.75rem;
+            }
+
+            .user-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .user-actions {
+                align-items: stretch;
+            }
+
+            .user-actions .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="admin-nav">
+        <a class="admin-logo" href="/" title="Back to Masky">
+            <img src="/assets/masky-logo-gradient.svg" alt="Masky logo">
+            <span>MASKY ADMIN</span>
+        </a>
+        <div class="nav-actions">
+            <button class="btn btn-secondary" onclick="window.location.href='/'">Back to Dashboard</button>
+            <button id="signOutButton" class="btn btn-link hidden" onclick="handleSignOut()">Sign Out</button>
+        </div>
+    </nav>
+
+    <main class="admin-container">
+        <header class="admin-header" id="adminHeader">
+            <div>
+                <h1 class="admin-title">Admin Impersonation</h1>
+                <p class="admin-subtitle">
+                    Review all Masky users and temporarily sign in as them to debug onboarding or project issues.
+                    Actions taken here are logged and only available to approved admin accounts.
+                </p>
+            </div>
+            <div class="current-admin" id="currentAdminContainer">
+                <div>
+                    Signed in as <strong id="currentAdminName">—</strong>
+                    <span id="currentAdminId" class="user-id"></span>
+                </div>
+                <span id="adminBadge" class="stat-chip hidden">Admin</span>
+            </div>
+        </header>
+
+        <section id="statusCard" class="card">
+            <div id="statusMessage" class="status status-info">
+                <span id="statusText">Checking authentication…</span>
+            </div>
+        </section>
+
+        <section id="signedOutActions" class="signed-out-actions hidden">
+            <button id="loginButton" class="btn btn-primary" onclick="window.location.href='/'">
+                Go to Login
+            </button>
+        </section>
+
+        <section id="userListCard" class="card hidden">
+            <div class="controls">
+                <input id="searchInput" class="search" type="search" placeholder="Search by name, email, Twitch ID or UID…">
+                <span id="userCount" class="stat-chip">Users: 0</span>
+            </div>
+            <div id="userList" class="user-list"></div>
+        </section>
+    </main>
+
+    <template id="userRowTemplate">
+        <div class="user-row">
+            <div class="user-main">
+                <div class="user-avatar user-fallback"></div>
+                <div class="user-info">
+                    <div class="user-name"></div>
+                    <div class="user-meta"></div>
+                    <div class="user-scopes"></div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <button class="btn btn-primary become-btn">
+                    <span>Become User</span>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <script type="module" src="/src/admin.js"></script>
+</body>
+</html>
+

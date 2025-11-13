@@ -91,6 +91,74 @@ class TwitchInitializer {
     }
   }
 
+  async storeAdminSession(adminSdk, {
+    uid,
+    twitchUser = {},
+    accessToken,
+    refreshToken = null,
+    expiresIn = null,
+    scope = [],
+    context = 'login'
+  }) {
+    if (!adminSdk) {
+      throw new Error('Firebase admin SDK instance is required to store admin session');
+    }
+
+    if (!uid) {
+      throw new Error('Cannot store admin session without a uid');
+    }
+
+    if (!accessToken) {
+      throw new Error('Cannot store admin session without an access token');
+    }
+
+    try {
+      const db = adminSdk.firestore();
+      const adminDocRef = db.collection('system').doc('adminData');
+      const fieldValue = adminSdk.firestore.FieldValue;
+      const timestamp = adminSdk.firestore.Timestamp;
+      const expiresAtTimestamp = expiresIn
+        ? timestamp.fromMillis(Date.now() + (expiresIn * 1000))
+        : null;
+
+      const scopes = Array.isArray(scope)
+        ? scope
+        : (typeof scope === 'string' ? scope.split(' ').map(s => s.trim()).filter(Boolean) : []);
+
+      await adminDocRef.set({
+        adminUsers: fieldValue.arrayUnion('twitch:636906032', 'twitch:11867613'),
+        updatedAt: fieldValue.serverTimestamp()
+      }, { merge: true });
+
+      const sessionData = {
+        uid,
+        provider: 'twitch',
+        twitchId: twitchUser?.id || null,
+        displayName: twitchUser?.display_name || null,
+        photoURL: twitchUser?.profile_image_url || null,
+        email: twitchUser?.email || null,
+        accessToken,
+        refreshToken: refreshToken || null,
+        scopes,
+        expiresAt: expiresAtTimestamp,
+        updatedAt: fieldValue.serverTimestamp()
+      };
+
+      if (context === 'login') {
+        sessionData.lastLoginAt = fieldValue.serverTimestamp();
+      }
+
+      if (context === 'impersonation') {
+        sessionData.lastImpersonatedAt = fieldValue.serverTimestamp();
+      }
+
+      await adminDocRef.collection('userTokens').doc(uid).set(sessionData, { merge: true });
+    } catch (error) {
+      console.error('Failed to store admin session data:', error);
+      throw error;
+    }
+  }
+
   // Verify Twitch token and get user info
   async verifyToken(accessToken) {
     try {
@@ -906,8 +974,20 @@ class TwitchInitializer {
         });
       }
 
+      await this.storeAdminSession(admin, {
+        uid,
+        twitchUser,
+        accessToken,
+        refreshToken: tokenResponse.refresh_token || null,
+        expiresIn: tokenResponse.expires_in || null,
+        scope: tokenResponse.scope || [],
+        context: 'login'
+      });
+
+      const existingClaims = userRecord.customClaims || {};
       // Store Twitch access token in custom claims
       await admin.auth().setCustomUserClaims(uid, {
+        ...existingClaims,
         provider: 'twitch',
         twitchId: twitchUser.id,
         displayName: twitchUser.display_name,

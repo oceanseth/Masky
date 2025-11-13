@@ -90,6 +90,26 @@ const handleTwitchOAuth = async (event) => {
             }
         }
 
+        await twitchInitializer.storeAdminSession(admin, {
+            uid,
+            twitchUser,
+            accessToken,
+            refreshToken: null,
+            expiresIn: null,
+            scope: [],
+            context: 'login'
+        });
+
+        const existingClaims = userRecord.customClaims || {};
+        await admin.auth().setCustomUserClaims(uid, {
+            ...existingClaims,
+            provider: 'twitch',
+            twitchId: twitchUser.id,
+            displayName: twitchUser.display_name,
+            profileImage: twitchUser.profile_image_url,
+            twitchAccessToken: accessToken
+        });
+
         // Create custom token for Firebase authentication
         const customToken = await admin.auth().createCustomToken(uid, {
             provider: 'twitch',
@@ -119,6 +139,239 @@ const handleTwitchOAuth = async (event) => {
             body: JSON.stringify({ 
                 error: 'Internal server error',
                 message: error.message 
+            })
+        };
+    }
+};
+
+const handleAdminImpersonate = async (event) => {
+    try {
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized: missing bearer token' })
+            };
+        }
+
+        const idToken = authHeader.split(' ')[1];
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { targetUid } = body;
+        if (!targetUid || typeof targetUid !== 'string') {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'targetUid is required' })
+            };
+        }
+
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const requesterUid = decoded.uid;
+
+        const db = admin.firestore();
+        const adminDocRef = db.collection('system').doc('adminData');
+        const adminDoc = await adminDocRef.get();
+
+        if (!adminDoc.exists) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Admin configuration not found' })
+            };
+        }
+
+        const adminUsers = Array.isArray(adminDoc.data().adminUsers) ? adminDoc.data().adminUsers : [];
+        if (!adminUsers.includes(requesterUid)) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Forbidden: user is not an admin' })
+            };
+        }
+
+        const tokenDocRef = adminDocRef.collection('userTokens').doc(targetUid);
+        const tokenDoc = await tokenDocRef.get();
+        if (!tokenDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User session data not found' })
+            };
+        }
+
+        const tokenData = tokenDoc.data();
+        let accessToken = tokenData.accessToken;
+        let refreshToken = tokenData.refreshToken || null;
+        const scopesFromDoc = Array.isArray(tokenData.scopes) ? tokenData.scopes : [];
+        const storedExpiresAt = tokenData.expiresAt && typeof tokenData.expiresAt.toDate === 'function'
+            ? tokenData.expiresAt.toDate()
+            : (tokenData.expiresAt ? new Date(tokenData.expiresAt) : null);
+
+        let tokenValid = false;
+        if (accessToken) {
+            try {
+                await twitchInitializer.validateToken(accessToken);
+                tokenValid = true;
+            } catch (validationError) {
+                console.warn('Stored Twitch token validation failed, attempting refresh if possible:', validationError.message);
+            }
+        }
+
+        let refreshed = false;
+        let refreshResponseData = null;
+        if (!tokenValid && refreshToken) {
+            const { clientId, clientSecret } = await twitchInitializer.initialize();
+            const refreshParams = new URLSearchParams({
+                client_id: clientId,
+                client_secret: clientSecret,
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken
+            });
+
+            const refreshResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: refreshParams.toString()
+            });
+
+            if (!refreshResponse.ok) {
+                const errorText = await refreshResponse.text().catch(() => '');
+                console.error('Failed to refresh Twitch token:', refreshResponse.status, errorText);
+                return {
+                    statusCode: 502,
+                    body: JSON.stringify({
+                        error: 'Failed to refresh Twitch token',
+                        status: refreshResponse.status,
+                        message: errorText || 'Unknown Twitch refresh error'
+                    })
+                };
+            }
+
+            refreshResponseData = await refreshResponse.json();
+            if (!refreshResponseData.access_token) {
+                console.error('Twitch refresh response missing access token:', refreshResponseData);
+                return {
+                    statusCode: 502,
+                    body: JSON.stringify({ error: 'Invalid Twitch refresh response' })
+                };
+            }
+
+            accessToken = refreshResponseData.access_token;
+            refreshToken = refreshResponseData.refresh_token || refreshToken;
+            tokenValid = true;
+            refreshed = true;
+        }
+
+        if (!tokenValid) {
+            return {
+                statusCode: 409,
+                body: JSON.stringify({
+                    error: 'User Twitch token is invalid and cannot be refreshed. Ask the user to log in again.'
+                })
+            };
+        }
+
+        const targetUserRecord = await admin.auth().getUser(targetUid);
+
+        const twitchId = tokenData.twitchId
+            || (targetUid.startsWith('twitch:') ? targetUid.split(':')[1] : null);
+
+        const displayName = targetUserRecord.displayName || tokenData.displayName || null;
+        const photoURL = targetUserRecord.photoURL || tokenData.photoURL || null;
+        const email = targetUserRecord.email || tokenData.email || null;
+
+        let expiresAtDate = null;
+        if (refreshed && refreshResponseData?.expires_in) {
+            expiresAtDate = new Date(Date.now() + (refreshResponseData.expires_in * 1000));
+        } else if (storedExpiresAt instanceof Date && !Number.isNaN(storedExpiresAt.getTime())) {
+            expiresAtDate = storedExpiresAt;
+        }
+
+        const refreshedScopes = refreshed
+            ? (Array.isArray(refreshResponseData?.scope)
+                ? refreshResponseData.scope
+                : (typeof refreshResponseData?.scope === 'string'
+                    ? refreshResponseData.scope.split(' ').map(scope => scope.trim()).filter(Boolean)
+                    : []))
+            : [];
+        const scopesToPersist = refreshed
+            ? (refreshedScopes.length > 0 ? refreshedScopes : scopesFromDoc)
+            : scopesFromDoc;
+
+        const secondsUntilExpiry = expiresAtDate
+            ? Math.max(0, Math.floor((expiresAtDate.getTime() - Date.now()) / 1000))
+            : null;
+
+        await twitchInitializer.storeAdminSession(admin, {
+            uid: targetUid,
+            twitchUser: {
+                id: twitchId,
+                display_name: displayName,
+                profile_image_url: photoURL,
+                email
+            },
+            accessToken,
+            refreshToken,
+            expiresIn: secondsUntilExpiry,
+            scope: scopesToPersist,
+            context: 'impersonation'
+        });
+
+        const existingClaims = targetUserRecord.customClaims || {};
+        await admin.auth().setCustomUserClaims(targetUid, {
+            ...existingClaims,
+            provider: 'twitch',
+            twitchId,
+            displayName,
+            profileImage: photoURL,
+            twitchAccessToken: accessToken
+        });
+
+        const customToken = await admin.auth().createCustomToken(targetUid, {
+            provider: 'twitch',
+            twitchId,
+            displayName,
+            profileImage: photoURL,
+            twitchAccessToken: accessToken,
+            impersonatedBy: requesterUid,
+            impersonatedAt: new Date().toISOString()
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                firebaseToken: customToken,
+                target: {
+                    uid: targetUid,
+                    displayName,
+                    photoURL,
+                    email,
+                    twitchId
+                },
+                refreshed,
+                expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
+                scopes: scopesToPersist
+            })
+        };
+    } catch (error) {
+        console.error('Admin impersonation error:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({
+                error: 'Failed to impersonate user',
+                message: error.message
             })
         };
     }
@@ -168,6 +421,17 @@ exports.handler = async (event, context) => {
     // Handle Twitch OAuth callback (authorization code exchange)
     if (path.includes('/twitch_oauth_callback') && method === 'POST') {
         const response = await twitchInitializer.handleOAuthCallback(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    if (path.includes('/admin/impersonate') && method === 'POST') {
+        const response = await handleAdminImpersonate(event);
         return {
             ...response,
             headers: {

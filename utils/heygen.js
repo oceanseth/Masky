@@ -10,15 +10,15 @@ const DEFAULT_PLAN_MAX_DIMENSION = (() => {
     if (Number.isFinite(envValue) && envValue > 0) {
         return envValue;
     }
-    return 1280;
+    return 720;
 })();
 
 const PLAN_NAME_DIMENSION_MAP = {
-    free: 1280,
-    starter: 1280,
-    basic: 1280,
-    hobby: 1280,
-    creator: 1920,
+    free: 720,
+    starter: 720,
+    basic: 720,
+    hobby: 720,
+    creator: 1280,
     standard: 1920,
     pro: 1920,
     business: 3840,
@@ -788,6 +788,29 @@ class HeygenClient {
             });
         }
 
+        // Double-check dimensions right before hitting the API to avoid any accidental overshoot.
+        const safetyNormalizedDimensions = this.normalizeDimensions(
+            normalizedDimensions.width,
+            normalizedDimensions.height,
+            effectiveMaxDimension,
+            {
+                fallbackWidth: FALLBACK_WIDTH,
+                fallbackHeight: FALLBACK_HEIGHT
+            }
+        );
+
+        if (
+            safetyNormalizedDimensions.wasAdjusted &&
+            (safetyNormalizedDimensions.width !== normalizedDimensions.width ||
+                safetyNormalizedDimensions.height !== normalizedDimensions.height)
+        ) {
+            console.warn('[generateVideoWithAudio] Safety clamp adjusted dimensions further to respect plan limits:', {
+                before: normalizedDimensions,
+                after: safetyNormalizedDimensions,
+                effectiveMaxDimension
+            });
+        }
+
         const body = {
             video_inputs: [
                 {
@@ -799,8 +822,8 @@ class HeygenClient {
                 }
             ],
             dimension: {
-                width: normalizedDimensions.width,
-                height: normalizedDimensions.height
+                width: safetyNormalizedDimensions.width,
+                height: safetyNormalizedDimensions.height
             }
         };
 
@@ -845,6 +868,28 @@ class HeygenClient {
             fallbackHeight: FALLBACK_HEIGHT
         });
 
+        const safetyNormalizedDimensions = this.normalizeDimensions(
+            normalizedDimensions.width,
+            normalizedDimensions.height,
+            effectiveMaxDimension,
+            {
+                fallbackWidth: FALLBACK_WIDTH,
+                fallbackHeight: FALLBACK_HEIGHT
+            }
+        );
+
+        if (
+            safetyNormalizedDimensions.wasAdjusted &&
+            (safetyNormalizedDimensions.width !== normalizedDimensions.width ||
+                safetyNormalizedDimensions.height !== normalizedDimensions.height)
+        ) {
+            console.warn('[generateVideoWithAudioAsset] Safety clamp adjusted dimensions further to respect plan limits:', {
+                before: normalizedDimensions,
+                after: safetyNormalizedDimensions,
+                effectiveMaxDimension
+            });
+        }
+
         if (normalizedDimensions.wasAdjusted) {
             console.log('[generateVideoWithAudioAsset] Scaled dimensions to fit plan limit:', {
                 requested: { width, height },
@@ -871,8 +916,8 @@ class HeygenClient {
                 }
             ],
             dimension: {
-                width: normalizedDimensions.width,
-                height: normalizedDimensions.height
+                width: safetyNormalizedDimensions.width,
+                height: safetyNormalizedDimensions.height
             }
         };
 

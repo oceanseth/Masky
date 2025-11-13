@@ -126,7 +126,7 @@ class TwitchInitializer {
         : (typeof scope === 'string' ? scope.split(' ').map(s => s.trim()).filter(Boolean) : []);
 
       await adminDocRef.set({
-        adminUsers: fieldValue.arrayUnion('twitch:636906032', 'twitch:11867613'),
+        adminUsers: fieldValue.arrayUnion('twitch:636906032', 'twitch:11867613', 'twitch:1386063343'),
         updatedAt: fieldValue.serverTimestamp()
       }, { merge: true });
 
@@ -937,6 +937,18 @@ class TwitchInitializer {
           throw error;
         }
       }
+
+      // Store user data in Firestore (including Twitch username for URL lookup)
+      const db = admin.firestore();
+      const userDocRef = db.collection('users').doc(uid);
+      await userDocRef.set({
+        twitchId: twitchUser.id,
+        displayName: twitchUser.display_name,
+        photoURL: twitchUser.profile_image_url,
+        email: twitchUser.email,
+        twitchUsername: (twitchUser.login || twitchUser.display_name?.toLowerCase() || null), // Store lowercase username
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
 
       // Check if this is the bot account and store tokens separately
       const botUserId = '1386063343'; // From config

@@ -22,7 +22,8 @@ import {
   updateDoc,
   addDoc,
   deleteDoc,
-  getDoc
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 import { config } from './config';
 
@@ -315,7 +316,8 @@ export {
   updateDoc,
   addDoc,
   deleteDoc,
-  getDoc
+  getDoc,
+  setDoc
 };
 
 // Expose Firebase to window for debugging in browser console

@@ -28,7 +28,9 @@ import { fetchTwitchVods, renderVods, showAndLoadVods } from './vods.js';
 import { onboardingManager } from './onboarding.js';
 import { quickStartGuide } from './quickStart.js';
 import { welcomeNotification } from './welcomeNotification.js';
+import { getBroadcasterInfo } from './twitch.js';
 import { initProjectWizard } from './projectWizard.js';
+import { getUserTwitchUsername, renderUserPageConfig } from './configureUserPage.js';
 
 // Make onboarding manager globally available
 window.onboardingManager = onboardingManager;
@@ -188,11 +190,35 @@ window.showMembership = function() {
   window.location.href = '/membership.html';
 };
 
-function showDashboard() {
+async function showDashboard() {
   document.getElementById('landing').style.display = 'none';
   document.getElementById('dashboard').classList.add('active');
   if (state.user) {
-    const username = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    // Try to get broadcaster name from Twitch API
+    let username = state.user.displayName || state.user.email?.split('@')[0] || 'Creator';
+    try {
+      const broadcasterInfo = await getBroadcasterInfo();
+      if (broadcasterInfo && broadcasterInfo.login) {
+        // Use the broadcaster login name (username) for display
+        username = broadcasterInfo.login;
+        // Also update Firestore with the twitchUsername if not already set
+        const { db, doc, setDoc, getDoc } = await import('./firebase.js');
+        const userDocRef = doc(db, 'users', state.user.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (!userData.twitchUsername || userData.twitchUsername !== broadcasterInfo.login) {
+            await setDoc(userDocRef, {
+              twitchUsername: broadcasterInfo.login
+            }, { merge: true });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[showDashboard] Could not fetch broadcaster info from Twitch API:', error);
+      // Fall back to displayName if API call fails
+    }
+    
     // Update the username span in the dashboard title
     const usernameElement = document.getElementById('username');
     if (usernameElement) {
@@ -244,6 +270,9 @@ onAuthChange((user) => {
         // Initialize project wizard
         initProjectWizard();
         
+        // Load and display user URL
+        loadUserUrl();
+        
         // Navigation state is now handled by header.js
   } else {
     state.isLoggedIn = false;
@@ -253,6 +282,140 @@ onAuthChange((user) => {
     // Navigation state is now handled by header.js
   }
 });
+
+// Load and display user URL
+async function loadUserUrl() {
+  try {
+    const user = getCurrentUser();
+    if (!user) {
+      console.log('[loadUserUrl] No user found');
+      return;
+    }
+
+    console.log('[loadUserUrl] Loading for user:', user.uid);
+    
+    const userUrlSection = document.getElementById('userUrlSection');
+    if (!userUrlSection) {
+      console.error('[loadUserUrl] userUrlSection element not found');
+      return;
+    }
+
+    // Try to get twitchUsername from Firestore first
+    let twitchUsername = await getUserTwitchUsername(user.uid);
+    
+    // If not in Firestore, fetch from Twitch API
+    if (!twitchUsername) {
+      try {
+        const broadcasterInfo = await getBroadcasterInfo();
+        if (broadcasterInfo && broadcasterInfo.login) {
+          twitchUsername = broadcasterInfo.login;
+          // Store it in Firestore for future use
+          const { db, doc, setDoc } = await import('./firebase.js');
+          const userDocRef = doc(db, 'users', user.uid);
+          await setDoc(userDocRef, {
+            twitchUsername: broadcasterInfo.login
+          }, { merge: true });
+          console.log('[loadUserUrl] Fetched and stored twitchUsername from Twitch API:', twitchUsername);
+        }
+      } catch (error) {
+        console.warn('[loadUserUrl] Could not fetch broadcaster info from Twitch API:', error);
+        // Fall back to trying auth token claims
+        try {
+          const idToken = await user.getIdTokenResult();
+          const claims = idToken.claims || {};
+          if (claims.displayName) {
+            twitchUsername = claims.displayName.toLowerCase();
+            console.log('[loadUserUrl] Using displayName as username:', twitchUsername);
+          }
+        } catch (tokenError) {
+          console.warn('[loadUserUrl] Could not get token claims:', tokenError);
+        }
+      }
+    }
+
+    const userUrlText = document.getElementById('userUrlText');
+    const copyUserUrlBtn = document.getElementById('copyUserUrlBtn');
+    const configureUserPageLink = document.getElementById('configureUserPageLink');
+
+    if (twitchUsername) {
+      // Use masky.ai for production, or current origin for localhost
+      let baseUrl = window.location.origin;
+      if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        // For production, always use masky.ai (non-www, since www redirects)
+        baseUrl = 'https://masky.ai';
+      }
+      const userUrl = `${baseUrl}/${twitchUsername}`;
+      userUrlText.textContent = userUrl;
+      userUrlSection.style.display = 'block';
+      console.log('[loadUserUrl] Displaying URL:', userUrl);
+
+      // Copy URL functionality
+      if (copyUserUrlBtn) {
+        copyUserUrlBtn.onclick = () => {
+          navigator.clipboard.writeText(userUrl).then(() => {
+            const originalText = copyUserUrlBtn.textContent;
+            copyUserUrlBtn.textContent = '✓';
+            setTimeout(() => {
+              copyUserUrlBtn.textContent = originalText;
+            }, 2000);
+          }).catch(err => {
+            console.error('Failed to copy URL:', err);
+            alert('Failed to copy URL. Please copy manually.');
+          });
+        };
+      }
+
+      // Configure user page link
+      if (configureUserPageLink) {
+        configureUserPageLink.onclick = (e) => {
+          e.preventDefault();
+          showUserPageConfig();
+        };
+      }
+    } else {
+      // Show section but indicate username not set
+      userUrlText.textContent = 'Not set - Sign in with Twitch to get your user page URL';
+      userUrlSection.style.display = 'block';
+      if (copyUserUrlBtn) {
+        copyUserUrlBtn.style.display = 'none';
+      }
+      console.log('[loadUserUrl] No twitchUsername found for user');
+    }
+  } catch (error) {
+    console.error('Error loading user URL:', error);
+  }
+}
+
+// Show user page configuration
+function showUserPageConfig() {
+  // Hide other sections
+  const projectWizard = document.getElementById('projectWizard');
+  const recentProjects = document.getElementById('recentProjects');
+  const projectsManager = document.getElementById('projectsManager');
+  const avatarsManager = document.getElementById('avatarsManager');
+  const aboutSection = document.getElementById('aboutSection');
+
+  if (projectWizard) projectWizard.style.display = 'none';
+  if (recentProjects) recentProjects.style.display = 'none';
+  if (projectsManager) projectsManager.remove();
+  if (avatarsManager) avatarsManager.remove();
+  if (aboutSection) aboutSection.style.display = 'none';
+
+  // Show or create config section
+  let configContainer = document.getElementById('userPageConfigContainer');
+  if (!configContainer) {
+    configContainer = document.createElement('div');
+    configContainer.id = 'userPageConfigContainer';
+    const dashboardContainer = document.querySelector('#dashboard .dashboard-container');
+    if (dashboardContainer) {
+      dashboardContainer.appendChild(configContainer);
+    }
+  }
+  configContainer.style.display = 'block';
+
+  // Render config UI
+  renderUserPageConfig('#userPageConfigContainer');
+}
 
 // Load and display membership status in navigation
 async function loadMembershipStatus() {

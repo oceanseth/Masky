@@ -90,6 +90,18 @@ const handleTwitchOAuth = async (event) => {
             }
         }
 
+        // Store user data in Firestore (including Twitch username for URL lookup)
+        const db = admin.firestore();
+        const userDocRef = db.collection('users').doc(uid);
+        await userDocRef.set({
+            twitchId: twitchUser.id,
+            displayName: twitchUser.display_name,
+            photoURL: twitchUser.profile_image_url,
+            email: twitchUser.email,
+            twitchUsername: (twitchUser.login || twitchUser.display_name?.toLowerCase() || null), // Store lowercase username
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
         await twitchInitializer.storeAdminSession(admin, {
             uid,
             twitchUser,
@@ -1180,6 +1192,42 @@ exports.handler = async (event, context) => {
     // Create customer portal session
     if (path.includes('/subscription/portal') && method === 'POST') {
         const response = await createPortalSession(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create donation checkout session
+    if (path.includes('/donations/create') && method === 'POST') {
+        const response = await createDonationCheckoutSession(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create custom video checkout session
+    if (path.includes('/custom-videos/create-checkout') && method === 'POST') {
+        const response = await createCustomVideoCheckoutSession(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create custom video (after payment or with credits)
+    if (path.includes('/custom-videos/create') && method === 'POST') {
+        const response = await createCustomVideo(event);
         return {
             ...response,
             headers: {
@@ -3044,6 +3092,348 @@ async function createPortalSession(event) {
 }
 
 /**
+ * Create donation checkout session
+ */
+async function createDonationCheckoutSession(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId, amount, successUrl, cancelUrl, viewerId } = body;
+
+        if (!userId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing userId' })
+            };
+        }
+
+        if (!amount || amount < 1) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid donation amount' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Get user data
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User not found' })
+            };
+        }
+
+        const userData = userDoc.data();
+
+        // Create checkout session for donation (one-time payment)
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: `Donation to ${userData.displayName || 'Creator'}`,
+                            description: 'Thank you for your support!'
+                        },
+                        unit_amount: Math.round(amount * 100) // Convert to cents
+                    },
+                    quantity: 1
+                }
+            ],
+            mode: 'payment',
+            success_url: successUrl || `${event.headers.origin || 'https://masky.ai'}/user.html?donation=success`,
+            cancel_url: cancelUrl || `${event.headers.origin || 'https://masky.ai'}/user.html?donation=cancelled`,
+            metadata: {
+                type: 'donation',
+                userId: userId,
+                viewerId: viewerId || '',
+                amount: amount.toString()
+            }
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ url: session.url })
+        };
+
+    } catch (error) {
+        console.error('Error creating donation checkout session:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create donation checkout session',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Create custom video checkout session
+ */
+async function createCustomVideoCheckoutSession(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId, viewerId, videoUrl, message, avatarId, amount, successUrl, cancelUrl } = body;
+
+        if (!userId || !viewerId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing userId or viewerId' })
+            };
+        }
+
+        if (!amount || amount < 1) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid amount' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Get user data
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User not found' })
+            };
+        }
+
+        const userData = userDoc.data();
+
+        // Create checkout session for custom video (one-time payment)
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: `Custom Video for ${userData.displayName || 'Creator'}`,
+                            description: message || 'Custom video to play on stream'
+                        },
+                        unit_amount: Math.round(amount * 100) // Convert to cents
+                    },
+                    quantity: 1
+                }
+            ],
+            mode: 'payment',
+            success_url: successUrl || `${event.headers.origin || 'https://masky.ai'}/user.html?video=success`,
+            cancel_url: cancelUrl || `${event.headers.origin || 'https://masky.ai'}/user.html?video=cancelled`,
+            metadata: {
+                type: 'custom-video',
+                userId: userId,
+                viewerId: viewerId,
+                videoUrl: videoUrl || '',
+                message: message || '',
+                avatarId: avatarId || '',
+                amount: amount.toString()
+            }
+        });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ url: session.url })
+        };
+
+    } catch (error) {
+        console.error('Error creating custom video checkout session:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create checkout session',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Create custom video (after payment or with credits)
+ */
+async function createCustomVideo(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId, viewerId, videoUrl, message, avatarId, paid } = body;
+
+        if (!userId || !viewerId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing userId or viewerId' })
+            };
+        }
+
+        if (!videoUrl) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing videoUrl' })
+            };
+        }
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Get user data
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User not found' })
+            };
+        }
+
+        const userData = userDoc.data();
+        const viewerDoc = await db.collection('users').doc(viewerId).get();
+        const viewerData = viewerDoc.exists ? viewerDoc.data() : {};
+
+        // Create custom video event in Firestore
+        const customVideoData = {
+            userId: userId,
+            viewerId: viewerId,
+            videoUrl: videoUrl,
+            message: message || null,
+            avatarId: avatarId || null,
+            paid: paid === true,
+            status: 'pending',
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Store in custom videos collection
+        const videoRef = await db.collection('customVideos').add(customVideoData);
+
+        // Publish custom video event to user's events collection for stream overlay
+        const customVideoEventData = {
+            type: 'custom-video',
+            videoId: videoRef.id,
+            videoUrl: videoUrl,
+            message: message || null,
+            avatarId: avatarId || null,
+            viewerName: viewerData.displayName || 'Anonymous',
+            viewerId: viewerId,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Store in user's events collection for overlay
+        await db.collection('users').doc(userId)
+            .collection('events').doc('custom-video')
+            .collection('alerts').add(customVideoEventData);
+
+        // If paid, update viewer's video credits or tribe membership
+        if (paid) {
+            // This will be handled by the webhook when payment completes
+            // For now, we'll just mark it as paid
+        } else {
+            // Using credits - update tribe membership if applicable
+            const userPageConfig = userData.userPageConfig || {};
+            const tribeMemberships = viewerData.tribeMemberships || {};
+            const membership = tribeMemberships[userId];
+
+            if (membership && userPageConfig.monthlyTribeVideos) {
+                // Increment free videos used this month
+                const now = new Date();
+                const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (membership.currentMonth !== currentMonth) {
+                    // New month, reset counter
+                    await db.collection('users').doc(viewerId).set({
+                        tribeMemberships: {
+                            ...tribeMemberships,
+                            [userId]: {
+                                ...membership,
+                                currentMonth: currentMonth,
+                                freeVideosUsedThisMonth: 1
+                            }
+                        }
+                    }, { merge: true });
+                } else {
+                    // Same month, increment
+                    await db.collection('users').doc(viewerId).set({
+                        tribeMemberships: {
+                            ...tribeMemberships,
+                            [userId]: {
+                                ...membership,
+                                freeVideosUsedThisMonth: (membership.freeVideosUsedThisMonth || 0) + 1
+                            }
+                        }
+                    }, { merge: true });
+                }
+            }
+        }
+
+        console.log('Custom video created:', { videoId: videoRef.id, userId, viewerId });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                videoId: videoRef.id 
+            })
+        };
+
+    } catch (error) {
+        console.error('Error creating custom video:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create custom video',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
  * Handle Stripe webhooks
  */
 async function handleStripeWebhook(event) {
@@ -3091,37 +3481,145 @@ async function handleStripeWebhook(event) {
         switch (stripeEvent.type) {
             case 'checkout.session.completed': {
                 const session = stripeEvent.data.object;
-                const userId = session.metadata.firebaseUID;
-                const tier = session.metadata.tier;
-                const customerId = session.customer;
-                const subscriptionId = session.subscription;
+                
+                // Handle subscription checkout (mode === 'subscription')
+                if (session.mode === 'subscription') {
+                    const userId = session.metadata.firebaseUID;
+                    const tier = session.metadata.tier;
+                    const customerId = session.customer;
+                    const subscriptionId = session.subscription;
 
-                // Get the subscription details from Stripe to get current_period_end
-                const { stripe } = await stripeInitializer.initialize();
-                const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+                    // Get the subscription details from Stripe to get current_period_end
+                    const { stripe } = await stripeInitializer.initialize();
+                    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-                // Update user data
-                await db.collection('users').doc(userId).set({
-                    stripeCustomerId: customerId,
-                    stripeSubscriptionId: subscriptionId,
-                    subscriptionTier: tier,
-                    subscriptionStatus: 'active',
-                    currentPeriodEnd: subscription.current_period_end,
-                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
+                    // Update user data
+                    await db.collection('users').doc(userId).set({
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: subscriptionId,
+                        subscriptionTier: tier,
+                        subscriptionStatus: 'active',
+                        currentPeriodEnd: subscription.current_period_end,
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
 
-                // Update custom claims
-                await admin.auth().setCustomUserClaims(userId, {
-                    subscriptionTier: tier,
-                    subscriptionStatus: 'active',
-                    stripeCustomerId: customerId,
-                    stripeSubscriptionId: subscriptionId,
-                    currentPeriodEnd: subscription.current_period_end,
-                    cancelAtPeriodEnd: subscription.cancel_at_period_end
-                });
+                    // Update custom claims
+                    await admin.auth().setCustomUserClaims(userId, {
+                        subscriptionTier: tier,
+                        subscriptionStatus: 'active',
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: subscriptionId,
+                        currentPeriodEnd: subscription.current_period_end,
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end
+                    });
 
-                console.log('Subscription created for user:', userId);
+                    console.log('Subscription created for user:', userId);
+                }
+                // Handle custom video checkout (mode === 'payment')
+                else if (session.mode === 'payment' && session.metadata?.type === 'custom-video') {
+                    const userId = session.metadata.userId;
+                    const viewerId = session.metadata.viewerId;
+                    const videoUrl = session.metadata.videoUrl;
+                    const message = session.metadata.message || null;
+                    const avatarId = session.metadata.avatarId || null;
+                    const amount = parseFloat(session.metadata.amount || '0');
+                    const paymentIntentId = session.payment_intent;
+
+                    if (userId && viewerId && videoUrl && amount > 0) {
+                        // Create the custom video
+                        const customVideoData = {
+                            userId: userId,
+                            viewerId: viewerId,
+                            videoUrl: videoUrl,
+                            message: message,
+                            avatarId: avatarId,
+                            paid: true,
+                            status: 'pending',
+                            paymentIntentId: paymentIntentId,
+                            sessionId: session.id,
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        };
+
+                        // Store in custom videos collection
+                        const videoRef = await db.collection('customVideos').add(customVideoData);
+
+                        // Get viewer data
+                        const viewerDoc = await db.collection('users').doc(viewerId).get();
+                        const viewerData = viewerDoc.exists ? viewerDoc.data() : {};
+
+                        // Publish custom video event to user's events collection for stream overlay
+                        const customVideoEventData = {
+                            type: 'custom-video',
+                            videoId: videoRef.id,
+                            videoUrl: videoUrl,
+                            message: message,
+                            avatarId: avatarId,
+                            viewerName: session.customer_details?.name || viewerData.displayName || 'Anonymous',
+                            viewerId: viewerId,
+                            timestamp: admin.firestore.FieldValue.serverTimestamp()
+                        };
+
+                        // Store in user's events collection for overlay
+                        await db.collection('users').doc(userId)
+                            .collection('events').doc('custom-video')
+                            .collection('alerts').add(customVideoEventData);
+
+                        console.log('Custom video payment processed:', { videoId: videoRef.id, userId, viewerId, amount });
+                    }
+                }
+                // Handle donation checkout (mode === 'payment')
+                else if (session.mode === 'payment' && session.metadata?.type === 'donation') {
+                    const userId = session.metadata.userId;
+                    const amount = parseFloat(session.metadata.amount || '0');
+                    const paymentIntentId = session.payment_intent;
+
+                    if (userId && amount > 0) {
+                        // Get user data
+                        const userDoc = await db.collection('users').doc(userId).get();
+                        if (userDoc.exists) {
+                            // Get viewer ID from session metadata if available
+                            const viewerId = session.metadata?.viewerId || null;
+
+                            // Create donation event in Firestore
+                            const donationData = {
+                                userId: userId,
+                                viewerId: viewerId, // Store who made the donation
+                                amount: amount,
+                                currency: 'usd',
+                                paymentIntentId: paymentIntentId,
+                                sessionId: session.id,
+                                donorEmail: session.customer_details?.email || null,
+                                donorName: session.customer_details?.name || null,
+                                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                                processed: false
+                            };
+
+                            // Store donation in donations collection
+                            await db.collection('donations').add(donationData);
+
+                            // Publish donation event to user's events collection for stream overlay
+                            const donationEventData = {
+                                type: 'donation',
+                                amount: amount,
+                                currency: 'usd',
+                                donorName: session.customer_details?.name || 'Anonymous',
+                                donorEmail: session.customer_details?.email || null,
+                                message: session.customer_details?.name 
+                                    ? `${session.customer_details.name} donated $${amount.toFixed(2)}!`
+                                    : `Someone donated $${amount.toFixed(2)}!`,
+                                timestamp: admin.firestore.FieldValue.serverTimestamp()
+                            };
+
+                            // Store in user's events collection for overlay
+                            await db.collection('users').doc(userId)
+                                .collection('events').doc('donation')
+                                .collection('alerts').add(donationEventData);
+
+                            console.log('Donation processed:', { userId, amount, paymentIntentId });
+                        }
+                    }
+                }
                 break;
             }
 
@@ -3241,6 +3739,7 @@ async function handleStripeWebhook(event) {
                 }
                 break;
             }
+
 
             default:
                 console.log('Unhandled event type:', stripeEvent.type);

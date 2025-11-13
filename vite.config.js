@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
       input: {
         main: './index.html',
         membership: './membership.html',
-        twitchevent: './twitchevent.html'
+        twitchevent: './twitchevent.html',
+        user: './user.html'
       }
     }
   };
@@ -30,10 +31,32 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       strictPort: true, // Force port 3000, don't try other ports
-      open: true
+      open: true,
+      // Rewrite user URLs (/{username}) to user.html for local testing
+      middlewareMode: false,
+      fs: {
+        strict: false
+      }
     },
     // Copy locale files to dist after build
     plugins: [
+      {
+        name: 'rewrite-user-urls',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            // Match /{username} pattern (no slashes in path except leading slash)
+            const userUrlPattern = /^\/([^\/]+)$/;
+            // Exclude known routes and file extensions
+            const excludedPaths = ['/api', '/assets', '/src', '/favicon.ico', '/index.html', '/membership.html', '/twitchevent.html', '/user.html'];
+            const hasExtension = /\.[a-zA-Z0-9]+$/.test(req.url.split('?')[0]);
+            
+            if (userUrlPattern.test(req.url) && !excludedPaths.some(path => req.url.startsWith(path)) && !hasExtension) {
+              req.url = '/user.html';
+            }
+            next();
+          });
+        }
+      },
       {
         name: 'copy-locales',
         closeBundle() {

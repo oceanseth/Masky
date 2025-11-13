@@ -25,8 +25,10 @@ service cloud.firestore {
     }
     
     // Users collection - users can only read/write their own data
+    // Allow public read access for username lookup (for user profile pages)
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if true; // Public read for username lookup
+      allow write: if isOwner(userId);
       
       // User subscriptions subcollection - users can only access their own subscriptions
       match /subscriptions/{subscriptionId} {
@@ -40,12 +42,24 @@ service cloud.firestore {
         // Allow public read access for Twitch events (for overlay)
         allow read: if eventType.matches('twitch_.*');
         
+        // Allow public read access for donation events (for overlay)
+        allow read: if eventType == 'donation';
+        
+        // Allow public read access for custom video events (for overlay)
+        allow read: if eventType == 'custom-video';
+        
         // Event alerts subcollection
         match /alerts/{alertId} {
           allow read, write: if isOwner(userId);
           
           // Allow public read access for Twitch event alerts (for overlay)
           allow read: if eventType.matches('twitch_.*');
+          
+          // Allow public read access for donation event alerts (for overlay)
+          allow read: if eventType == 'donation';
+          
+          // Allow public read access for custom video event alerts (for overlay)
+          allow read: if eventType == 'custom-video';
         }
       }
 
@@ -62,13 +76,16 @@ service cloud.firestore {
       }
 
       // HeyGen avatar groups (user-facing "avatars")
+      // Allow public read access for user page avatar display
       match /heygenAvatarGroups/{groupId} {
-        allow read, write: if isOwner(userId);
+        allow read: if true; // Public read for user page
+        allow write: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
 
         // Assets for a group (images the user uploaded/attached)
         match /assets/{assetId} {
-          allow read, write: if isOwner(userId);
+          allow read: if true; // Public read for user page
+          allow write: if isOwner(userId);
           allow create: if isOwner(userId) && request.resource.data.userId == userId;
         }
       }
@@ -120,6 +137,24 @@ service cloud.firestore {
       // Allow create only if user owns the parent project
       allow create: if isAuthenticated() && 
         get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+    }
+
+    // Donations collection - allow read for user's own donations, write only by server
+    match /donations/{donationId} {
+      // Allow read if user is authenticated and is either the creator or the viewer
+      // This covers both get (single document) and list (query) operations
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || resource.data.viewerId == request.auth.uid);
+      allow write: if false; // Only server can write donations
+    }
+
+    // Custom videos collection - allow read for creator and viewer, write only by server
+    match /customVideos/{videoId} {
+      // Allow read if user is authenticated and is either the creator or the viewer
+      // This covers both get (single document) and list (query) operations
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || resource.data.viewerId == request.auth.uid);
+      allow write: if false; // Only server can write custom videos
     }
     
     // Deny all other access

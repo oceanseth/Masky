@@ -178,9 +178,53 @@ export async function getRedemptionTitles() {
     }));
 }
 
+/**
+ * Get the current broadcaster's info from Twitch API
+ * Returns the broadcaster's login name (username) and display name
+ */
+export async function getBroadcasterInfo() {
+    const user = getCurrentUser();
+    if (!user) {
+        throw new Error('User must be logged in with Twitch to use this feature.');
+    }
+
+    const broadcasterId = extractTwitchBroadcasterId(user);
+    if (!broadcasterId) {
+        throw new Error('Unable to determine Twitch broadcaster ID for the current user.');
+    }
+
+    const response = await callTwitchUserApi(
+        'users',
+        {
+            query: { id: broadcasterId }
+        }
+    );
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to load broadcaster info (${response.status}): ${errorText}`);
+    }
+
+    const json = await response.json().catch(() => ({ data: [] }));
+    const users = Array.isArray(json?.data) ? json.data : [];
+    
+    if (users.length === 0) {
+        throw new Error('No broadcaster info found');
+    }
+
+    const broadcaster = users[0];
+    return {
+        id: broadcaster.id,
+        login: broadcaster.login, // This is the broadcaster username (lowercase)
+        displayName: broadcaster.display_name,
+        profileImageUrl: broadcaster.profile_image_url
+    };
+}
+
 export const twitchHelpers = {
     getRedemptionTitles,
     twitchLogin,
     setTwitchFinishedLogin,
-    callTwitchUserApi
+    callTwitchUserApi,
+    getBroadcasterInfo
 };

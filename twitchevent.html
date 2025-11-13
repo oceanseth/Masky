@@ -421,6 +421,7 @@
                         status: source.status || null,
                         lastFetched: Date.now(),
                         expiresAt: parseExpiresAt(source.expiresAt || source.expireAt || source.expiredAt || null),
+                        muted: Boolean(source.muted),
                         config: alertConfig
                     };
                     eventVideoCache.get(eventType).push(entry);
@@ -797,6 +798,7 @@
                 });
                 return false;
             }
+            const shouldMute = Boolean(selected.muted);
             
             console.log(`🎲 Random video selection for ${normalizedEventType}:`);
             console.log(`  - Available videos: ${items.length}`);
@@ -806,6 +808,7 @@
             console.log(`  - Video type: ${selected.type}`);
             console.log(`  - Video ID: ${selected.videoId || 'N/A'}`);
             console.log(`  - Video URL: ${videoUrl}`);
+            console.log(`  - Muted: ${shouldMute}`);
 
             const overlay = document.getElementById('videoOverlay');
             overlay.innerHTML = '';
@@ -826,7 +829,7 @@
             video.autoplay = true;
             video.controls = false;
             video.playsInline = true;
-            video.muted = false;
+            video.muted = shouldMute;
             video.style.maxWidth = '90vw';
             video.style.maxHeight = '90vh';
             video.style.borderRadius = '12px';
@@ -878,6 +881,9 @@
                     try {
                         video.muted = true;
                         await video.play();
+                        if (!shouldMute) {
+                            video.muted = false;
+                        }
                     } catch (err2) {
                         console.error('Video play failed', err2);
                     }

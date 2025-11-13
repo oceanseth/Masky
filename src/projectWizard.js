@@ -86,19 +86,23 @@ class ProjectWizard {
             channelPointsMinimumCost: 0,
             channelPointsRewardTitle: 'any',
             alertConfig: {},
+            isMuted: false,
             ...this.options.projectData
         };
 
         if (!this.projectData || typeof this.projectData !== 'object') {
             this.projectData = {
                 platform: 'twitch',
-                eventType: 'channel.follow'
+                eventType: 'channel.follow',
+                isMuted: false
             };
         }
 
         if (!this.projectData.alertConfig || typeof this.projectData.alertConfig !== 'object') {
             this.projectData.alertConfig = {};
         }
+
+        this.projectData.isMuted = Boolean(this.projectData.isMuted);
 
         this.projectData.channelPointsMinimumCost = this.parseNonNegativeInteger(
             this.projectData.channelPointsMinimumCost,
@@ -152,6 +156,7 @@ class ProjectWizard {
                 const stored = JSON.parse(storedStateRaw);
                 if (stored && stored.projectData) {
                     this.projectData = stored.projectData;
+                    this.projectData.isMuted = Boolean(this.projectData.isMuted);
                     if (!this.projectData.alertConfig || typeof this.projectData.alertConfig !== 'object') {
                         this.projectData.alertConfig = {};
                     }
@@ -253,6 +258,12 @@ class ProjectWizard {
                                         </div>
                                     </label>
                                 </div>
+                            </div>
+                            <div class="form-group" id="muteOptionGroup" style="display: none;">
+                                <label for="uploadedVideoMuted" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="uploadedVideoMuted" style="cursor: pointer;">
+                                    <span>Muted</span>
+                                </label>
                             </div>
                             <div class="form-group">
                                 <label for="platformSelect">Select your streaming platform:</label>
@@ -503,6 +514,18 @@ class ProjectWizard {
         projectTypeInputs.forEach(input => {
             input.checked = input.value === projectType;
         });
+        const muteCheckbox = document.getElementById('uploadedVideoMuted');
+        const muteOptionGroup = document.getElementById('muteOptionGroup');
+        const isUploadType = projectType === 'upload';
+        if (!isUploadType && this.projectData.isMuted) {
+            this.projectData.isMuted = false;
+        }
+        if (muteOptionGroup) {
+            muteOptionGroup.style.display = isUploadType ? 'block' : 'none';
+        }
+        if (muteCheckbox) {
+            muteCheckbox.checked = Boolean(this.projectData.isMuted) && isUploadType;
+        }
         
         // Set default event type
         const eventTypeSelect = document.getElementById('eventType');
@@ -558,11 +581,14 @@ class ProjectWizard {
                 if (this.projectData.projectType !== newType) {
                     this.projectData.projectType = newType;
                     this.dirtyFlags.projectType = true;
-                    
-                    if (newType === 'upload') {
-                        // Reset generation-specific fields
-                        this.projectData.heygenVideoId = null;
-                    }
+                }
+                
+                if (newType === 'upload') {
+                    // Reset generation-specific fields
+                    this.projectData.heygenVideoId = null;
+                    this.projectData.isMuted = false;
+                } else {
+                    this.projectData.isMuted = false;
                 }
                 this.updateWorkflowForProjectType();
                 this.validateStep1();
@@ -660,6 +686,18 @@ class ProjectWizard {
             });
         }
 
+        const muteCheckbox = document.getElementById('uploadedVideoMuted');
+        if (muteCheckbox) {
+            muteCheckbox.addEventListener('change', (e) => {
+                this.projectData.isMuted = Boolean(e.target.checked);
+                this.dirtyFlags.video = true;
+                const previewVideo = document.getElementById('previewVideo');
+                if (previewVideo) {
+                    previewVideo.muted = this.projectData.isMuted;
+                }
+            });
+        }
+
         // Avatar file upload
         const uploadArea = document.getElementById('uploadArea');
         const avatarFile = document.getElementById('avatarFile');
@@ -718,6 +756,19 @@ class ProjectWizard {
         projectTypeInputs.forEach(input => {
             input.checked = input.value === projectType;
         });
+        this.projectData.isMuted = Boolean(this.projectData.isMuted);
+        const muteCheckbox = document.getElementById('uploadedVideoMuted');
+        const muteGroup = document.getElementById('muteOptionGroup');
+        const showMute = projectType === 'upload';
+        if (!showMute && this.projectData.isMuted) {
+            this.projectData.isMuted = false;
+        }
+        if (muteGroup) {
+            muteGroup.style.display = showMute ? 'block' : 'none';
+        }
+        if (muteCheckbox) {
+            muteCheckbox.checked = showMute ? this.projectData.isMuted : false;
+        }
         
         // Ensure projectData has the correct values
         this.projectData.eventType = normalizedEventType;
@@ -817,6 +868,7 @@ class ProjectWizard {
                 updates.heygenVideoReady = null;
                 updates.heygenLastStatus = null;
                 updates.heygenLastCheckedAt = null;
+                updates.isMuted = Boolean(this.projectData.isMuted);
             } else {
                 updates.videoUrl = null;
                 updates.videoStoragePath = null;
@@ -824,6 +876,7 @@ class ProjectWizard {
                 updates.heygenVideoReady = Boolean(this.projectData.heygenVideoReady);
                 updates.heygenLastStatus = this.projectData.heygenLastStatus || null;
                 updates.heygenLastCheckedAt = new Date();
+                updates.isMuted = false;
             }
             hasUpdates = true;
         }
@@ -877,6 +930,23 @@ class ProjectWizard {
 
     updateWorkflowForProjectType() {
         const type = this.projectData.projectType || 'generate';
+
+        const muteGroup = document.getElementById('muteOptionGroup');
+        const muteCheckbox = document.getElementById('uploadedVideoMuted');
+        const shouldShowMute = type === 'upload';
+        if (!shouldShowMute && this.projectData.isMuted) {
+            this.projectData.isMuted = false;
+        }
+        if (muteGroup) {
+            muteGroup.style.display = shouldShowMute ? 'block' : 'none';
+        }
+        if (muteCheckbox) {
+            muteCheckbox.checked = shouldShowMute ? Boolean(this.projectData.isMuted) : false;
+        }
+        const previewVideo = document.getElementById('previewVideo');
+        if (previewVideo) {
+            previewVideo.muted = Boolean(this.projectData.isMuted);
+        }
 
         // Sanity check the current step fits within the permitted flow.
         const maxStep = this.getMaxStep();
@@ -1612,6 +1682,7 @@ class ProjectWizard {
 
         if (previewVideo) {
             previewVideo.src = URL.createObjectURL(file);
+            previewVideo.muted = Boolean(this.projectData.isMuted);
             previewVideo.load();
         }
 
@@ -1627,6 +1698,7 @@ class ProjectWizard {
 
             if (previewVideo) {
                 previewVideo.src = videoUrl;
+                previewVideo.muted = Boolean(this.projectData.isMuted);
                 previewVideo.load();
             }
 
@@ -1722,6 +1794,7 @@ class ProjectWizard {
             }
             if (previewVideo) {
                 previewVideo.src = this.projectData.videoUrl;
+                previewVideo.muted = Boolean(this.projectData.isMuted);
                 previewVideo.load();
             }
             if (videoStatus) {
@@ -1735,6 +1808,9 @@ class ProjectWizard {
             }
             if (videoPreview) {
                 videoPreview.style.display = 'none';
+            }
+            if (previewVideo) {
+                previewVideo.muted = Boolean(this.projectData.isMuted);
             }
             if (videoStatus) {
                 videoStatus.textContent = '';
@@ -3497,6 +3573,7 @@ class ProjectWizard {
             videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
             heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
             videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
+            isMuted: isUploadProject ? Boolean(this.projectData.isMuted) : false,
             alertConfig: this.projectData.alertConfig || {},
             twitchSubscription: true, // Set to true since we connected in step 4
             isActive: true,
@@ -3719,6 +3796,7 @@ class ProjectWizard {
                     videoUrl: isUploadProject ? (this.projectData.videoUrl || null) : null,
                     heygenVideoId: isUploadProject ? null : (this.projectData.heygenVideoId || null),
                     videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
+                    isMuted: isUploadProject ? Boolean(this.projectData.isMuted) : false,
                     alertConfig: this.projectData.alertConfig || {},
                     channelPointsMinimumCost: this.isChannelPointsEventType(this.projectData.eventType)
                         ? this.parseNonNegativeInteger(this.projectData.channelPointsMinimumCost, 0)

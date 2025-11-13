@@ -433,6 +433,7 @@ exports.handler = async (event, context) => {
                     platform,
                     eventType,
                     projectType,
+                    isMuted: Boolean(data.isMuted),
                     commandTrigger: data.commandTrigger || null,
                     isActive: !!data.isActive,
                     twitchSubscription: !!data.twitchSubscription,
@@ -464,7 +465,8 @@ exports.handler = async (event, context) => {
                         type: 'uploaded',
                         url: data.videoUrl,
                         storagePath: data.videoStoragePath || null,
-                        lastCheckedAt: nowIso
+                        lastCheckedAt: nowIso,
+                        muted: Boolean(data.isMuted)
                     });
                 }
 
@@ -525,6 +527,7 @@ exports.handler = async (event, context) => {
                             status,
                             url: resolvedUrl,
                             lastCheckedAt: new Date().toISOString(),
+                            muted: false,
                             expiresAt: normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null),
                             raw: {
                                 video_url: data.video_url || null,
@@ -545,6 +548,7 @@ exports.handler = async (event, context) => {
                             status: 'error',
                             url: null,
                             lastCheckedAt: new Date().toISOString(),
+                            muted: false,
                             error: err.message || 'Unknown error'
                         });
                     }
@@ -1527,18 +1531,55 @@ async function handleHeygenGenerate(event, headers) {
         }
 
         // Ensure per-user folder exists in HeyGen
-        let folderId = null;
         const userRef = db.collection('users').doc(userId);
         const userSnap = await userRef.get();
         const userRec = userSnap.exists ? userSnap.data() : {};
-        if (userRec.heygenFolderId) {
-            folderId = userRec.heygenFolderId;
-        } else {
-            try {
-                folderId = await heygen.createFolder(`masky_${userId}`);
-                await userRef.set({ heygenFolderId: folderId, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-            } catch (e) {
-                console.warn('Failed to create HeyGen folder; proceeding without folder:', e.message);
+        let folderId = userRec.heygenFolderId || null;
+        let folderRecord = null;
+        try {
+            folderRecord = await heygen.ensureUserFolder(userId, {
+                parentFolderId: heygen.MASKY_ROOT_FOLDER_ID,
+                existingFolderId: folderId,
+                refresh: !folderId
+            });
+            folderId = folderRecord?.id || folderId;
+        } catch (folderErr) {
+            console.warn('Failed to ensure HeyGen folder; proceeding without folder:', folderErr.message);
+        }
+
+        if (folderId && folderRecord) {
+            const normalizedName = folderRecord.name || userId;
+            const normalizedParentId = folderRecord.parentId || heygen.MASKY_ROOT_FOLDER_ID;
+            const needsUpdate =
+                userRec.heygenFolderId !== folderId ||
+                userRec.heygenFolderName !== normalizedName ||
+                userRec.heygenFolderParentId !== normalizedParentId;
+
+            if (needsUpdate) {
+                const folderUpdate = {
+                    heygenFolderId: folderId,
+                    heygenFolderName: normalizedName,
+                    heygenFolderParentId: normalizedParentId,
+                    heygenFolderLastVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+                await userRef.set(folderUpdate, { merge: true });
+            }
+        } else if (folderId && !folderRecord) {
+            const normalizedName = userRec.heygenFolderName || userId;
+            const normalizedParentId = userRec.heygenFolderParentId || heygen.MASKY_ROOT_FOLDER_ID;
+            const needsUpdate =
+                userRec.heygenFolderId !== folderId ||
+                userRec.heygenFolderName !== normalizedName ||
+                userRec.heygenFolderParentId !== normalizedParentId;
+
+            if (needsUpdate) {
+                await userRef.set({
+                    heygenFolderId: folderId,
+                    heygenFolderName: normalizedName,
+                    heygenFolderParentId: normalizedParentId,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
             }
         }
 
@@ -1927,7 +1968,8 @@ async function handleHeygenGenerate(event, headers) {
             avatarStyle,
             isPhotoAvatar: isPhotoAvatar,
             maxDimensionOverride: effectiveMaxDimension,
-            planMaxDimension
+            planMaxDimension,
+            folderId
         });
 
         // Persist to project

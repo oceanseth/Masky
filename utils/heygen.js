@@ -25,6 +25,8 @@ const PLAN_NAME_DIMENSION_MAP = {
     enterprise: 3840
 };
 
+const HEYGEN_MASKY_ROOT_FOLDER_ID = '9bd4360442ef4c53a3c884212f6d9bf7';
+
 // Note: Local environment is loaded in api/api.js handler
 // No need to load again here
 
@@ -356,13 +358,112 @@ class HeygenClient {
         }
     }
 
+    normalizeFolderRecord(folder) {
+        if (!folder || typeof folder !== 'object') return null;
+        const id = folder.folder_id || folder.id || folder.folderId;
+        const name = folder.name || folder.folder_name || folder.folderName;
+        const parentId = folder.parent_id || folder.parentId || folder.parent_folder_id || folder.parentFolderId;
+        return {
+            id,
+            name,
+            parentId,
+            raw: folder
+        };
+    }
+
+    async listFolders({ nameFilter, parentId, pageToken } = {}) {
+        const query = new URLSearchParams();
+        if (nameFilter) query.set('name_filter', nameFilter);
+        if (parentId) query.set('parent_id', parentId);
+        if (pageToken) query.set('page_token', pageToken);
+        const queryString = query.toString();
+        const path = `/v1/folders${queryString ? `?${queryString}` : ''}`;
+        const json = await this.requestJson(path, { method: 'GET' });
+        const data = json?.data ?? json ?? {};
+        let folders = [];
+
+        const candidates = [];
+        if (Array.isArray(data?.folders)) candidates.push(...data.folders);
+        if (Array.isArray(data?.folder_list)) candidates.push(...data.folder_list);
+        if (Array.isArray(data?.items)) candidates.push(...data.items);
+        if (Array.isArray(json?.folders)) candidates.push(...json.folders);
+        if (Array.isArray(json?.data?.items)) candidates.push(...json.data.items);
+        if (!candidates.length && typeof data === 'object') {
+            if (data.folder) candidates.push(data.folder);
+            if (json.folder) candidates.push(json.folder);
+        }
+
+        folders = candidates
+            .map(candidate => this.normalizeFolderRecord(candidate))
+            .filter(Boolean);
+
+        return {
+            folders,
+            nextPageToken: data?.next_page_token || data?.nextPageToken || json?.next_page_token || json?.nextPageToken || null
+        };
+    }
+
     async createFolder(name, parentId) {
-        // POST /v1/folder/create
-        const body = parentId ? { name, parent_id: parentId } : { name };
-        const json = await this.requestJson('/v1/folder/create', { method: 'POST', body });
-        const folderId = json?.data?.folder_id || json?.data?.id;
-        if (!folderId) throw new Error('Failed to create HeyGen folder');
-        return folderId;
+        if (!name) throw new Error('Folder name is required');
+        // POST /v1/folders/create
+        const body = { name };
+        if (parentId) body.parent_id = parentId;
+        const json = await this.requestJson('/v1/folders/create', { method: 'POST', body });
+
+        const folderRecord =
+            this.normalizeFolderRecord(json?.data?.folder) ||
+            this.normalizeFolderRecord(json?.data) ||
+            this.normalizeFolderRecord(json);
+
+        if (!folderRecord?.id) {
+            throw new Error('Failed to create HeyGen folder');
+        }
+
+        return folderRecord;
+    }
+
+    async ensureChildFolder(parentId, folderName, { refresh = false } = {}) {
+        if (!parentId) throw new Error('parentId is required to ensure folder');
+        if (!folderName) throw new Error('folderName is required to ensure folder');
+
+        let existingFolder = null;
+
+        if (!refresh) {
+            try {
+                const { folders } = await this.listFolders({ nameFilter: folderName, parentId });
+                const targetName = folderName.toLowerCase();
+                const targetParentId = String(parentId);
+                existingFolder = folders.find(folder => {
+                    const normalizedName = (folder.name || '').toLowerCase();
+                    const normalizedParent = folder.parentId ? String(folder.parentId) : null;
+                    return normalizedName === targetName && normalizedParent === targetParentId;
+                });
+            } catch (err) {
+                console.warn('[ensureChildFolder] Failed to list folders:', err.message);
+            }
+        }
+
+        if (existingFolder && existingFolder.id) {
+            return existingFolder;
+        }
+
+        const createdFolder = await this.createFolder(folderName, parentId);
+        return createdFolder;
+    }
+
+    async ensureUserFolder(userId, { parentFolderId = HEYGEN_MASKY_ROOT_FOLDER_ID, existingFolderId, refresh = false } = {}) {
+        if (!userId) throw new Error('userId is required to ensure user folder');
+
+        if (existingFolderId && !refresh) {
+            return {
+                id: existingFolderId,
+                name: userId,
+                parentId: parentFolderId
+            };
+        }
+
+        const folderRecord = await this.ensureChildFolder(parentFolderId, userId, { refresh });
+        return folderRecord;
     }
 
     async createPhotoAvatarGroup(name, imageKeyOrUrl = null) {
@@ -753,7 +854,8 @@ class HeygenClient {
             avatarStyle = 'normal',
             isPhotoAvatar = false,  // Flag to use talking_photo instead of avatar
             maxDimensionOverride = null,
-            planMaxDimension = null
+            planMaxDimension = null,
+            folderId = null
         } = params || {};
 
         if (!avatarId) throw new Error('avatarId is required');
@@ -826,6 +928,10 @@ class HeygenClient {
                 height: safetyNormalizedDimensions.height
             }
         };
+
+        if (folderId) {
+            body.folder_id = folderId;
+        }
 
         console.log('[generateVideoWithAudio] Generating video with:', {
             avatarType: isPhotoAvatar ? 'talking_photo' : 'avatar',
@@ -901,7 +1007,6 @@ class HeygenClient {
         const body = {
             title,
             callback_id: callbackId,
-            folder_id: folderId,
             video_inputs: [
                 {
                     character: {
@@ -921,6 +1026,10 @@ class HeygenClient {
             }
         };
 
+        if (folderId) {
+            body.folder_id = folderId;
+        }
+
         const json = await this.requestJson('/v2/video/generate', { method: 'POST', body });
         const videoId = json?.data?.video_id || json?.data?.id || json?.data?.videoId;
         if (!videoId) throw new Error('Failed to retrieve video_id from HeyGen');
@@ -929,6 +1038,7 @@ class HeygenClient {
 }
 
 const heygenClient = new HeygenClient();
+heygenClient.MASKY_ROOT_FOLDER_ID = HEYGEN_MASKY_ROOT_FOLDER_ID;
 
 /**
  * Helper function to parse event body

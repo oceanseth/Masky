@@ -287,12 +287,14 @@ function initializeMobileMenu() {
         }
         const dashboard = document.getElementById('dashboard');
         const about = document.getElementById('aboutSection');
+        const landing = document.getElementById('landing');
         const avatars = document.getElementById('avatarsManager');
         const wiz = document.getElementById('projectWizard');
         const recent = document.getElementById('recentProjects');
         if (avatars) avatars.remove();
         if (wiz) wiz.style.display = 'none';
         if (recent) recent.style.display = 'none';
+        if (landing) landing.style.display = 'none';
         if (dashboard) dashboard.style.display = 'none';
         if (about) about.style.display = 'block';
         // Scroll to top for a clean view

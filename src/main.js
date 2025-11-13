@@ -206,6 +206,10 @@ function showDashboard() {
 function showLanding() {
   document.getElementById('landing').style.display = 'flex';
   document.getElementById('dashboard').classList.remove('active');
+  const about = document.getElementById('aboutSection');
+  if (about) {
+    about.style.display = 'none';
+  }
 }
 
 // Listen for auth state changes

@@ -19,8 +19,7 @@ export function createHeader(options = {}) {
     const nav = document.createElement('nav');
     nav.innerHTML = `
         <div class="logo" onclick="window.location.href='/'">
-            <img src="/assets/masky-logo-gradient.svg" alt="Masky" class="logo-icon">
-            <span class="logo-text">MASKY</span>
+            <img src="/assets/masky-logo-title.png" alt="Masky" class="logo-icon">
         </div>
         <div class="nav-links">
             <a class="nav-link" id="navProjects" onclick="showProjects()" style="display: none;">Projects</a>

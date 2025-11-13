@@ -25,9 +25,9 @@ nav {
 }
 
 .logo-icon {
-    width: 2rem;
-    height: 2rem;
-    transition: all 0.3s ease;
+    width: auto;
+    height: 80px;    
+    position: absolute;
 }
 
 .logo:hover .logo-icon {

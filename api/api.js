@@ -2597,6 +2597,22 @@ async function handleHeygenGenerate(event, headers) {
     }
 }
 
+/**
+ * Map Stripe price ID to subscription tier
+ * @param {string} priceId - Stripe price ID
+ * @returns {string} Subscription tier (free, viewer, creator, proCreator)
+ */
+function getTierFromPriceId(priceId) {
+    // Price ID to tier mapping
+    // This must match the prices in src/config.js
+    const priceToTierMap = {
+        'price_1STApoJwtIxwToTZBmaMkfIm': 'viewer',      // Viewer tier
+        'price_1SQyPfJwtIxwToTZ7hgQGdRF': 'creator',     // Creator tier
+        'price_1SQyR0JwtIxwToTZCbDhQUu7': 'proCreator'   // Pro Creator tier
+    };
+    
+    return priceToTierMap[priceId] || 'free';
+}
 
 /**
  * Get subscription status for a user
@@ -2660,17 +2676,62 @@ async function getSubscriptionStatus(event) {
         console.log('Custom claims:', JSON.stringify(customClaims, null, 2));
         console.log('User data from Firestore:', JSON.stringify(userData, null, 2));
 
-        // If we have a Stripe subscription ID, fetch latest data from Stripe to ensure accuracy
+        // Always try to fetch latest data from Stripe if we have customer ID or subscription ID
+        let stripeSubscription = null;
+        const { stripe } = await stripeInitializer.initialize();
+
+        // First, try to fetch by subscription ID if we have it
         if (subscription.stripeSubscriptionId) {
             try {
                 console.log('Fetching subscription details from Stripe for ID:', subscription.stripeSubscriptionId);
-                const { stripe } = await stripeInitializer.initialize();
-                
-                // Retrieve subscription with expanded data to get all billing information
-                const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, {
+                stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, {
                     expand: ['latest_invoice', 'customer', 'default_payment_method']
                 });
-                
+                console.log('Found subscription by ID:', stripeSubscription.id);
+            } catch (error) {
+                console.error('Error fetching subscription by ID:', error.message);
+                // Continue to try fetching by customer ID
+                stripeSubscription = null;
+            }
+        }
+
+        // If we don't have a subscription yet but have a customer ID, query Stripe by customer ID
+        if (!stripeSubscription && subscription.stripeCustomerId) {
+            try {
+                console.log('No subscription ID found, querying Stripe by customer ID:', subscription.stripeCustomerId);
+                const subscriptions = await stripe.subscriptions.list({
+                    customer: subscription.stripeCustomerId,
+                    status: 'all', // Get all statuses, we'll filter for active ones
+                    limit: 10,
+                    expand: ['data.latest_invoice', 'data.customer', 'data.default_payment_method']
+                });
+
+                console.log('Found', subscriptions.data.length, 'subscriptions for customer');
+
+                // Find the most recent active or trialing subscription
+                const activeSubscriptions = subscriptions.data.filter(sub => 
+                    sub.status === 'active' || sub.status === 'trialing'
+                );
+
+                if (activeSubscriptions.length > 0) {
+                    // Sort by created date (most recent first) and take the first one
+                    activeSubscriptions.sort((a, b) => b.created - a.created);
+                    stripeSubscription = activeSubscriptions[0];
+                    console.log('Found active subscription:', stripeSubscription.id, 'status:', stripeSubscription.status);
+                } else if (subscriptions.data.length > 0) {
+                    // If no active subscriptions, use the most recent one anyway
+                    subscriptions.data.sort((a, b) => b.created - a.created);
+                    stripeSubscription = subscriptions.data[0];
+                    console.log('No active subscriptions, using most recent:', stripeSubscription.id, 'status:', stripeSubscription.status);
+                }
+            } catch (error) {
+                console.error('Error fetching subscriptions by customer ID:', error.message);
+            }
+        }
+
+        // Process the subscription data if we found one
+        if (stripeSubscription) {
+            try {
                 console.log('Full Stripe subscription object:', JSON.stringify(stripeSubscription, null, 2));
                 console.log('Stripe subscription keys:', Object.keys(stripeSubscription));
                 console.log('current_period_end:', stripeSubscription.current_period_end);
@@ -2730,17 +2791,42 @@ async function getSubscriptionStatus(event) {
                 subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
                 subscription.status = stripeSubscription.status;
                 
+                // Get the tier from the subscription's price ID
+                // Check subscription items to get the current price ID
+                let tierFromPriceId = null;
+                if (stripeSubscription.items && stripeSubscription.items.data && stripeSubscription.items.data.length > 0) {
+                    const priceId = stripeSubscription.items.data[0].price.id;
+                    console.log('Found price ID in subscription:', priceId);
+                    
+                    // Map price ID to tier
+                    tierFromPriceId = getTierFromPriceId(priceId);
+                    console.log('Mapped tier from price ID:', tierFromPriceId);
+                    
+                    // Update subscription tier with the tier from price ID
+                    subscription.tier = tierFromPriceId;
+                } else {
+                    console.log('No subscription items found, keeping existing tier');
+                }
+                
                 console.log('Final currentPeriodEnd value:', subscription.currentPeriodEnd);
+                console.log('Final subscription tier:', subscription.tier);
 
                 // Update the data in Firebase for future requests (only if we have valid data)
                 const updateData = {
                     cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
-                    subscriptionStatus: stripeSubscription.status
+                    subscriptionStatus: stripeSubscription.status,
+                    stripeSubscriptionId: stripeSubscription.id // Always update subscription ID
                 };
                 
                 // Only add currentPeriodEnd if we have a valid value
                 if (currentPeriodEnd) {
                     updateData.currentPeriodEnd = currentPeriodEnd;
+                }
+                
+                // Always update tier if we determined it from the price ID (Stripe is source of truth)
+                if (tierFromPriceId) {
+                    updateData.subscriptionTier = tierFromPriceId;
+                    console.log('Updating subscriptionTier in Firestore to:', tierFromPriceId);
                 }
                 
                 await db.collection('users').doc(userId).update(updateData);
@@ -2749,7 +2835,8 @@ async function getSubscriptionStatus(event) {
                 const claimsUpdate = {
                     ...customClaims,
                     cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
-                    subscriptionStatus: stripeSubscription.status
+                    subscriptionStatus: stripeSubscription.status,
+                    stripeSubscriptionId: stripeSubscription.id // Always update subscription ID
                 };
                 
                 // Only add currentPeriodEnd if we have a valid value
@@ -2757,13 +2844,24 @@ async function getSubscriptionStatus(event) {
                     claimsUpdate.currentPeriodEnd = currentPeriodEnd;
                 }
                 
+                // Always update tier if we determined it from the price ID (Stripe is source of truth)
+                if (tierFromPriceId) {
+                    claimsUpdate.subscriptionTier = tierFromPriceId;
+                    console.log('Updating subscriptionTier in custom claims to:', tierFromPriceId);
+                }
+                
                 await admin.auth().setCustomUserClaims(userId, claimsUpdate);
+
+                // Also update the subscription object we're returning
+                subscription.stripeSubscriptionId = stripeSubscription.id;
 
                 console.log('Updated subscription data from Stripe for user:', userId);
             } catch (error) {
-                console.error('Error fetching subscription from Stripe:', error);
-                // Continue with existing data if Stripe fetch fails
+                console.error('Error processing subscription from Stripe:', error);
+                // Continue with existing data if Stripe processing fails
             }
+        } else {
+            console.log('No subscription found in Stripe for customer ID:', subscription.stripeCustomerId);
         }
 
         console.log('Returning subscription data:', JSON.stringify(subscription, null, 2));
@@ -4307,20 +4405,26 @@ async function handleStripeWebhook(event) {
                     const userDoc = usersSnapshot.docs[0];
                     const userId = userDoc.id;
 
-                    // Determine tier from subscription items
-                    // Note: You can also add metadata to products in Stripe Dashboard
-                    const priceId = subscription.items.data[0].price.id;
-                    const productId = subscription.items.data[0].price.product;
-                    
-                    // Try to get tier from subscription metadata first, then fallback to product lookup
-                    let tier = subscription.metadata?.tier || 'free';
-                    
-                    // If no metadata, try to determine from product
-                    if (!subscription.metadata?.tier) {
-                        // You can add logic here to map product IDs to tiers if needed
-                        // For now, we'll keep the tier from the original subscription creation
-                        const existingData = userDoc.data();
-                        tier = existingData.subscriptionTier || 'free';
+                    // Determine tier from subscription price ID (source of truth)
+                    let tier = 'free';
+                    if (subscription.items && subscription.items.data && subscription.items.data.length > 0) {
+                        const priceId = subscription.items.data[0].price.id;
+                        console.log('Webhook: Found price ID in subscription:', priceId);
+                        
+                        // Map price ID to tier using our helper function
+                        tier = getTierFromPriceId(priceId);
+                        console.log('Webhook: Mapped tier from price ID:', tier);
+                    } else {
+                        // Fallback: try to get tier from subscription metadata
+                        tier = subscription.metadata?.tier || 'free';
+                        console.log('Webhook: Using tier from metadata:', tier);
+                        
+                        // If still no tier, use existing tier from Firestore
+                        if (tier === 'free') {
+                            const existingData = userDoc.data();
+                            tier = existingData.subscriptionTier || 'free';
+                            console.log('Webhook: Using existing tier from Firestore:', tier);
+                        }
                     }
 
                     const updateData = {
@@ -4328,6 +4432,7 @@ async function handleStripeWebhook(event) {
                         subscriptionTier: tier,
                         currentPeriodEnd: subscription.current_period_end,
                         cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                        stripeSubscriptionId: subscription.id,
                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
                     };
 
@@ -4343,7 +4448,7 @@ async function handleStripeWebhook(event) {
                         cancelAtPeriodEnd: subscription.cancel_at_period_end
                     });
 
-                    console.log('Subscription updated for user:', userId);
+                    console.log('Subscription updated for user:', userId, 'tier:', tier);
                 }
                 break;
             }

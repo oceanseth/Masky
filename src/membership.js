@@ -159,16 +159,42 @@ function updateSubscriptionUI(subscription) {
     const subscriptionStatus = document.getElementById('subscriptionStatus');
     const nextBilling = document.getElementById('nextBilling');
 
+    // Safety check: ensure elements exist
+    if (!currentSubscriptionCard || !currentTier || !subscriptionDetails || !subscriptionStatus || !nextBilling) {
+        console.error('Missing subscription UI elements:', {
+            currentSubscriptionCard: !!currentSubscriptionCard,
+            currentTier: !!currentTier,
+            subscriptionDetails: !!subscriptionDetails,
+            subscriptionStatus: !!subscriptionStatus,
+            nextBilling: !!nextBilling
+        });
+        return;
+    }
+
     if (!subscription || subscription.tier === 'free') {
         // Free tier - show only pricing grid
+        currentSubscriptionCard.classList.remove('active');
         currentSubscriptionCard.style.display = 'none';
         updatePricingGridButtons('free');
     } else {
         // Paid tier - show current subscription card
         currentSubscriptionCard.classList.add('active');
+        // Ensure it's visible (in case inline styles override CSS)
+        currentSubscriptionCard.style.display = 'block';
         
-        // Update tier name
-        const tierName = subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1);
+        // Update tier name with proper formatting
+        let tierName = subscription.tier;
+        // Format tier names properly (e.g., proCreator -> Pro Creator)
+        if (tierName === 'proCreator') {
+            tierName = 'Pro Creator';
+        } else if (tierName === 'viewer') {
+            tierName = 'Viewer';
+        } else if (tierName === 'creator') {
+            tierName = 'Creator';
+        } else {
+            // Fallback: capitalize first letter
+            tierName = tierName.charAt(0).toUpperCase() + tierName.slice(1);
+        }
         currentTier.textContent = `${tierName} Plan`;
 
         // Update status
@@ -213,43 +239,98 @@ function updateSubscriptionUI(subscription) {
 function updatePricingGridButtons(currentTier) {
     const cards = document.querySelectorAll('.pricing-card');
     
-    // Handle legacy tier names
-    let normalizedTier = currentTier.toLowerCase();
-    if (normalizedTier === 'standard') {
-        normalizedTier = 'creator';
-    }
-    if (normalizedTier === 'pro') {
-        normalizedTier = 'proCreator';
+    if (!cards || cards.length === 0) {
+        console.error('No pricing cards found');
+        return;
     }
     
-    cards.forEach((card, index) => {
-        const button = card.querySelector('.btn');
-        const tierNames = ['free', 'viewer', 'creator', 'proCreator'];
-        const tierName = tierNames[index];
+    // Normalize tier name (handle legacy names and case variations)
+    const validTierNames = ['free', 'viewer', 'creator', 'proCreator'];
+    let normalizedTier = currentTier;
+    
+    if (typeof normalizedTier === 'string') {
+        normalizedTier = normalizedTier.trim();
         
-        // Get display name for button
-        const tierDisplayNames = {
-            'free': 'Free',
-            'viewer': 'Viewer',
-            'creator': 'Creator',
-            'proCreator': 'Pro Creator'
-        };
-
+        // If already in valid format, use it as-is
+        if (validTierNames.includes(normalizedTier)) {
+            // Already correct format (e.g., "proCreator")
+        } else {
+            // Check case-insensitive match and normalize to camelCase
+            const lowerTier = normalizedTier.toLowerCase();
+            
+            // Map to correct camelCase format
+            if (lowerTier === 'free') {
+                normalizedTier = 'free';
+            } else if (lowerTier === 'viewer') {
+                normalizedTier = 'viewer';
+            } else if (lowerTier === 'creator' || lowerTier === 'standard') {
+                normalizedTier = 'creator';
+            } else if (lowerTier === 'procreator' || lowerTier === 'pro' || lowerTier === 'pro-creator') {
+                normalizedTier = 'proCreator';
+            } else {
+                // Try to find case-insensitive match in valid tier names
+                const exactMatch = validTierNames.find(tier => tier.toLowerCase() === lowerTier);
+                if (exactMatch) {
+                    normalizedTier = exactMatch;
+                } else {
+                    console.warn('Unknown tier name:', normalizedTier, '- defaulting to free');
+                    normalizedTier = 'free';
+                }
+            }
+        }
+    }
+    
+    console.log('Updating pricing grid buttons for tier:', normalizedTier);
+    
+    const tierNames = ['free', 'viewer', 'creator', 'proCreator'];
+    
+    // Get display name for button
+    const tierDisplayNames = {
+        'free': 'Free',
+        'viewer': 'Viewer',
+        'creator': 'Creator',
+        'proCreator': 'Pro Creator'
+    };
+    
+    cards.forEach((card, index) => {
+        if (index >= tierNames.length) {
+            console.warn('Card index', index, 'exceeds tier names array length');
+            return;
+        }
+        
+        const button = card.querySelector('.btn');
+        if (!button) {
+            console.warn('No button found in card at index', index);
+            return;
+        }
+        
+        const tierName = tierNames[index];
+        const currentTierIndex = tierNames.indexOf(normalizedTier);
+        const cardTierIndex = tierNames.indexOf(tierName);
+        
+        console.log(`Card ${index} (${tierName}): currentTier=${normalizedTier}, currentIndex=${currentTierIndex}, cardIndex=${cardTierIndex}`);
+        
         if (tierName === normalizedTier) {
+            // Current plan - show "Current Plan" button
+            console.log(`Setting ${tierName} card to "Current Plan"`);
             button.textContent = 'Current Plan';
             button.className = 'btn current-plan';
             button.disabled = true;
             button.onclick = null;
-        } else if (tierNames.indexOf(tierName) < tierNames.indexOf(normalizedTier)) {
+            button.style.display = 'block'; // Make sure it's visible
+        } else if (cardTierIndex < currentTierIndex) {
             // Lower tier - hide downgrade button (users can manage in portal)
+            console.log(`Hiding button for lower tier: ${tierName}`);
             button.style.display = 'none';
         } else {
-            // Higher tier - use checkout session for upgrades
+            // Higher tier - show upgrade button
+            console.log(`Showing upgrade button for higher tier: ${tierName}`);
             const tierLabel = tierDisplayNames[tierName] || tierName.charAt(0).toUpperCase() + tierName.slice(1);
             button.textContent = `Upgrade to ${tierLabel}`;
             button.className = 'btn btn-primary';
             button.disabled = false;
             button.onclick = () => upgradeToPlan(tierName);
+            button.style.display = 'block'; // Make sure it's visible
         }
     });
 }

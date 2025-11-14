@@ -194,7 +194,7 @@
     </script>
 
     <script type="module">
-        import { db, collection, query, onSnapshot } from '/src/firebase.js';
+        import { db, collection, doc, query, onSnapshot } from '/src/firebase.js';
         import { config } from '/src/config.js';
 
         // Initialize event listeners
@@ -722,25 +722,28 @@
                 : ['twitch', eventTypeKey]; // Fallback to twitch for backward compatibility
             
             // Determine the Firestore path based on platform
-            let eventsCollectionPath;
+            // Use doc() and collection() to properly construct paths, handling user IDs with special characters
+            const userDocRef = doc(db, 'users', currentUserId);
+            const eventsCollectionRef = collection(userDocRef, 'events');
+            
+            let eventTypeDocId;
             if (platform === 'masky' && eventType === 'donation') {
                 // For Masky donations, use donation directly (no platform prefix)
-                eventsCollectionPath = `users/${currentUserId}/events/donation/alerts`;
+                eventTypeDocId = 'donation';
             } else if (platform === 'twitch') {
                 // For Twitch events, use twitch_ prefix
-                eventsCollectionPath = `users/${currentUserId}/events/twitch_${eventType}/alerts`;
+                eventTypeDocId = `twitch_${eventType}`;
             } else {
                 // For other platforms, use platform_eventType format
-                eventsCollectionPath = `users/${currentUserId}/events/${platform}_${eventType}/alerts`;
+                eventTypeDocId = `${platform}_${eventType}`;
             }
             
-            // Parse the path into collection references
-            const pathParts = eventsCollectionPath.split('/');
-            let eventsRef = collection(db, pathParts[0], pathParts[1]);
-            for (let i = 2; i < pathParts.length - 1; i += 2) {
-                eventsRef = collection(eventsRef, pathParts[i], pathParts[i + 1]);
-            }
-            const alertsRef = collection(eventsRef, pathParts[pathParts.length - 2], pathParts[pathParts.length - 1]);
+            // Construct the path: users/{userId}/events/{eventType}/alerts
+            const eventTypeDocRef = doc(eventsCollectionRef, eventTypeDocId);
+            const alertsRef = collection(eventTypeDocRef, 'alerts');
+            
+            // Construct path string for logging
+            const eventsCollectionPath = `users/${currentUserId}/events/${eventTypeDocId}/alerts`;
             
             // Listen to all new documents - don't filter by timestamp to avoid missing events
             // that arrive just before the listener starts. onSnapshot with docChanges() 

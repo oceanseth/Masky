@@ -395,7 +395,12 @@ class WelcomeNotification {
 
   browseFeatures() {
     // Show features or navigate to membership
-    window.location.href = '/membership.html';
+    if (typeof window.showMembership === 'function') {
+      window.showMembership();
+    } else {
+      // Fallback: navigate to home if showMembership not available
+      window.location.href = '/';
+    }
   }
 
   // Clear all notifications

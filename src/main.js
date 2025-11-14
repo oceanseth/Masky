@@ -184,11 +184,8 @@ window.signOut = window.logout;
 
 // Mobile menu functions are now handled by header.js
 
-// Membership function
-window.showMembership = function() {
-  // Navigate to membership page
-  window.location.href = '/membership.html';
-};
+// Membership function - now defined in index.html to show membership section
+// This function is available globally when index.html is loaded
 
 async function showDashboard() {
   document.getElementById('landing').style.display = 'none';

@@ -4,20 +4,41 @@ import { config } from './config';
 
 let currentSubscription = null;
 let stripePromise = null;
+let membershipInitialized = false;
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
+/**
+ * Initialize membership page functionality
+ * This function should be called when the membership section is displayed
+ */
+export async function initializeMembership() {
+    // Only initialize once
+    if (membershipInitialized) {
+        return;
+    }
+
     updateDisplayedPrices();
+    
     // Check auth state
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            await loadSubscriptionStatus();
-        } else {
-            // Redirect to home if not logged in
-            window.location.href = '/';
+    const user = getCurrentUser();
+    if (user) {
+        await loadSubscriptionStatus();
+    } else {
+        // If not logged in, show login message or redirect
+        const messageArea = document.getElementById('messageArea');
+        if (messageArea) {
+            showMessage('Please sign in to view membership plans', 'error');
         }
-    });
-});
+    }
+    
+    membershipInitialized = true;
+}
+
+/**
+ * Reset membership state (useful when navigating away)
+ */
+export function resetMembership() {
+    membershipInitialized = false;
+}
 
 function updateDisplayedPrices() {
     const { stripe } = config;
@@ -60,8 +81,9 @@ function updateDisplayedPrices() {
         }
     };
 
-    applyAmount('standardMonthlyPrice', displayPrices.standard);
-    applyAmount('proMonthlyPrice', displayPrices.pro);
+    applyAmount('viewerMonthlyPrice', displayPrices.viewer);
+    applyAmount('creatorMonthlyPrice', displayPrices.creator);
+    applyAmount('proCreatorMonthlyPrice', displayPrices.proCreator);
 }
 
 /**
@@ -178,22 +200,39 @@ function updateSubscriptionUI(subscription) {
 function updatePricingGridButtons(currentTier) {
     const cards = document.querySelectorAll('.pricing-card');
     
+    // Handle legacy tier names
+    let normalizedTier = currentTier.toLowerCase();
+    if (normalizedTier === 'standard') {
+        normalizedTier = 'creator';
+    }
+    if (normalizedTier === 'pro') {
+        normalizedTier = 'proCreator';
+    }
+    
     cards.forEach((card, index) => {
         const button = card.querySelector('.btn');
-        const tierNames = ['free', 'standard', 'pro'];
+        const tierNames = ['free', 'viewer', 'creator', 'proCreator'];
         const tierName = tierNames[index];
+        
+        // Get display name for button
+        const tierDisplayNames = {
+            'free': 'Free',
+            'viewer': 'Viewer',
+            'creator': 'Creator',
+            'proCreator': 'Pro Creator'
+        };
 
-        if (tierName === currentTier) {
+        if (tierName === normalizedTier) {
             button.textContent = 'Current Plan';
             button.className = 'btn current-plan';
             button.disabled = true;
             button.onclick = null;
-        } else if (tierNames.indexOf(tierName) < tierNames.indexOf(currentTier)) {
+        } else if (tierNames.indexOf(tierName) < tierNames.indexOf(normalizedTier)) {
             // Lower tier - hide downgrade button (users can manage in portal)
             button.style.display = 'none';
         } else {
             // Higher tier - use customer portal for upgrades
-            const tierLabel = tierName.charAt(0).toUpperCase() + tierName.slice(1);
+            const tierLabel = tierDisplayNames[tierName] || tierName.charAt(0).toUpperCase() + tierName.slice(1);
             button.textContent = `Upgrade to ${tierLabel}`;
             button.className = 'btn btn-primary';
             button.disabled = false;
@@ -235,8 +274,8 @@ window.subscribeToPlan = async function(tier) {
             body: JSON.stringify({
                 tier: tier,
                 priceId: priceId,
-                successUrl: `${window.location.origin}/membership.html?success=true`,
-                cancelUrl: `${window.location.origin}/membership.html?canceled=true`
+                successUrl: `${window.location.origin}/?membership=success`,
+                cancelUrl: `${window.location.origin}/?membership=canceled`
             })
         });
 
@@ -284,7 +323,7 @@ window.openCustomerPortal = async function() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                returnUrl: `${window.location.origin}/membership.html`
+                returnUrl: `${window.location.origin}/?membership=true`
             })
         });
 
@@ -323,7 +362,7 @@ window.handleSignOut = async function() {
 /**
  * Show message to user
  */
-function showMessage(message, type) {
+export function showMessage(message, type) {
     const messageArea = document.getElementById('messageArea');
     messageArea.textContent = message;
     messageArea.className = `message ${type} show`;
@@ -336,15 +375,20 @@ function showMessage(message, type) {
     }
 }
 
-// Check for URL parameters (success/cancel from Stripe)
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('success') === 'true') {
-    showMessage('Subscription successful! Welcome to your new plan.', 'success');
-    // Clean up URL
-    window.history.replaceState({}, document.title, window.location.pathname);
-} else if (urlParams.get('canceled') === 'true') {
-    showMessage('Subscription was canceled. You can try again anytime.', 'error');
-    // Clean up URL
-    window.history.replaceState({}, document.title, window.location.pathname);
+/**
+ * Check for URL parameters (success/cancel from Stripe)
+ * This should be called when membership is displayed
+ */
+export function checkMembershipUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('membership') === 'success') {
+        showMessage('Subscription successful! Welcome to your new plan.', 'success');
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (urlParams.get('membership') === 'canceled') {
+        showMessage('Subscription was canceled. You can try again anytime.', 'error');
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
 }
 

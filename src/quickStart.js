@@ -153,7 +153,7 @@ class QuickStartGuide {
           <a href="#" class="step-action primary" onclick="quickStartGuide.openFullTutorial()">
             📚 View Full Tutorial
           </a>
-          <a href="/membership.html" class="step-action">
+          <a href="#" class="step-action" onclick="event.preventDefault(); if(typeof showMembership === 'function') { showMembership(); } else { window.location.href='/'; }">
             ⭐ Upgrade Plan
           </a>
         </div>

@@ -137,6 +137,269 @@
             .mission-section { padding: 2rem 1.5rem; }
             .mission-title { font-size: 1.5rem; }
         }
+
+        /* Membership page styles */
+        .membership-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 110px 2rem 4rem;
+        }
+
+        .current-subscription {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(192, 132, 252, 0.3);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 3rem;
+            display: none;
+        }
+
+        .current-subscription.active {
+            display: block;
+        }
+
+        .subscription-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .subscription-tier {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #c084fc;
+        }
+
+        .subscription-status {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .status-canceled {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .subscription-details {
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 1.5rem;
+        }
+
+        .subscription-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            padding: 0 1rem;
+        }
+
+        .pricing-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(192, 132, 252, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 455px;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(192, 132, 252, 0.6);
+            box-shadow: 0 10px 40px rgba(192, 132, 252, 0.2);
+        }
+
+        .pricing-card.recommended {
+            border-color: #c084fc;
+            box-shadow: 0 0 30px rgba(192, 132, 252, 0.3);
+        }
+
+        .recommended-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: linear-gradient(135deg, #c084fc 0%, #9333ea 100%);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .pricing-header {
+            margin-bottom: 1rem;
+        }
+
+        .tier-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+        }
+
+        .tier-price {
+            font-size: 1.75rem;
+            font-weight: 900;
+            font-family: 'Orbitron', sans-serif;
+            color: #c084fc;
+        }
+
+        .tier-price .currency {
+            font-size: 1.5rem;
+        }
+
+        .tier-price .period {
+            font-size: 1rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .tier-description {
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        .features-list {
+            list-style: none;
+            margin: 0.85rem 0;
+            flex: 1;
+        }
+
+        .features-list li {
+            padding: 0.4rem 0;
+            color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: start;
+            gap: 0.4rem;
+            font-size: 0.95rem;
+        }
+
+        .features-list li::before {
+            content: "✓";
+            color: #22c55e;
+            font-weight: bold;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .current-plan {
+            background: rgba(192, 132, 252, 0.2);
+            color: #c084fc;
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(192, 132, 252, 0.3);
+            border-top: 3px solid #c084fc;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .message {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            display: none;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+        }
+
+        .message.success {
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid #22c55e;
+            color: #22c55e;
+        }
+
+        .faq-section {
+            margin-top: 4rem;
+            padding-top: 3rem;
+            border-top: 1px solid rgba(192, 132, 252, 0.2);
+        }
+
+        .faq-title {
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .faq-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(192, 132, 252, 0.3);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .faq-question {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: #c084fc;
+        }
+
+        .faq-answer {
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            .membership-container {
+                padding: 100px 1.5rem 2rem;
+            }
+
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .subscription-header {
+                flex-direction: column;
+                align-items: start;
+                gap: 1rem;
+            }
+
+            .subscription-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -263,6 +526,181 @@
                 <p class="mission-text">
                     At Masky, we believe that streaming should be more interactive, engaging, and fun. We're building AI-powered tools that help streamers create unique experiences for their communities, bringing together the power of artificial intelligence with the creativity of content creators.
                 </p>
+            </div>
+        </div>
+        <div class="watermark">
+            <img src="/assets/masky-logo-white.svg" alt="Masky" class="logo-glow">
+        </div>
+    </section>
+
+    <!-- Membership Page (hidden by default) -->
+    <section id="membershipSection" style="display: none;">
+        <div class="membership-container">
+            <div class="page-header">
+                <h1 class="page-title">Membership Plans</h1>
+                <p class="page-subtitle">Choose the plan that fits your streaming needs</p>
+            </div>
+
+            <!-- Message Area -->
+            <div id="messageArea" class="message"></div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="loading">
+                <div class="spinner"></div>
+            </div>
+
+            <!-- Current Subscription -->
+            <div id="currentSubscription" class="current-subscription">
+                <div class="subscription-header">
+                    <div>
+                        <div class="subscription-tier" id="currentTier">Creator Plan</div>
+                        <div class="subscription-details" id="subscriptionDetails">
+                            Next billing date: <span id="nextBilling">--</span>
+                        </div>
+                    </div>
+                    <div class="subscription-status" id="subscriptionStatus">
+                        Active
+                    </div>
+                </div>
+                <div class="subscription-actions">
+                    <button class="btn btn-secondary" onclick="openCustomerPortal()">Manage Billing</button>
+                </div>
+            </div>
+
+            <!-- Pricing Grid -->
+            <div id="pricingGrid" class="pricing-grid" style="display: none;">
+                <!-- Free Tier -->
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <div class="tier-name">Free</div>
+                        <div class="tier-price">
+                            <span class="currency">$</span>0
+                            <span class="period">/month</span>
+                        </div>
+                        <div class="tier-description">Perfect for trying out Masky</div>
+                    </div>
+                    <ul class="features-list">
+                        <li>1 AI Avatar</li>
+                        <li>1 Voice Option</li>
+                        <li>Basic Alert Types</li>
+                        <li>Standard Support</li>
+                        <li>Community Access</li>
+                    </ul>
+                    <button class="btn current-plan" disabled>Current Plan</button>
+                </div>
+
+                <!-- Viewer Tier -->
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <div class="tier-name">Viewer</div>
+                        <div class="tier-price">
+                            <span class="currency">$</span><span class="amount" id="viewerMonthlyPrice">--</span>
+                            <span class="period">/month</span>
+                        </div>
+                        <div class="tier-description">Everything in Free, plus more</div>
+                    </div>
+                    <ul class="features-list">
+                        <li>Everything in Free</li>
+                        <li>Creating 10 AI Videos a Month</li>
+                        <li>Manage 1 Streamer Page</li>
+                        <li>Joining Streamer Groups at Discounted Rates</li>
+                    </ul>
+                    <button class="btn btn-primary" onclick="subscribeToPlan('viewer')">
+                        Upgrade to Viewer
+                    </button>
+                </div>
+
+                <!-- Creator Tier -->
+                <div class="pricing-card recommended">
+                    <div class="recommended-badge">POPULAR</div>
+                    <div class="pricing-header">
+                        <div class="tier-name">Creator</div>
+                        <div class="tier-price">
+                            <span class="currency">$</span><span class="amount" id="creatorMonthlyPrice">--</span>
+                            <span class="period">/month</span>
+                        </div>
+                        <div class="tier-description">For serious content creators</div>
+                    </div>
+                    <ul class="features-list">
+                        <li>5 AI Avatars</li>
+                        <li>10 Voice Options</li>
+                        <li>All Alert Types</li>
+                        <li>Custom Scripts</li>
+                        <li>Priority Support</li>
+                        <li>Advanced Analytics</li>
+                        <li>No Watermark</li>
+                    </ul>
+                    <button class="btn btn-primary" onclick="subscribeToPlan('creator')">
+                        Upgrade to Creator
+                    </button>
+                </div>
+
+                <!-- Pro Creator Tier -->
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <div class="tier-name">Pro Creator</div>
+                        <div class="tier-price">
+                            <span class="currency">$</span><span class="amount" id="proCreatorMonthlyPrice">--</span>
+                            <span class="period">/month</span>
+                        </div>
+                        <div class="tier-description">Maximum creative freedom</div>
+                    </div>
+                    <ul class="features-list">
+                        <li>Unlimited AI Avatars</li>
+                        <li>Unlimited Voice Options</li>
+                        <li>All Alert Types</li>
+                        <li>Advanced Custom Scripts</li>
+                        <li>24/7 Priority Support</li>
+                        <li>Advanced Analytics</li>
+                        <li>No Watermark</li>
+                        <li>Custom Branding</li>
+                        <li>API Access</li>
+                        <li>White-label Options</li>
+                    </ul>
+                    <button class="btn btn-primary" onclick="subscribeToPlan('proCreator')">
+                        Upgrade to Pro Creator
+                    </button>
+                </div>
+            </div>
+
+            <!-- FAQ Section -->
+            <div class="faq-section">
+                <h2 class="faq-title">Frequently Asked Questions</h2>
+                
+                <div class="faq-item">
+                    <div class="faq-question">Can I cancel my subscription anytime?</div>
+                    <div class="faq-answer">
+                        Yes! You can cancel your subscription at any time. You'll continue to have access to your plan features until the end of your current billing period.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">What happens when I upgrade?</div>
+                    <div class="faq-answer">
+                        When you upgrade, you'll immediately get access to all the features of your new plan. We'll prorate the remaining time on your current plan.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">Can I downgrade my plan?</div>
+                    <div class="faq-answer">
+                        Yes, you can downgrade at any time through the customer portal. The downgrade will take effect at the end of your current billing period.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">What payment methods do you accept?</div>
+                    <div class="faq-answer">
+                        We accept all major credit cards (Visa, MasterCard, American Express) and debit cards through our secure payment processor, Stripe.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">Is there a refund policy?</div>
+                    <div class="faq-answer">
+                        We offer a 7-day money-back guarantee on all paid plans. If you're not satisfied, contact our support team for a full refund.
+                    </div>
+                </div>
             </div>
         </div>
         <div class="watermark">
@@ -597,6 +1035,7 @@
         import { auth, onAuthChange, getCurrentUser, db, collection, query, where, orderBy, getDocs, doc, updateDoc, deleteDoc } from '/src/firebase.js';
         import { showProjectWizard } from '/src/projectWizard.js';
         import { renderProjectCard, bindProjectCard } from '/src/projectCard.js';
+        import { initializeMembership, checkMembershipUrlParams } from '/src/membership.js';
         
         // Render the header
         renderHeader('#header-container', {
@@ -607,8 +1046,8 @@
         // Navigation links no longer show active states
         
         // Update header based on auth state
-        onAuthChange((user) => {
-            updateHeaderAuthState(user);
+        onAuthChange(async (user) => {
+            await updateHeaderAuthState(user);
         });
         
         // Initialize dashboard when user is authenticated
@@ -765,6 +1204,55 @@
                 }
             });
         };
+
+        // Global membership display function
+        window.showMembership = async function() {
+            // Close project wizard if open
+            if (window.projectWizard && typeof window.projectWizard.close === 'function') {
+                try {
+                    window.projectWizard.close();
+                } catch (e) {
+                    console.warn('Error closing wizard:', e);
+                }
+            }
+            
+            // Hide other sections
+            const dashboard = document.getElementById('dashboard');
+            const about = document.getElementById('aboutSection');
+            const landing = document.getElementById('landing');
+            const avatars = document.getElementById('avatarsManager');
+            const wiz = document.getElementById('projectWizard');
+            const recent = document.getElementById('recentProjects');
+            const membershipSection = document.getElementById('membershipSection');
+            
+            if (avatars) avatars.remove();
+            if (wiz) wiz.style.display = 'none';
+            if (recent) recent.style.display = 'none';
+            if (landing) landing.style.display = 'none';
+            if (dashboard) dashboard.style.display = 'none';
+            if (about) about.style.display = 'none';
+            if (membershipSection) membershipSection.style.display = 'block';
+            
+            // Scroll to top for a clean view
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // Initialize membership functionality
+            try {
+                await initializeMembership();
+                checkMembershipUrlParams();
+            } catch (error) {
+                console.error('Error initializing membership:', error);
+            }
+        };
+
+        // Check URL params on page load (for Stripe redirects or direct navigation)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('membership') === 'success' || 
+            urlParams.get('membership') === 'canceled' || 
+            urlParams.get('membership') === 'true') {
+            // Show membership section automatically if redirected from Stripe or direct navigation
+            window.showMembership();
+        }
     </script>
     <script type="module" src="/src/main.js"></script>
 </body>

@@ -54,19 +54,22 @@ export const config = {
     currency: 'USD',
     // Display prices for plans (in USD)
     displayPrices: {
-      standard: 50,
-      pro: 500
+      viewer: 10,
+      creator: 50,
+      proCreator: 500
     },
     // Stripe Price IDs (not Product IDs)
     // Get these from Stripe Dashboard -> Products -> Click on product -> Copy the Price ID (starts with price_)
     prices: {
-      standard: 'price_1SQyPfJwtIxwToTZ7hgQGdRF', // Update with your actual Standard plan price ID
-      pro: 'price_1SQyR0JwtIxwToTZCbDhQUu7'      // Update with your actual Pro plan price ID
+      viewer: 'price_1STApoJwtIxwToTZBmaMkfIm', // Viewer tier price ID
+      creator: 'price_1SQyPfJwtIxwToTZ7hgQGdRF', // Creator plan price ID (formerly Standard)
+      proCreator: 'price_1SQyR0JwtIxwToTZCbDhQUu7'      // Pro Creator plan price ID (formerly Pro)
     },
     // Product IDs (for reference)
     products: {
-      standard: 'prod_TG18RbF6BIdNpR',
-      pro: 'prod_TG186SL60qrvxa'
+      viewer: 'prod_TQ0ru1Mi4f0D3x',
+      creator: 'prod_TG18RbF6BIdNpR',
+      proCreator: 'prod_TG186SL60qrvxa'
     }
   },
 };

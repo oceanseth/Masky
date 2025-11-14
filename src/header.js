@@ -47,10 +47,6 @@ export function createHeader(options = {}) {
                 Start Creating
             </button>
             <!-- Logged in user options -->
-            <button class="mobile-menu-item" id="mobileDashboard" onclick="window.location.href='/'; closeMobileMenu()" style="display: none;">
-                <span class="icon">🏠</span>
-                Dashboard
-            </button>
             <button class="mobile-menu-item" id="mobileProjects" onclick="showProjects(); closeMobileMenu()" style="display: none;">
                 <span class="icon">📁</span>
                 Projects
@@ -68,7 +64,7 @@ export function createHeader(options = {}) {
                 About
             </button>
             ${showMembershipLink ? `
-            <button class="mobile-menu-item" id="mobileMembership" onclick="window.location.href='/membership.html'; closeMobileMenu()" style="display: none;">
+            <button class="mobile-menu-item" id="mobileMembership" onclick="showMembership(); closeMobileMenu()" style="display: none;">
                 <span class="icon">⬟</span>
                 Membership
             </button>
@@ -113,7 +109,7 @@ export function renderHeader(container, options = {}) {
  * Updates the header based on authentication state
  * @param {Object} user - Firebase user object or null
  */
-export function updateHeaderAuthState(user) {
+export async function updateHeaderAuthState(user) {
     const isLoggedIn = !!user;
     
     // Desktop navigation
@@ -128,13 +124,13 @@ export function updateHeaderAuthState(user) {
     // Mobile navigation
     const mobileSignInBtn = document.getElementById('mobileSignInBtn');
     const mobileSignUpBtn = document.getElementById('mobileSignUpBtn');
-    const mobileDashboard = document.getElementById('mobileDashboard');
     const mobileProjects = document.getElementById('mobileProjects');
     const mobileAvatars = document.getElementById('mobileAvatars');
     const mobileHelp = document.getElementById('mobileHelp');
     const mobileAbout = document.getElementById('mobileAbout');
     const mobileMembership = document.getElementById('mobileMembership');
     const mobileSignOut = document.getElementById('mobileSignOut');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
     
     if (isLoggedIn) {
         // Show logged in state
@@ -146,14 +142,13 @@ export function updateHeaderAuthState(user) {
         if (navProjects) navProjects.style.display = 'inline-block';
         if (navAvatars) navAvatars.style.display = 'inline-block';
         
+        // Hide hamburger menu and show user profile button instead
+        if (mobileMenuBtn) mobileMenuBtn.style.display = 'none';
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'none';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'none';
-        if (mobileDashboard) mobileDashboard.style.display = 'block';
-        if (mobileProjects) mobileProjects.style.display = 'block';
-        if (mobileAvatars) mobileAvatars.style.display = 'block';
-        if (mobileHelp) mobileHelp.style.display = 'block';
-        if (mobileMembership) mobileMembership.style.display = 'block';
-        if (mobileSignOut) mobileSignOut.style.display = 'block';
+        
+        // Update header with user profile
+        await updateHeaderWithUserProfile(user);
     } else {
         // Show logged out state
         if (navSignIn) navSignIn.style.display = 'inline-block';
@@ -164,14 +159,145 @@ export function updateHeaderAuthState(user) {
         if (navProjects) navProjects.style.display = 'none';
         if (navAvatars) navAvatars.style.display = 'none';
         
+        // Show hamburger menu and hide user profile button
+        if (mobileMenuBtn) mobileMenuBtn.style.display = 'flex';
         if (mobileSignInBtn) mobileSignInBtn.style.display = 'block';
         if (mobileSignUpBtn) mobileSignUpBtn.style.display = 'block';
-        if (mobileDashboard) mobileDashboard.style.display = 'none';
-        if (mobileProjects) mobileProjects.style.display = 'none';
-        if (mobileAvatars) mobileAvatars.style.display = 'none';
-        if (mobileHelp) mobileHelp.style.display = 'none';
-        if (mobileMembership) mobileMembership.style.display = 'none';
-        if (mobileSignOut) mobileSignOut.style.display = 'none';
+        
+        // Hide user profile button if it exists
+        const userProfileBtn = document.getElementById('userProfileBtn');
+        if (userProfileBtn) {
+            const container = userProfileBtn.closest('div[style*="position: relative"]');
+            if (container) {
+                container.style.display = 'none';
+            }
+        }
+    }
+}
+
+/**
+ * Update header to show user profile icon instead of hamburger menu
+ * @param {Object} user - Firebase user object
+ */
+async function updateHeaderWithUserProfile(user) {
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (!mobileMenuBtn) return;
+
+    // Hide hamburger menu
+    mobileMenuBtn.style.display = 'none';
+
+    // Get broadcaster name
+    let broadcasterName = user.displayName || 'User';
+    try {
+        const { getBroadcasterInfo } = await import('/src/twitch.js');
+        const broadcasterInfo = await getBroadcasterInfo();
+        if (broadcasterInfo && broadcasterInfo.login) {
+            broadcasterName = broadcasterInfo.login;
+        }
+    } catch (error) {
+        console.warn('Could not fetch broadcaster info:', error);
+    }
+
+    // Check if user profile button already exists
+    let userProfileBtn = document.getElementById('userProfileBtn');
+    let container = null;
+    
+    if (!userProfileBtn) {
+        // Create user profile button
+        userProfileBtn = document.createElement('button');
+        userProfileBtn.id = 'userProfileBtn';
+        userProfileBtn.className = 'user-profile-btn';
+        userProfileBtn.style.cssText = 'background: none; border: none; cursor: pointer; padding: 0; border-radius: 50%; overflow: hidden; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;';
+        
+        const profileImg = document.createElement('img');
+        profileImg.id = 'userProfileImg';
+        profileImg.style.cssText = 'width: 100%; height: 100%; object-fit: cover; border-radius: 50%;';
+        profileImg.alt = 'User Profile';
+        userProfileBtn.appendChild(profileImg);
+
+        // Create dropdown menu
+        const dropdown = document.createElement('div');
+        dropdown.id = 'userProfileDropdown';
+        dropdown.className = 'user-profile-dropdown';
+        dropdown.style.cssText = 'display: none; position: absolute; top: 100%; right: 0; margin-top: 0.5rem; background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 8px; padding: 0.5rem; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);';
+
+        // Container for button and dropdown
+        container = document.createElement('div');
+        container.style.cssText = 'position: relative; display: flex;';
+        container.appendChild(userProfileBtn);
+        container.appendChild(dropdown);
+
+        // Insert before nav-links or after logo
+        const nav = mobileMenuBtn.closest('nav');
+        if (nav) {
+            const navLinks = nav.querySelector('.nav-links');
+            if (navLinks) {
+                navLinks.appendChild(container);
+            } else {
+                nav.appendChild(container);
+            }
+        }
+
+        // Toggle dropdown on click
+        userProfileBtn.onclick = (e) => {
+            e.stopPropagation();
+            const isVisible = dropdown.style.display === 'block';
+            dropdown.style.display = isVisible ? 'none' : 'block';
+        };
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!container.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+    } else {
+        // If button exists, find its container
+        container = userProfileBtn.closest('div[style*="position: relative"]');
+        if (container) {
+            container.style.display = 'flex';
+        }
+    }
+
+    // Update dropdown content with broadcaster name and menu items
+    const dropdown = document.getElementById('userProfileDropdown');
+    if (dropdown) {
+        const showMembershipLink = typeof window.showMembership === 'function';
+        dropdown.innerHTML = `
+            <div style="padding: 0.75rem; color: rgba(255, 255, 255, 0.95); font-weight: 600; font-size: 0.95rem; text-align: center;">${broadcasterName}</div>
+            <div style="height: 1px; background: rgba(192, 132, 252, 0.3); margin: 0.25rem 0;"></div>
+            <button onclick="showProjects(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Projects</button>
+            <button onclick="showAvatars(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Avatars</button>
+            <button onclick="showHelp(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Help</button>
+            <button onclick="showAbout(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">About</button>
+            ${showMembershipLink ? `<button onclick="showMembership(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Membership</button>` : ''}
+            <button onclick="if(typeof signOut === 'function') signOut(); else if(typeof window.signOut === 'function') window.signOut(); document.getElementById('userProfileDropdown').style.display='none';" style="display: block; width: 100%; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border: none; background: transparent; text-align: left; border-radius: 4px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Sign Out</button>
+        `;
+    }
+
+    // Update profile image
+    const profileImg = document.getElementById('userProfileImg');
+    if (profileImg) {
+        // Try to get profile image from Twitch broadcaster info
+        try {
+            const { getBroadcasterInfo } = await import('/src/twitch.js');
+            const broadcasterInfo = await getBroadcasterInfo();
+            if (broadcasterInfo && broadcasterInfo.profileImageUrl) {
+                profileImg.src = broadcasterInfo.profileImageUrl;
+            } else if (user.photoURL) {
+                profileImg.src = user.photoURL;
+            } else {
+                // Default avatar if no photo
+                profileImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="%23c084fc"/><text x="20" y="28" font-size="20" text-anchor="middle" fill="white">👤</text></svg>';
+            }
+        } catch (error) {
+            // Fallback to user.photoURL or default
+            if (user.photoURL) {
+                profileImg.src = user.photoURL;
+            } else {
+                profileImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="%23c084fc"/><text x="20" y="28" font-size="20" text-anchor="middle" fill="white">👤</text></svg>';
+            }
+        }
     }
 }
 
@@ -227,11 +353,13 @@ function initializeMobileMenu() {
             const wiz = document.getElementById('projectWizard');
             const recent = document.getElementById('recentProjects');
             const about = document.getElementById('aboutSection');
+            const membershipSection = document.getElementById('membershipSection');
             const projectsManager = document.getElementById('projectsManager');
             const dashboard = document.getElementById('dashboard');
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (about) about.style.display = 'none';
+            if (membershipSection) membershipSection.style.display = 'none';
             if (projectsManager) projectsManager.remove();
             if (dashboard) dashboard.style.display = 'block';
             // Render avatar manager
@@ -259,12 +387,14 @@ function initializeMobileMenu() {
             const recent = document.getElementById('recentProjects');
             const avatars = document.getElementById('avatarsManager');
             const about = document.getElementById('aboutSection');
+            const membershipSection = document.getElementById('membershipSection');
             const dashboard = document.getElementById('dashboard');
             console.log('[Header] toggling views', { hasWiz: !!wiz, hasRecent: !!recent, hasAvatars: !!avatars, hasAbout: !!about, hasDashboard: !!dashboard });
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (avatars) avatars.remove();
             if (about) about.style.display = 'none';
+            if (membershipSection) membershipSection.style.display = 'none';
             if (dashboard) dashboard.style.display = 'block';
             // Render projects manager
             console.log('[Header] calling renderProjectsManager on selector #dashboard .dashboard-container');
@@ -290,11 +420,13 @@ function initializeMobileMenu() {
         const avatars = document.getElementById('avatarsManager');
         const wiz = document.getElementById('projectWizard');
         const recent = document.getElementById('recentProjects');
+        const membershipSection = document.getElementById('membershipSection');
         if (avatars) avatars.remove();
         if (wiz) wiz.style.display = 'none';
         if (recent) recent.style.display = 'none';
         if (landing) landing.style.display = 'none';
         if (dashboard) dashboard.style.display = 'none';
+        if (membershipSection) membershipSection.style.display = 'none';
         if (about) about.style.display = 'block';
         // Scroll to top for a clean view
         window.scrollTo({ top: 0, behavior: 'smooth' });

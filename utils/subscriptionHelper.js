@@ -17,10 +17,28 @@ const TIER_LIMITS = {
         support: 'community',
         apiAccess: false,
         customBranding: false,
-        whiteLabel: false
+        whiteLabel: false,
+        aiVideosPerMonth: 0,
+        streamerPages: 0,
+        streamerGroups: false
     },
-    standard: {
-        name: 'Standard',
+    viewer: {
+        name: 'Viewer',
+        avatars: 1,
+        voices: 1,
+        alertTypes: ['basic'],
+        customScripts: false,
+        analytics: false,
+        support: 'community',
+        apiAccess: false,
+        customBranding: false,
+        whiteLabel: false,
+        aiVideosPerMonth: 10,
+        streamerPages: 1,
+        streamerGroups: true // Discounted rates
+    },
+    creator: {
+        name: 'Creator',
         avatars: 5,
         voices: 10,
         alertTypes: ['basic', 'advanced', 'custom'],
@@ -31,8 +49,8 @@ const TIER_LIMITS = {
         customBranding: false,
         whiteLabel: false
     },
-    pro: {
-        name: 'Pro',
+    proCreator: {
+        name: 'Pro Creator',
         avatars: Infinity,
         voices: Infinity,
         alertTypes: ['basic', 'advanced', 'custom', 'premium'],
@@ -47,11 +65,18 @@ const TIER_LIMITS = {
 
 /**
  * Get tier configuration
- * @param {string} tier - The subscription tier (free, standard, pro)
+ * @param {string} tier - The subscription tier (free, viewer, creator, proCreator)
  * @returns {object} Tier configuration object
  */
 function getTierConfig(tier) {
     const normalizedTier = (tier || 'free').toLowerCase();
+    // Handle legacy tier names
+    if (normalizedTier === 'standard') {
+        return TIER_LIMITS.creator;
+    }
+    if (normalizedTier === 'pro') {
+        return TIER_LIMITS.proCreator;
+    }
     return TIER_LIMITS[normalizedTier] || TIER_LIMITS.free;
 }
 
@@ -101,8 +126,17 @@ function checkLimit(tier, resourceType, currentCount) {
  * @returns {object} Upgrade suggestion with next tier information
  */
 function getUpgradeSuggestion(currentTier, resourceType) {
-    const tierOrder = ['free', 'standard', 'pro'];
-    const currentIndex = tierOrder.indexOf(currentTier.toLowerCase());
+    const tierOrder = ['free', 'viewer', 'creator', 'proCreator'];
+    // Handle legacy tier names
+    let normalizedTier = currentTier.toLowerCase();
+    if (normalizedTier === 'standard') {
+        normalizedTier = 'creator';
+    }
+    if (normalizedTier === 'pro') {
+        normalizedTier = 'proCreator';
+    }
+    
+    const currentIndex = tierOrder.indexOf(normalizedTier);
     
     if (currentIndex === tierOrder.length - 1) {
         return {
@@ -134,7 +168,9 @@ function getUpgradeSuggestion(currentTier, resourceType) {
  * @returns {boolean} True if valid tier
  */
 function isValidTier(tier) {
-    return ['free', 'standard', 'pro'].includes((tier || '').toLowerCase());
+    const normalizedTier = (tier || '').toLowerCase();
+    // Support both new and legacy tier names
+    return ['free', 'viewer', 'creator', 'proCreator', 'standard', 'pro'].includes(normalizedTier);
 }
 
 /**
@@ -144,8 +180,9 @@ function isValidTier(tier) {
 function getAllTiers() {
     return {
         free: getTierConfig('free'),
-        standard: getTierConfig('standard'),
-        pro: getTierConfig('pro')
+        viewer: getTierConfig('viewer'),
+        creator: getTierConfig('creator'),
+        proCreator: getTierConfig('proCreator')
     };
 }
 

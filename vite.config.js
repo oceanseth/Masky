@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
       input: {
         main: './index.html',
         twitchevent: './twitchevent.html',
-        user: './user.html'
+        user: './user.html',
+        admin: './admin.html'
       }
     }
   };
@@ -55,7 +56,7 @@ export default defineConfig(({ mode }) => {
             // Match /{username} pattern (no slashes in path except leading slash)
             const userUrlPattern = /^\/([^\/]+)$/;
             // Exclude known routes and file extensions
-            const excludedPaths = ['/api', '/assets', '/src', '/favicon.ico', '/index.html', '/membership.html', '/twitchevent.html', '/user.html'];
+            const excludedPaths = ['/api', '/assets', '/src', '/favicon.ico', '/index.html', '/membership.html', '/twitchevent.html', '/user.html', '/admin.html'];
             const hasExtension = /\.[a-zA-Z0-9]+$/.test(pathname);
             
             if (userUrlPattern.test(pathname) && !excludedPaths.some(path => pathname === path || pathname.startsWith(path + '/')) && !hasExtension) {

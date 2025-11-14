@@ -48,8 +48,8 @@ function handler(event) {
     
     if (userUrlPattern.test(pathname) && !isExcluded && !hasExtension) {
         // Rewrite to /user.html while preserving query string
-        var queryString = request.querystring ? '?' + request.querystring : '';
-        request.uri = '/user.html' + queryString;
+        // Note: querystring is preserved automatically as a separate object property
+        request.uri = '/user.html';
         return request;
     }
     

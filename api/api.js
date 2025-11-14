@@ -1237,6 +1237,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Join tribe
+    if (path.includes('/tribe/join') && method === 'POST') {
+        const response = await joinTribe(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Stripe webhook
     if (path.includes('/stripe/webhook') && method === 'POST') {
         const response = await handleStripeWebhook(event);
@@ -3142,6 +3154,18 @@ async function createDonationCheckoutSession(event) {
         }
 
         const userData = userDoc.data();
+        
+        // Get broadcaster name (prefer twitchUsername, fallback to displayName)
+        const broadcasterName = userData.twitchUsername || userData.displayName || 'Creator';
+
+        // Calculate amount with Stripe processing fees
+        // Stripe fee: 2.9% + $0.30 per transaction
+        // To receive the desired amount, we need to charge: (desired_amount + 0.30) / (1 - 0.029)
+        const stripeFeeRate = 0.029; // 2.9%
+        const stripeFixedFee = 0.30; // $0.30
+        const amountWithFees = (amount + stripeFixedFee) / (1 - stripeFeeRate);
+        const amountToCharge = Math.ceil(amountWithFees * 100) / 100; // Round up to nearest cent
+        const actualFee = amountToCharge - amount;
 
         // Create checkout session for donation (one-time payment)
         const session = await stripe.checkout.sessions.create({
@@ -3151,10 +3175,10 @@ async function createDonationCheckoutSession(event) {
                     price_data: {
                         currency: 'usd',
                         product_data: {
-                            name: `Donation to ${userData.displayName || 'Creator'}`,
+                            name: `Donation to ${broadcasterName}`,
                             description: 'Thank you for your support!'
                         },
-                        unit_amount: Math.round(amount * 100) // Convert to cents
+                        unit_amount: Math.round(amountToCharge * 100) // Convert to cents
                     },
                     quantity: 1
                 }
@@ -3166,7 +3190,11 @@ async function createDonationCheckoutSession(event) {
                 type: 'donation',
                 userId: userId,
                 viewerId: viewerId || '',
-                amount: amount.toString()
+                amount: amount.toString(), // Original donation amount (what the creator receives)
+                amountCharged: amountToCharge.toFixed(2), // Amount charged to donor (includes fees)
+                stripeFee: actualFee.toFixed(2), // Stripe processing fee
+                broadcasterName: broadcasterName,
+                createdAt: new Date().toISOString()
             }
         });
 
@@ -3417,7 +3445,7 @@ async function createCustomVideo(event) {
             statusCode: 200,
             body: JSON.stringify({ 
                 success: true,
-                videoId: videoRef.id 
+                videoId: videoRef.id
             })
         };
 
@@ -3427,6 +3455,170 @@ async function createCustomVideo(event) {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Failed to create custom video',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Join tribe - deducts credits and adds user to tribe
+ */
+async function joinTribe(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId } = body;
+
+        if (!userId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing userId' })
+            };
+        }
+
+        // Verify authentication
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized' })
+            };
+        }
+
+        const idToken = authHeader.substring(7);
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const viewerId = decoded.uid;
+
+        const db = admin.firestore();
+
+        // Get creator's user page config
+        const creatorDoc = await db.collection('users').doc(userId).get();
+        if (!creatorDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'Creator not found' })
+            };
+        }
+
+        const creatorData = creatorDoc.data();
+        const userPageConfig = creatorData.userPageConfig || {};
+        const tribeJoinCost = userPageConfig.tribeJoinCost || 10;
+
+        // Get viewer's data
+        const viewerDoc = await db.collection('users').doc(viewerId).get();
+        if (!viewerDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'Viewer not found' })
+            };
+        }
+
+        const viewerData = viewerDoc.data();
+        const tribeMemberships = viewerData.tribeMemberships || {};
+
+        // Check if already a member
+        if (tribeMemberships[userId]) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Already a member of this tribe' })
+            };
+        }
+
+        // Calculate current balance (donations - spent on paid videos)
+        const donationsSnapshot = await db.collection('donations')
+            .where('userId', '==', userId)
+            .where('viewerId', '==', viewerId)
+            .get();
+
+        let totalDonated = 0;
+        donationsSnapshot.forEach(doc => {
+            const donation = doc.data();
+            totalDonated += donation.amount || 0;
+        });
+
+        const customVideoPrice = userPageConfig.customVideoPrice || 5;
+        const paidVideosSnapshot = await db.collection('customVideos')
+            .where('userId', '==', userId)
+            .where('viewerId', '==', viewerId)
+            .where('paid', '==', true)
+            .get();
+
+        const totalSpent = paidVideosSnapshot.size * customVideoPrice;
+        const balance = totalDonated - totalSpent;
+
+        // Check if balance is sufficient
+        if (balance < tribeJoinCost) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ 
+                    error: 'Insufficient balance',
+                    balance: balance,
+                    required: tribeJoinCost
+                })
+            };
+        }
+
+        // Deduct the cost by creating a "paid" custom video entry (this represents the cost)
+        // Actually, we should track this differently - let's create a "tribeJoin" entry in customVideos
+        // Or better: create a donation with negative amount? No, let's track it as a paid video
+        // Actually, the simplest is to create a paid custom video entry with a special flag
+        const joinCostVideoData = {
+            userId: userId,
+            viewerId: viewerId,
+            videoUrl: null,
+            message: 'Tribe Join Fee',
+            avatarId: null,
+            paid: true,
+            isTribeJoin: true, // Special flag to indicate this is a tribe join fee
+            status: 'completed',
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        await db.collection('customVideos').add(joinCostVideoData);
+
+        // Add viewer to tribe
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        await db.collection('users').doc(viewerId).set({
+            tribeMemberships: {
+                ...tribeMemberships,
+                [userId]: {
+                    joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    currentMonth: currentMonth,
+                    freeVideosUsedThisMonth: 0
+                }
+            }
+        }, { merge: true });
+
+        console.log('User joined tribe:', { userId, viewerId, tribeJoinCost });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                message: 'Successfully joined tribe'
+            })
+        };
+
+    } catch (error) {
+        console.error('Error joining tribe:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to join tribe',
                 message: error.message 
             })
         };
@@ -3571,7 +3763,10 @@ async function handleStripeWebhook(event) {
                 // Handle donation checkout (mode === 'payment')
                 else if (session.mode === 'payment' && session.metadata?.type === 'donation') {
                     const userId = session.metadata.userId;
-                    const amount = parseFloat(session.metadata.amount || '0');
+                    const amount = parseFloat(session.metadata.amount || '0'); // Original donation amount (what creator receives)
+                    const amountCharged = parseFloat(session.metadata.amountCharged || amount); // Amount charged to donor (includes fees)
+                    const stripeFee = parseFloat(session.metadata.stripeFee || '0'); // Stripe processing fee
+                    const broadcasterName = session.metadata.broadcasterName || null;
                     const paymentIntentId = session.payment_intent;
 
                     if (userId && amount > 0) {
@@ -3585,13 +3780,17 @@ async function handleStripeWebhook(event) {
                             const donationData = {
                                 userId: userId,
                                 viewerId: viewerId, // Store who made the donation
-                                amount: amount,
+                                amount: amount, // Original donation amount (what creator receives)
+                                amountCharged: amountCharged, // Amount charged to donor (includes fees)
+                                stripeFee: stripeFee, // Stripe processing fee
+                                broadcasterName: broadcasterName, // Broadcaster name at time of donation
                                 currency: 'usd',
                                 paymentIntentId: paymentIntentId,
                                 sessionId: session.id,
                                 donorEmail: session.customer_details?.email || null,
                                 donorName: session.customer_details?.name || null,
                                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                                createdAt: session.metadata.createdAt || new Date().toISOString(), // Store original creation timestamp
                                 processed: false
                             };
 

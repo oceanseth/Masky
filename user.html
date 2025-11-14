@@ -239,10 +239,24 @@
         .watermark { position: fixed; bottom: 2rem; right: 2rem; opacity: 0.1; z-index: 0; pointer-events: none; }
         .watermark .logo-glow { width: 200px; height: auto; filter: drop-shadow(0 0 20px rgba(192, 132, 252, 0.5)); }
 
+        /* Stats section responsive */
+        #userStatsSection {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
         .empty-state {
             text-align: center;
             color: rgba(255, 255, 255, 0.6);
             padding: 3rem;
+        }
+
+        @media (max-width: 968px) {
+            #userStatsSection {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 768px) {
@@ -289,6 +303,33 @@
                     <button class="donate-btn" id="configureUserPageBtn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">Configure User Page</button>
                 </div>
             </div>
+
+            <!-- Three Column Section: Tribe, Avatar Carousel, Top Donors -->
+            <div id="userStatsSection" style="display: none;">
+                <!-- Tribe Section -->
+                <div class="stats-box" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 16px; padding: 1.5rem; min-height: 300px;">
+                    <h3 class="stats-title" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; font-weight: 700; color: #c084fc; margin-bottom: 1rem; text-align: center;" id="tribeNameTitle">Tribe</h3>
+                    <div id="tribeMembersList" style="max-height: 250px; overflow-y: auto; color: rgba(255, 255, 255, 0.8);">
+                        <div style="text-align: center; padding: 2rem; color: rgba(255, 255, 255, 0.6);">Loading tribe members...</div>
+                    </div>
+                </div>
+
+                <!-- Avatar Carousel Section -->
+                <div class="stats-box" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 16px; padding: 1.5rem; min-height: 300px;">
+                    <h3 class="stats-title" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; font-weight: 700; color: #c084fc; margin-bottom: 1rem; text-align: center;">Avatars</h3>
+                    <div id="avatarCarouselContainer" style="width: 100%; height: 250px; background: rgba(0, 0, 0, 0.3); border-radius: 12px; overflow: hidden;">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255, 255, 255, 0.6);">Loading avatars...</div>
+                    </div>
+                </div>
+
+                <!-- Top Donors Section -->
+                <div class="stats-box" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 16px; padding: 1.5rem; min-height: 300px;">
+                    <h3 class="stats-title" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; font-weight: 700; color: #c084fc; margin-bottom: 1rem; text-align: center;">Top Donors</h3>
+                    <div id="topDonorsList" style="max-height: 250px; overflow-y: auto; color: rgba(255, 255, 255, 0.8);">
+                        <div style="text-align: center; padding: 2rem; color: rgba(255, 255, 255, 0.6);">Loading top donors...</div>
+                    </div>
+                </div>
+            </div>
             
             <!-- User Page Config Section (hidden by default) -->
             <div id="userPageConfigContainer" style="display: none;"></div>
@@ -296,7 +337,7 @@
             <div class="donate-section">
                 <h2 class="donate-title">Support This Creator</h2>
                 <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem;">
-                    Make a donation to support this creator and trigger a special alert on their stream! You will receive 1 masky credit for use on masky redemptons in their channel for every dollar donated. VoiceCert.Inc will handle the payment processing.
+                    Make a donation to support this creator and trigger a special alert on their stream! You will receive 1 masky credit for use on masky redemptons in their channel for every dollar donated. VoiceCert Inc. (our parent company) will handle the payment processing.
                 </p>
                 <div class="donate-amounts">
                     <button class="donate-amount-btn" data-amount="5">$5</button>
@@ -445,6 +486,7 @@
     <script type="module">
         import { renderHeader } from '/src/header.js';
         import { config } from '/src/config.js';
+        import { getEventTypeLabel } from '/src/eventTypeLabels.js';
 
         // Render header
         renderHeader('#header-container', { showMembershipLink: false });
@@ -475,7 +517,15 @@
                 document.querySelectorAll('.donate-amount-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 selectedAmount = parseFloat(btn.dataset.amount);
-                document.getElementById('customAmount').value = '';
+                const customAmountInput = document.getElementById('customAmount');
+                if (customAmountInput) {
+                    customAmountInput.value = selectedAmount;
+                }
+                // Trigger donate button click
+                const donateBtn = document.getElementById('donateBtn');
+                if (donateBtn) {
+                    donateBtn.click();
+                }
             });
         });
 
@@ -601,6 +651,17 @@
                 loadAvatarsForDisplay();
             }
 
+                // Show user stats section
+                const userStatsSection = document.getElementById('userStatsSection');
+                if (userStatsSection) {
+                    userStatsSection.style.display = 'grid';
+                } else {
+                    console.warn('userStatsSection element not found');
+                }
+
+                // Load user stats (tribe, avatars, donors)
+                loadUserStats();
+
                 // Load projects for this user
                 const projectsRef = collection(db, 'projects');
                 const projectsQuery = query(
@@ -644,7 +705,9 @@
 
                 let details = [];
                 if (project.eventType) {
-                    details.push(`<div class="project-detail-item"><strong>Event Type:</strong> ${project.eventType}</div>`);
+                    const platform = project.platform || project.provider || 'twitch';
+                    const eventTypeLabel = getEventTypeLabel(project.eventType, platform);
+                    details.push(`<div class="project-detail-item"><strong>Event Type:</strong> ${eventTypeLabel}</div>`);
                 }
                 if (project.commandTrigger) {
                     details.push(`<div class="project-detail-item"><strong>Chat Command:</strong> !${project.commandTrigger}</div>`);
@@ -679,11 +742,15 @@
                     document.getElementById('twitchLoginSection').style.display = 'none';
                     // Check subscription status and load credits
                     await checkSubscriptionAndLoadCredits();
+                    // Update header with user profile
+                    updateHeaderWithUserProfile(user);
                 } else {
                     currentViewerUserId = null;
                     // Show Twitch login button
                     document.getElementById('twitchLoginSection').style.display = 'block';
                     document.getElementById('videoCreditsSection').style.display = 'none';
+                    // Show hamburger menu
+                    showHamburgerMenu();
                     const twitchLoginBtn = document.getElementById('twitchLoginBtn');
                     if (twitchLoginBtn) {
                         twitchLoginBtn.onclick = async () => {
@@ -703,14 +770,188 @@
                         currentViewerUserId = user.uid;
                         document.getElementById('twitchLoginSection').style.display = 'none';
                         await checkSubscriptionAndLoadCredits();
+                        updateHeaderWithUserProfile(user);
                     } else {
                         currentViewerUserId = null;
                         document.getElementById('twitchLoginSection').style.display = 'block';
                         document.getElementById('videoCreditsSection').style.display = 'none';
+                        showHamburgerMenu();
                     }
                 });
             } catch (error) {
                 console.error('Error checking viewer auth:', error);
+            }
+        }
+
+        // Update header to show user profile icon instead of hamburger menu
+        async function updateHeaderWithUserProfile(user) {
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (!mobileMenuBtn) return;
+
+            // Hide hamburger menu
+            mobileMenuBtn.style.display = 'none';
+
+            // Get broadcaster name
+            let broadcasterName = user.displayName || 'User';
+            try {
+                const { getBroadcasterInfo } = await import('/src/twitch.js');
+                const broadcasterInfo = await getBroadcasterInfo();
+                if (broadcasterInfo && broadcasterInfo.login) {
+                    broadcasterName = broadcasterInfo.login;
+                }
+            } catch (error) {
+                console.warn('Could not fetch broadcaster info:', error);
+            }
+
+            // Check if user profile button already exists
+            let userProfileBtn = document.getElementById('userProfileBtn');
+            if (!userProfileBtn) {
+                // Create user profile button
+                userProfileBtn = document.createElement('button');
+                userProfileBtn.id = 'userProfileBtn';
+                userProfileBtn.className = 'user-profile-btn';
+                userProfileBtn.style.cssText = 'background: none; border: none; cursor: pointer; padding: 0; border-radius: 50%; overflow: hidden; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;';
+                
+                const profileImg = document.createElement('img');
+                profileImg.id = 'userProfileImg';
+                profileImg.style.cssText = 'width: 100%; height: 100%; object-fit: cover; border-radius: 50%;';
+                profileImg.alt = 'User Profile';
+                userProfileBtn.appendChild(profileImg);
+
+                // Create dropdown menu
+                const dropdown = document.createElement('div');
+                dropdown.id = 'userProfileDropdown';
+                dropdown.className = 'user-profile-dropdown';
+                dropdown.style.cssText = 'display: none; position: absolute; top: 100%; right: 0; margin-top: 0.5rem; background: rgba(20, 20, 20, 0.95); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 8px; padding: 0.5rem; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);';
+
+                // Container for button and dropdown
+                const container = document.createElement('div');
+                container.style.cssText = 'position: relative;';
+                container.appendChild(userProfileBtn);
+                container.appendChild(dropdown);
+
+                // Insert before nav-links or after logo
+                const nav = mobileMenuBtn.closest('nav');
+                if (nav) {
+                    const navLinks = nav.querySelector('.nav-links');
+                    if (navLinks) {
+                        navLinks.appendChild(container);
+                    } else {
+                        nav.appendChild(container);
+                    }
+                }
+
+                // Toggle dropdown on click
+                userProfileBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const isVisible = dropdown.style.display === 'block';
+                    dropdown.style.display = isVisible ? 'none' : 'block';
+                };
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!container.contains(e.target)) {
+                        dropdown.style.display = 'none';
+                    }
+                });
+            }
+
+            // Update dropdown content with broadcaster name
+            const dropdown = document.getElementById('userProfileDropdown');
+            if (dropdown) {
+                dropdown.innerHTML = `
+                    <div style="padding: 0.75rem; color: rgba(255, 255, 255, 0.95); font-weight: 600; font-size: 0.95rem; text-align: center;">${broadcasterName}</div>
+                    <div style="height: 1px; background: rgba(192, 132, 252, 0.3); margin: 0.25rem 0;"></div>
+                    <a href="/membership.html" style="display: block; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">Membership</a>
+                    <a href="#" onclick="showAbout(); return false;" style="display: block; padding: 0.75rem; color: rgba(255, 255, 255, 0.9); text-decoration: none; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.2)'" onmouseout="this.style.background='transparent'">About</a>
+                `;
+            }
+
+            // Update profile image
+            const profileImg = document.getElementById('userProfileImg');
+            if (profileImg && user.photoURL) {
+                profileImg.src = user.photoURL;
+            } else if (profileImg) {
+                // Default avatar if no photo
+                profileImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="%23c084fc"/><text x="20" y="28" font-size="20" text-anchor="middle" fill="white">👤</text></svg>';
+            }
+        }
+
+        // Show hamburger menu (when logged out)
+        function showHamburgerMenu() {
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            const userProfileBtn = document.getElementById('userProfileBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.style.display = 'flex';
+            }
+            if (userProfileBtn) {
+                const container = userProfileBtn.closest('div[style*="position: relative"]');
+                if (container) {
+                    container.style.display = 'none';
+                }
+            }
+        }
+
+        // Calculate total donated
+        async function calculateTotalDonated() {
+            if (!currentViewerUserId || !currentUserId) return 0;
+
+            try {
+                const { db, collection, query, where, getDocs } = await import('/src/firebase.js');
+                
+                const donationsRef = collection(db, 'donations');
+                const donationsQuery = query(
+                    donationsRef,
+                    where('userId', '==', currentUserId),
+                    where('viewerId', '==', currentViewerUserId)
+                );
+                const donationsSnapshot = await getDocs(donationsQuery);
+                
+                let totalDonated = 0;
+                console.log('[calculateTotalDonated] Found', donationsSnapshot.size, 'donations');
+                donationsSnapshot.forEach(doc => {
+                    const donation = doc.data();
+                    console.log('[calculateTotalDonated] Donation:', {
+                        id: doc.id,
+                        amount: donation.amount,
+                        viewerId: donation.viewerId,
+                        userId: donation.userId
+                    });
+                    if (donation.viewerId === currentViewerUserId) {
+                        totalDonated += donation.amount || 0;
+                    }
+                });
+                console.log('[calculateTotalDonated] Total donated:', totalDonated);
+                return totalDonated;
+            } catch (error) {
+                console.error('Error calculating total donated:', error);
+                return 0;
+            }
+        }
+
+        // Calculate total spent on custom videos
+        async function calculateTotalSpent() {
+            if (!currentViewerUserId || !currentUserId) return 0;
+
+            try {
+                const { db, collection, query, where, getDocs } = await import('/src/firebase.js');
+                
+                const customVideosRef = collection(db, 'customVideos');
+                const paidVideosQuery = query(
+                    customVideosRef,
+                    where('userId', '==', currentUserId),
+                    where('viewerId', '==', currentViewerUserId),
+                    where('paid', '==', true)
+                );
+                const paidVideosSnapshot = await getDocs(paidVideosQuery);
+                
+                const videoPrice = userPageConfig?.customVideoPrice || 5;
+                const totalSpent = paidVideosSnapshot.size * videoPrice;
+                console.log('[calculateTotalSpent] Total spent:', totalSpent, '(', paidVideosSnapshot.size, 'videos × $', videoPrice, ')');
+                return totalSpent;
+            } catch (error) {
+                console.error('Error calculating total spent:', error);
+                return 0;
             }
         }
 
@@ -721,25 +962,14 @@
             try {
                 const { db, collection, query, where, getDocs, doc, getDoc } = await import('/src/firebase.js');
                 
-                // Check if viewer is a subscriber
-                // This would require checking Twitch API or storing subscription status
-                // For now, we'll check donations and calculate credits
+                // Calculate current balance
+                const totalDonated = await calculateTotalDonated();
+                const totalSpent = await calculateTotalSpent();
                 
-                // Get all donations from viewer to this creator
-                const donationsRef = collection(db, 'donations');
-                const donationsQuery = query(
-                    donationsRef,
-                    where('userId', '==', currentUserId),
-                    where('viewerId', '==', currentViewerUserId)
-                );
-                const donationsSnapshot = await getDocs(donationsQuery);
-                
-                let totalDonated = 0;
-                donationsSnapshot.forEach(doc => {
-                    const donation = doc.data();
-                    if (donation.viewerId === currentViewerUserId) {
-                        totalDonated += donation.amount || 0;
-                    }
+                console.log('[checkSubscriptionAndLoadCredits] Balance:', {
+                    totalDonated,
+                    totalSpent,
+                    balance: totalDonated - totalSpent
                 });
 
                 // Calculate video credits
@@ -756,8 +986,9 @@
                 const freeVideosSnapshot = await getDocs(freeVideosQuery);
                 const freeVideosCount = freeVideosSnapshot.size;
                 
-                // Calculate credits from donations
-                const creditsFromDonations = Math.floor(totalDonated / videoPrice);
+                // Calculate credits from balance (donations - spent)
+                const balance = totalDonated - totalSpent;
+                const creditsFromBalance = Math.floor(Math.max(0, balance) / videoPrice);
                 
                 // Check tribe membership and free videos
                 const viewerUserDoc = await getDoc(doc(db, 'users', currentViewerUserId));
@@ -777,8 +1008,8 @@
                     }
                 }
                 
-                // Total credits = donations credits + remaining free videos - free videos already used
-                videoCredits = creditsFromDonations + remainingFreeVideos - freeVideosCount;
+                // Total credits = balance credits + remaining free videos - free videos already used
+                videoCredits = creditsFromBalance + remainingFreeVideos - freeVideosCount;
                 videoCredits = Math.max(0, videoCredits); // Don't go negative
 
                 // Display credits
@@ -978,6 +1209,288 @@
 
         // Load user data on page load
         loadUserData();
+
+        // Load tribe members, avatar carousel, and top donors
+        async function loadUserStats() {
+            if (!currentUserId) return;
+
+            try {
+                await Promise.all([
+                    loadTribeMembers(),
+                    loadAvatarCarousel(),
+                    loadTopDonors()
+                ]);
+            } catch (error) {
+                console.error('Error loading user stats:', error);
+            }
+        }
+
+        // Load tribe members
+        async function loadTribeMembers() {
+            if (!currentUserId) return;
+
+            try {
+                const { db, collection, query, where, getDocs, doc, getDoc } = await import('/src/firebase.js');
+                
+                // Get tribe name from user page config
+                const tribeName = userPageConfig?.tribeName || 'Tribe';
+                const tribeNameTitle = document.getElementById('tribeNameTitle');
+                if (tribeNameTitle) {
+                    // Replace {streamer} placeholder with actual streamer name
+                    const streamerName = document.getElementById('userName')?.textContent || 'Streamer';
+                    tribeNameTitle.textContent = tribeName.replace('{streamer}', streamerName);
+                }
+
+                // Get all users who have this creator in their tribeMemberships
+                const usersRef = collection(db, 'users');
+                const allUsersSnapshot = await getDocs(usersRef);
+                
+                const tribeMembers = [];
+                allUsersSnapshot.forEach(userDoc => {
+                    const userData = userDoc.data();
+                    const tribeMemberships = userData.tribeMemberships || {};
+                    if (tribeMemberships[currentUserId]) {
+                        // This user is a member of the tribe
+                        tribeMembers.push({
+                            userId: userDoc.id,
+                            displayName: userData.displayName || 'Anonymous',
+                            twitchUsername: userData.twitchUsername || null
+                        });
+                    }
+                });
+
+                const tribeMembersList = document.getElementById('tribeMembersList');
+                if (tribeMembersList) {
+                    // Check if current viewer is already a member
+                    const isCurrentViewerMember = currentViewerUserId && tribeMembers.some(m => m.userId === currentViewerUserId);
+                    
+                    if (tribeMembers.length === 0 && !isCurrentViewerMember) {
+                        tribeMembersList.innerHTML = `
+                            <div style="text-align: center; padding: 2rem; color: rgba(255, 255, 255, 0.6);">
+                                No tribe members yet
+                            </div>
+                            <div style="text-align: center; margin-top: 1rem;">
+                                <button id="joinTribeBtn" class="donate-btn" style="background: rgba(192, 132, 252, 0.3); border: 1px solid rgba(192, 132, 252, 0.5);">Join Tribe</button>
+                            </div>
+                        `;
+                    } else {
+                        let html = tribeMembers.map(member => `
+                            <div style="padding: 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                                ${member.displayName}${member.twitchUsername ? ` (@${member.twitchUsername})` : ''}
+                            </div>
+                        `).join('');
+                        
+                        // Add join button if viewer is not a member
+                        if (!isCurrentViewerMember && currentViewerUserId) {
+                            html += `
+                                <div style="text-align: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                                    <button id="joinTribeBtn" class="donate-btn" style="background: rgba(192, 132, 252, 0.3); border: 1px solid rgba(192, 132, 252, 0.5);">Join Tribe</button>
+                                </div>
+                            `;
+                        }
+                        
+                        tribeMembersList.innerHTML = html;
+                    }
+                    
+                    // Set up join button handler
+                    const joinTribeBtn = document.getElementById('joinTribeBtn');
+                    if (joinTribeBtn) {
+                        joinTribeBtn.onclick = () => handleJoinTribe();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading tribe members:', error);
+                const tribeMembersList = document.getElementById('tribeMembersList');
+                if (tribeMembersList) {
+                    tribeMembersList.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: rgba(255, 0, 0, 0.6);">
+                            Error loading tribe members
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Handle join tribe button click
+        async function handleJoinTribe() {
+            if (!currentViewerUserId || !currentUserId) {
+                alert('Please log in with Twitch to join the tribe.');
+                return;
+            }
+
+            try {
+                // Calculate current balance
+                const totalDonated = await calculateTotalDonated();
+                const totalSpent = await calculateTotalSpent();
+                const balance = totalDonated - totalSpent;
+
+                // Get tribe join cost from config
+                const tribeJoinCost = userPageConfig?.tribeJoinCost || 10;
+
+                if (balance < tribeJoinCost) {
+                    alert(`You need at least $${tribeJoinCost} in credits to join the tribe. Your current balance is $${balance.toFixed(2)}.`);
+                    return;
+                }
+
+                // Disable button while processing
+                const joinTribeBtn = document.getElementById('joinTribeBtn');
+                if (joinTribeBtn) {
+                    joinTribeBtn.disabled = true;
+                    joinTribeBtn.textContent = 'Joining...';
+                }
+
+                // Call API to join tribe
+                const { getCurrentUser } = await import('/src/firebase.js');
+                const user = getCurrentUser();
+                if (!user) {
+                    throw new Error('User not authenticated');
+                }
+
+                const idToken = await user.getIdToken();
+                const response = await fetch('/api/tribe/join', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({
+                        userId: currentUserId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to join tribe');
+                }
+
+                // Success - reload tribe members list
+                alert('Successfully joined the tribe!');
+                await loadTribeMembers();
+                
+                // Reload credits to reflect the spent amount
+                await checkSubscriptionAndLoadCredits();
+
+            } catch (error) {
+                console.error('Error joining tribe:', error);
+                alert(error.message || 'Failed to join tribe. Please try again.');
+                
+                // Re-enable button
+                const joinTribeBtn = document.getElementById('joinTribeBtn');
+                if (joinTribeBtn) {
+                    joinTribeBtn.disabled = false;
+                    joinTribeBtn.textContent = 'Join Tribe';
+                }
+            }
+        }
+
+        // Load avatar carousel
+        async function loadAvatarCarousel() {
+            if (!currentUserId) return;
+
+            try {
+                const { renderAvatarCarousel } = await import('/src/avatarCarousel.js');
+                await renderAvatarCarousel('#avatarCarouselContainer', currentUserId);
+            } catch (error) {
+                console.error('Error loading avatar carousel:', error);
+                const container = document.getElementById('avatarCarouselContainer');
+                if (container) {
+                    container.innerHTML = `
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255, 255, 255, 0.6);">
+                            Error loading avatars
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Load top donors
+        async function loadTopDonors() {
+            if (!currentUserId) return;
+
+            try {
+                const { db, collection, query, where, getDocs, doc, getDoc } = await import('/src/firebase.js');
+                
+                // Get all donations for this creator
+                // Note: We can't orderBy amount directly, so we'll get all and sort in memory
+                const donationsRef = collection(db, 'donations');
+                const donationsQuery = query(
+                    donationsRef,
+                    where('userId', '==', currentUserId)
+                );
+                const donationsSnapshot = await getDocs(donationsQuery);
+                
+                // Aggregate donations by viewerId
+                const donorTotals = {};
+                donationsSnapshot.forEach(doc => {
+                    const donation = doc.data();
+                    const viewerId = donation.viewerId;
+                    if (viewerId) {
+                        if (!donorTotals[viewerId]) {
+                            donorTotals[viewerId] = {
+                                viewerId: viewerId,
+                                total: 0,
+                                donorName: donation.donorName || 'Anonymous'
+                            };
+                        }
+                        donorTotals[viewerId].total += donation.amount || 0;
+                    }
+                });
+
+                // Sort by total and get top 5
+                const topDonors = Object.values(donorTotals)
+                    .sort((a, b) => b.total - a.total)
+                    .slice(0, 5);
+
+                // Get display names for donors
+                for (const donor of topDonors) {
+                    try {
+                        const userDoc = await getDoc(doc(db, 'users', donor.viewerId));
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data();
+                            donor.displayName = userData.displayName || donor.donorName || 'Anonymous';
+                            donor.twitchUsername = userData.twitchUsername || null;
+                        }
+                    } catch (error) {
+                        console.warn('Could not load donor info:', error);
+                    }
+                }
+
+                const topDonorsList = document.getElementById('topDonorsList');
+                if (topDonorsList) {
+                    if (topDonors.length === 0) {
+                        topDonorsList.innerHTML = `
+                            <div style="text-align: center; padding: 2rem; color: rgba(255, 255, 255, 0.6);">
+                                No donors yet
+                            </div>
+                        `;
+                    } else {
+                        topDonorsList.innerHTML = topDonors.map((donor, index) => `
+                            <div style="padding: 0.75rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600; color: rgba(255, 255, 255, 0.9);">
+                                        ${index + 1}. ${donor.displayName || donor.donorName || 'Anonymous'}${donor.twitchUsername ? ` (@${donor.twitchUsername})` : ''}
+                                    </div>
+                                </div>
+                                <div style="color: #c084fc; font-weight: 600;">
+                                    $${donor.total.toFixed(2)}
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading top donors:', error);
+                const topDonorsList = document.getElementById('topDonorsList');
+                if (topDonorsList) {
+                    topDonorsList.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: rgba(255, 0, 0, 0.6);">
+                            Error loading top donors
+                        </div>
+                    `;
+                }
+            }
+        }
 
         // Override showAbout function to work on user.html
         window.showAbout = function() {

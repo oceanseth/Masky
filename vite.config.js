@@ -11,7 +11,6 @@ export default defineConfig(({ mode }) => {
     rollupOptions: {
       input: {
         main: './index.html',
-        membership: './membership.html',
         twitchevent: './twitchevent.html',
         user: './user.html'
       }

@@ -156,14 +156,18 @@ export function renderProjectsManager(container) {
                     const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
                     return bTime - aTime; // Descending
                 });
-                console.log('[Projects] rendering (fallback) items:', items.length);
-                renderProjects(items);
+                console.log('[Projects] fetching fresh video URLs...');
+                const itemsWithUrls = await enrichProjectsWithFreshUrls(items, user.uid);
+                console.log('[Projects] rendering (fallback) items:', itemsWithUrls.length);
+                renderProjects(itemsWithUrls);
                 return;
             }
             
             const items = snap.docs.map(doc => ({ projectId: doc.id, ...doc.data() }));
-            console.log('[Projects] rendering items:', items.length);
-            renderProjects(items);
+            console.log('[Projects] fetching fresh video URLs...');
+            const itemsWithUrls = await enrichProjectsWithFreshUrls(items, user.uid);
+            console.log('[Projects] rendering items:', itemsWithUrls.length);
+            renderProjects(itemsWithUrls);
         } catch (e) {
             console.error('[Projects] Failed to load projects:', e);
             // Show error message and clear loading state
@@ -178,6 +182,67 @@ export function renderProjectsManager(container) {
             if (retryBtn) {
                 retryBtn.onclick = () => loadProjects();
             }
+        }
+    }
+
+    async function enrichProjectsWithFreshUrls(projects, userId) {
+        try {
+            // Fetch fresh URLs from the same API endpoint that twitchevent.html uses
+            const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
+            const endpoint = trimmedBase ? `${trimmedBase}/api/users/events` : '/api/users/events';
+            const requestUrl = `${endpoint}?userId=${encodeURIComponent(userId)}`;
+
+            const response = await fetch(requestUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-store'
+                },
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                console.warn('[Projects] Failed to fetch fresh video URLs, using Firestore data only:', response.status);
+                return projects;
+            }
+
+            const eventConfig = await response.json();
+            
+            // Build a map of projectId -> fresh video URL from the API response
+            const videoUrlMap = new Map();
+            
+            if (eventConfig?.providers) {
+                Object.values(eventConfig.providers).forEach(provider => {
+                    if (provider?.projects && Array.isArray(provider.projects)) {
+                        provider.projects.forEach(project => {
+                            if (project?.projectId && project?.videoSources && Array.isArray(project.videoSources)) {
+                                // Find the first valid video URL (prefer heygen, fallback to uploaded)
+                                const heygenSource = project.videoSources.find(s => s.type === 'heygen' && s.url);
+                                const uploadedSource = project.videoSources.find(s => s.type === 'uploaded' && s.url);
+                                const videoUrl = heygenSource?.url || uploadedSource?.url || null;
+                                
+                                if (videoUrl) {
+                                    videoUrlMap.set(project.projectId, videoUrl);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Enrich projects with fresh URLs
+            return projects.map(project => {
+                const freshUrl = videoUrlMap.get(project.projectId);
+                if (freshUrl) {
+                    return { ...project, videoUrl: freshUrl };
+                }
+                // For uploaded videos, keep the existing videoUrl from Firestore
+                return project;
+            });
+        } catch (error) {
+            console.warn('[Projects] Error enriching projects with fresh URLs:', error);
+            // Return projects as-is if URL fetching fails
+            return projects;
         }
     }
 

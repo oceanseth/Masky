@@ -792,7 +792,7 @@
             <div id="userUrlSection" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px;">
                 <div style="display:flex; align-items:center; gap:8px; color: rgba(255,255,255,0.75); margin-bottom: 0.5rem;">
                     <span style="opacity:0.85;">Your User Page URL:</span>
-                    <small id="userUrlText" title="User Page URL" style="color: #c084fc; word-break: break-all;"></small>
+                    <a href="#" onClick="window.location.href=this.children[0].innerHTML;"><small id="userUrlText" title="User Page URL" style="color: #c084fc; word-break: break-all;"></small></a>
                     <button class="btn btn-secondary" id="copyUserUrlBtn" title="Copy URL" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; flex-shrink: 0;">📋</button>
                 </div>
                 <div style="margin-top: 0.5rem;">

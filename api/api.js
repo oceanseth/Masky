@@ -483,6 +483,127 @@ exports.handler = async (event, context) => {
         }
     }
 
+    // Get fresh video URL for a project
+    if (path.includes('/projects/') && path.includes('/video-url') && method === 'GET') {
+        try {
+            // Extract projectId from path (e.g., /projects/{projectId}/video-url)
+            const pathMatch = path.match(/\/projects\/([^\/]+)\/video-url/);
+            const projectId = pathMatch?.[1] || event.queryStringParameters?.projectId;
+            
+            if (!projectId) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Missing projectId' })
+                };
+            }
+
+            await firebaseInitializer.initialize();
+            const admin = require('firebase-admin');
+            const db = admin.firestore();
+
+            // Get project from Firestore
+            const projectDoc = await db.collection('projects').doc(projectId).get();
+            if (!projectDoc.exists) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Project not found' })
+                };
+            }
+
+            const projectData = projectDoc.data();
+            
+            // Check if it's an uploaded video (has videoUrl in Firestore)
+            if (projectData.videoUrl && projectData.projectType === 'upload') {
+                return {
+                    statusCode: 200,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        videoUrl: projectData.videoUrl,
+                        type: 'uploaded',
+                        expiresAt: null
+                    })
+                };
+            }
+
+            // For HeyGen videos, get fresh URL
+            const heygenVideoId = projectData.heygenVideoId;
+            if (!heygenVideoId) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'No video found for this project' })
+                };
+            }
+
+            // Fetch fresh URL from HeyGen
+            const payload = await heygen.getVideoStatus(heygenVideoId);
+            const data = payload?.data || payload || {};
+            const signedUrl = data.video_signed_url?.url || null;
+            const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
+            const directUrl = data.video_url || data.videoUrl || null;
+            const resolvedUrl = signedUrl || directUrl || null;
+
+            if (!resolvedUrl) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ 
+                        error: 'Video URL not available',
+                        status: data.status || payload?.status || 'unknown'
+                    })
+                };
+            }
+
+            const normalizeExpiry = (value) => {
+                if (!value) return null;
+                if (typeof value === 'string') {
+                    const parsed = Number(value);
+                    if (Number.isFinite(parsed)) {
+                        return parsed > 1e12 ? new Date(parsed).toISOString() : new Date(parsed * 1000).toISOString();
+                    }
+                    const dateValue = Date.parse(value);
+                    if (!Number.isNaN(dateValue)) {
+                        return new Date(dateValue).toISOString();
+                    }
+                    return value;
+                }
+                if (typeof value === 'number') {
+                    return value > 1e12 ? new Date(value).toISOString() : new Date(value * 1000).toISOString();
+                }
+                if (value instanceof Date) {
+                    return value.toISOString();
+                }
+                return null;
+            };
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    videoUrl: resolvedUrl,
+                    type: 'heygen',
+                    expiresAt: normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null),
+                    status: data.status || payload?.status || null
+                })
+            };
+        } catch (err) {
+            console.error('Failed to get fresh video URL for project:', err);
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: 'Failed to get video URL', message: err.message })
+            };
+        }
+    }
+
     // HeyGen: check avatar group training status
     if (path.includes('/heygen/avatar-group/training-status') && method === 'GET') {
         try {

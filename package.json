@@ -12,7 +12,8 @@
     "api:start": "cross-env IS_OFFLINE=true STAGE=local serverless offline start",
     "api:dev": "cross-env IS_OFFLINE=true STAGE=local serverless offline start --stage local --reloadHandler",
     "dev:full": "concurrently \"npm run dev\" \"npm run api:dev\"",
-    "api:restart": "taskkill /F /IM node.exe /FI \"WINDOWTITLE eq serverless*\" 2>nul & npm run api:dev"
+    "api:restart": "taskkill /F /IM node.exe /FI \"WINDOWTITLE eq serverless*\" 2>nul & npm run api:dev",
+    "publishDeploymentEvent": "node scripts/publish-deployment-event.js"
   },
   "repository": {
     "type": "git",

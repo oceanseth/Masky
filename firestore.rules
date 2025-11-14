@@ -102,6 +102,17 @@ service cloud.firestore {
       }
     }
     
+    // System deployment events - allow public read for overlay auto-reload
+    match /_system/deployments {
+      allow read: if true; // Public read for deployment notifications
+      allow write: if false; // Only server can write deployment events
+      
+      match /events/{eventId} {
+        allow read: if true; // Public read for deployment event notifications
+        allow write: if false; // Only server can write deployment events
+      }
+    }
+    
     // Projects collection - users can only access their own projects
     match /projects/{projectId} {
       // Allow read/write only if user owns the project

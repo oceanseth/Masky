@@ -41,3 +41,19 @@ jobs:
       - name: Invalidate CloudFront Cache
         run: |
           aws cloudfront create-invalidation --distribution-id E33L46W61GEWHI --paths "/*"
+          
+      - name: Load SSM Parameters to .env.local
+        run: |
+          chmod +x load-ssm-to-env.sh
+          ./load-ssm-to-env.sh production
+          
+      - name: Publish Deployment Event to Firestore
+        run: |
+          npm run publishDeploymentEvent
+        env:
+          VERSION: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          STAGE: production
+          AWS_REGION: us-east-1

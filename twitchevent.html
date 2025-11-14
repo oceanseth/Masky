@@ -199,6 +199,7 @@
 
         // Initialize event listeners
         let unsubscribeEvents = null;
+        let unsubscribeDeploymentListener = null;
         let currentUserId = null;
         let projectConfigs = new Map();
         let eventVideoCache = new Map();
@@ -210,6 +211,9 @@
         let activeEventListenerKeys = new Set();
         let lastConfigFetchTime = 0;
         let configFetchPromise = null;
+        let currentlyPlayingVideo = null;
+        let pendingReload = false;
+        let lastDeploymentEventId = null;
         const CONFIG_REFRESH_MIN_INTERVAL_MS = 15000;
         const HEYGEN_EXPIRY_BUFFER_MS = 15000;
 
@@ -269,12 +273,101 @@
                 });
                 unsubscribeEvents = null;
             }
+            if (unsubscribeDeploymentListener && typeof unsubscribeDeploymentListener === 'function') {
+                unsubscribeDeploymentListener();
+                unsubscribeDeploymentListener = null;
+            }
             activeEventListenerKeys = new Set();
             processedEventDocIds = new Map();
         }
 
+        // Setup deployment listener to detect when new version is deployed
+        function setupDeploymentListener() {
+            // Path: _system/deployments/events
+            const systemDocRef = doc(db, '_system', 'deployments');
+            const eventsCollectionRef = collection(systemDocRef, 'events');
+            const q = query(eventsCollectionRef);
+            
+            console.log('Setting up deployment listener...');
+            
+            unsubscribeDeploymentListener = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const deploymentData = change.doc.data();
+                        const docId = change.doc.id;
+                        
+                        // Skip if this is the same event we already processed
+                        if (lastDeploymentEventId === docId) {
+                            return;
+                        }
+                        
+                        lastDeploymentEventId = docId;
+                        console.log('New deployment detected:', {
+                            version: deploymentData.version,
+                            branch: deploymentData.branch,
+                            timestamp: deploymentData.timestamp
+                        });
+                        
+                        // Trigger reload after current video finishes
+                        triggerReloadAfterVideo();
+                    }
+                });
+            }, (error) => {
+                console.error('Error listening to deployment events:', error);
+            });
+        }
+
+        // Trigger reload after current video finishes playing
+        function triggerReloadAfterVideo() {
+            if (pendingReload) {
+                console.log('Reload already pending, skipping...');
+                return;
+            }
+            
+            pendingReload = true;
+            console.log('Deployment detected - will reload after current video finishes');
+            
+            // Check if video is currently playing
+            if (currentlyPlayingVideo && !currentlyPlayingVideo.paused && !currentlyPlayingVideo.ended) {
+                console.log('Video is currently playing, waiting for it to finish...');
+                
+                const onVideoEnd = () => {
+                    console.log('Video finished, reloading page...');
+                    currentlyPlayingVideo.removeEventListener('ended', onVideoEnd);
+                    currentlyPlayingVideo.removeEventListener('error', onVideoEnd);
+                    currentlyPlayingVideo = null;
+                    performReload();
+                };
+                
+                currentlyPlayingVideo.addEventListener('ended', onVideoEnd, { once: true });
+                currentlyPlayingVideo.addEventListener('error', onVideoEnd, { once: true });
+            } else {
+                // No video playing, reload immediately
+                console.log('No video playing, reloading immediately...');
+                performReload();
+            }
+        }
+
+        // Perform the actual reload with cache busting
+        function performReload() {
+            // Force reload with cache busting
+            const url = new URL(window.location.href);
+            url.searchParams.set('_reload', Date.now().toString());
+            window.location.href = url.toString();
+        }
+
+        // Reset reload flag if page was reloaded with cache busting parameter
+        if (new URLSearchParams(window.location.search).has('_reload')) {
+            pendingReload = false;
+            console.log('Page reloaded with cache busting parameter');
+        }
+
         // Initialize on page load
         initializeOverlay();
+        
+        // Setup deployment listener (no userId needed for system events)
+        // This listens to global deployment events, not user-specific events
+        setupDeploymentListener();
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
@@ -909,6 +1002,9 @@
             video.style.borderRadius = '12px';
             video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
             video.style.pointerEvents = 'none';
+            
+            // Track currently playing video for deployment reload logic
+            currentlyPlayingVideo = video;
 
             let messageElement = null;
             if (selectedConfig.message) {
@@ -984,8 +1080,19 @@
             }
             
             const cleanupVideo = () => {
+                // Clear currently playing video reference
+                if (currentlyPlayingVideo === video) {
+                    currentlyPlayingVideo = null;
+                }
+                
                 if (videoContainer && videoContainer.parentNode) {
                     videoContainer.parentNode.removeChild(videoContainer);
+                }
+                
+                // If reload was pending and video finished, trigger reload now
+                if (pendingReload && !currentlyPlayingVideo) {
+                    console.log('Video cleanup complete, performing pending reload...');
+                    performReload();
                 }
             };
             

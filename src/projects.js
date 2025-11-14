@@ -187,6 +187,52 @@ export function renderProjectsManager(container) {
 
     async function enrichProjectsWithFreshUrls(projects, userId) {
         try {
+            const expiryBufferMs = 15 * 60 * 1000; // 15 minutes
+            const now = Date.now();
+            
+            // First, check for cached URLs in Firestore that are still valid
+            const projectsWithCachedUrls = projects.map(project => {
+                // For uploaded videos, use the videoUrl from Firestore
+                if (project.projectType === 'upload' && project.videoUrl) {
+                    return { ...project };
+                }
+                
+                // For HeyGen videos, check if we have a cached URL that's still valid
+                if (project.heygenVideoId && project.heygenVideoUrl && project.heygenVideoUrlExpiresAt) {
+                    const parseExpiryTimestamp = (value) => {
+                        if (!value) return null;
+                        if (typeof value === 'string') {
+                            const parsed = Date.parse(value);
+                            return Number.isNaN(parsed) ? null : parsed;
+                        }
+                        if (typeof value === 'number') {
+                            return value;
+                        }
+                        if (value?.toDate) {
+                            return value.toDate().getTime();
+                        }
+                        return null;
+                    };
+                    
+                    const expiryTimestamp = parseExpiryTimestamp(project.heygenVideoUrlExpiresAt);
+                    if (expiryTimestamp && expiryTimestamp - expiryBufferMs > now) {
+                        // Cached URL is still valid
+                        return { ...project, videoUrl: project.heygenVideoUrl };
+                    }
+                }
+                
+                // No valid cached URL, will need to fetch fresh one
+                return { ...project, _needsFreshUrl: true };
+            });
+            
+            // Check if any projects need fresh URLs
+            const needsRefresh = projectsWithCachedUrls.some(p => p._needsFreshUrl);
+            
+            if (!needsRefresh) {
+                // All projects have valid cached URLs
+                return projectsWithCachedUrls.map(({ _needsFreshUrl, ...project }) => project);
+            }
+            
             // Fetch fresh URLs from the same API endpoint that twitchevent.html uses
             const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
             const endpoint = trimmedBase ? `${trimmedBase}/api/users/events` : '/api/users/events';
@@ -202,8 +248,9 @@ export function renderProjectsManager(container) {
             });
 
             if (!response.ok) {
-                console.warn('[Projects] Failed to fetch fresh video URLs, using Firestore data only:', response.status);
-                return projects;
+                console.warn('[Projects] Failed to fetch fresh video URLs, using cached URLs where available:', response.status);
+                // Return projects with cached URLs, or as-is if no cache
+                return projectsWithCachedUrls.map(({ _needsFreshUrl, ...project }) => project);
             }
 
             const eventConfig = await response.json();
@@ -230,19 +277,23 @@ export function renderProjectsManager(container) {
                 });
             }
 
-            // Enrich projects with fresh URLs
-            return projects.map(project => {
-                const freshUrl = videoUrlMap.get(project.projectId);
-                if (freshUrl) {
-                    return { ...project, videoUrl: freshUrl };
+            // Enrich projects with fresh URLs (only for those that need it)
+            return projectsWithCachedUrls.map(project => {
+                if (project._needsFreshUrl) {
+                    const freshUrl = videoUrlMap.get(project.projectId);
+                    if (freshUrl) {
+                        const { _needsFreshUrl, ...rest } = project;
+                        return { ...rest, videoUrl: freshUrl };
+                    }
                 }
-                // For uploaded videos, keep the existing videoUrl from Firestore
-                return project;
+                // Remove the flag and return project as-is
+                const { _needsFreshUrl, ...rest } = project;
+                return rest;
             });
         } catch (error) {
             console.warn('[Projects] Error enriching projects with fresh URLs:', error);
-            // Return projects as-is if URL fetching fails
-            return projects;
+            // Return projects as-is if URL fetching fails, but remove the flag
+            return projects.map(({ _needsFreshUrl, ...project }) => project);
         }
     }
 

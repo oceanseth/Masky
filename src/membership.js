@@ -124,6 +124,12 @@ async function loadSubscriptionStatus() {
         // Hide loading
         loadingState.style.display = 'none';
         pricingGrid.style.display = 'grid';
+        
+        // Show coupon section
+        const couponSection = document.getElementById('couponSection');
+        if (couponSection) {
+            couponSection.style.display = 'block';
+        }
 
         // Update UI based on subscription status
         updateSubscriptionUI(currentSubscription);
@@ -132,6 +138,13 @@ async function loadSubscriptionStatus() {
         console.error('Error loading subscription:', error);
         loadingState.style.display = 'none';
         pricingGrid.style.display = 'grid';
+        
+        // Show coupon section even on error
+        const couponSection = document.getElementById('couponSection');
+        if (couponSection) {
+            couponSection.style.display = 'block';
+        }
+        
         showMessage('Failed to load subscription status. Please try again.', 'error');
     }
 }
@@ -231,18 +244,18 @@ function updatePricingGridButtons(currentTier) {
             // Lower tier - hide downgrade button (users can manage in portal)
             button.style.display = 'none';
         } else {
-            // Higher tier - use customer portal for upgrades
+            // Higher tier - use checkout session for upgrades
             const tierLabel = tierDisplayNames[tierName] || tierName.charAt(0).toUpperCase() + tierName.slice(1);
             button.textContent = `Upgrade to ${tierLabel}`;
             button.className = 'btn btn-primary';
             button.disabled = false;
-            button.onclick = () => openCustomerPortal();
+            button.onclick = () => upgradeToPlan(tierName);
         }
     });
 }
 
 /**
- * Subscribe to a plan
+ * Subscribe to a plan (for new subscriptions)
  */
 window.subscribeToPlan = async function(tier) {
     try {
@@ -259,6 +272,9 @@ window.subscribeToPlan = async function(tier) {
             return;
         }
 
+        // Get coupon code if provided
+        const couponCode = document.getElementById('couponCode')?.value?.trim() || null;
+
         showMessage('Redirecting to checkout...', 'success');
 
         // Get ID token
@@ -274,6 +290,7 @@ window.subscribeToPlan = async function(tier) {
             body: JSON.stringify({
                 tier: tier,
                 priceId: priceId,
+                couponCode: couponCode,
                 successUrl: `${window.location.origin}/?membership=success`,
                 cancelUrl: `${window.location.origin}/?membership=canceled`
             })
@@ -296,6 +313,69 @@ window.subscribeToPlan = async function(tier) {
     } catch (error) {
         console.error('Error subscribing:', error);
         showMessage(error.message || 'Failed to start subscription process', 'error');
+    }
+};
+
+/**
+ * Upgrade to a plan (for existing subscribers)
+ */
+window.upgradeToPlan = async function(tier) {
+    try {
+        const user = getCurrentUser();
+        if (!user) {
+            showMessage('Please sign in to upgrade', 'error');
+            return;
+        }
+
+        // Get price ID from config
+        const priceId = config.stripe.prices[tier];
+        if (!priceId) {
+            showMessage('Invalid plan selected', 'error');
+            return;
+        }
+
+        // Get coupon code if provided
+        const couponCode = document.getElementById('couponCode')?.value?.trim() || null;
+
+        showMessage('Redirecting to checkout...', 'success');
+
+        // Get ID token
+        const idToken = await user.getIdToken();
+
+        // Create checkout session for upgrade
+        const response = await fetch(`${config.api.baseUrl}/api/subscription/create-checkout`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tier: tier,
+                priceId: priceId,
+                couponCode: couponCode,
+                isUpgrade: true,
+                successUrl: `${window.location.origin}/?membership=success`,
+                cancelUrl: `${window.location.origin}/?membership=canceled`
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to create checkout session');
+        }
+
+        const data = await response.json();
+
+        // Redirect to Stripe Checkout
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            throw new Error('No checkout URL received');
+        }
+
+    } catch (error) {
+        console.error('Error upgrading:', error);
+        showMessage(error.message || 'Failed to start upgrade process', 'error');
     }
 };
 
@@ -374,6 +454,36 @@ export function showMessage(message, type) {
         }, 5000);
     }
 }
+
+/**
+ * Apply coupon code (placeholder - validation happens at checkout)
+ */
+window.applyCoupon = function() {
+    const couponInput = document.getElementById('couponCode');
+    const couponMessage = document.getElementById('couponMessage');
+    
+    if (!couponInput || !couponMessage) {
+        return;
+    }
+    
+    const couponCode = couponInput.value.trim();
+    
+    if (!couponCode) {
+        couponMessage.textContent = 'Please enter a coupon code';
+        couponMessage.className = 'coupon-message error';
+        return;
+    }
+    
+    // Clear previous message
+    couponMessage.textContent = 'Coupon code will be applied at checkout';
+    couponMessage.className = 'coupon-message success';
+    
+    // Clear message after 3 seconds
+    setTimeout(() => {
+        couponMessage.textContent = '';
+        couponMessage.className = 'coupon-message';
+    }, 3000);
+};
 
 /**
  * Check for URL parameters (success/cancel from Stripe)

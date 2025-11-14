@@ -43,14 +43,25 @@ export default defineConfig(({ mode }) => {
         name: 'rewrite-user-urls',
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
+            // Extract pathname (remove query string and hash)
+            const pathname = req.url.split('?')[0].split('#')[0];
+            
+            // Don't treat root path (/) as a username
+            if (pathname === '/') {
+              next();
+              return;
+            }
+            
             // Match /{username} pattern (no slashes in path except leading slash)
             const userUrlPattern = /^\/([^\/]+)$/;
             // Exclude known routes and file extensions
             const excludedPaths = ['/api', '/assets', '/src', '/favicon.ico', '/index.html', '/membership.html', '/twitchevent.html', '/user.html'];
-            const hasExtension = /\.[a-zA-Z0-9]+$/.test(req.url.split('?')[0]);
+            const hasExtension = /\.[a-zA-Z0-9]+$/.test(pathname);
             
-            if (userUrlPattern.test(req.url) && !excludedPaths.some(path => req.url.startsWith(path)) && !hasExtension) {
-              req.url = '/user.html';
+            if (userUrlPattern.test(pathname) && !excludedPaths.some(path => pathname === path || pathname.startsWith(path + '/')) && !hasExtension) {
+              // Preserve query string when rewriting
+              const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+              req.url = '/user.html' + queryString;
             }
             next();
           });

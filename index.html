@@ -200,6 +200,73 @@
             gap: 1rem;
         }
 
+        .coupon-section {
+            margin: 2rem 0;
+            padding: 0 1rem;
+        }
+
+        .coupon-container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(192, 132, 252, 0.3);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .coupon-label {
+            display: block;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .coupon-input-group {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .coupon-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .coupon-input:focus {
+            outline: none;
+            border-color: #c084fc;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .coupon-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .coupon-apply-btn {
+            padding: 0.75rem 1.5rem;
+            white-space: nowrap;
+        }
+
+        .coupon-message {
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            min-height: 1.25rem;
+        }
+
+        .coupon-message.success {
+            color: #4ade80;
+        }
+
+        .coupon-message.error {
+            color: #f87171;
+        }
+
         .pricing-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -241,6 +308,22 @@
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 700;
+        }
+
+        .tier-icon {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+            z-index: 1;
+            opacity: 0.9;
+            transition: opacity 0.3s ease;
+        }
+
+        .pricing-card:hover .tier-icon {
+            opacity: 1;
         }
 
         .pricing-header {
@@ -567,6 +650,27 @@
                 </div>
             </div>
 
+            <!-- Coupon Code Section -->
+            <div id="couponSection" class="coupon-section" style="display: none;">
+                <div class="coupon-container">
+                    <label for="couponCode" class="coupon-label">Have a coupon code?</label>
+                    <div class="coupon-input-group">
+                        <input 
+                            type="text" 
+                            id="couponCode" 
+                            class="coupon-input" 
+                            placeholder="Enter coupon code"
+                            maxlength="50"
+                            onkeypress="if(event.key === 'Enter') applyCoupon()"
+                        />
+                        <button class="btn btn-secondary coupon-apply-btn" onclick="applyCoupon()">
+                            Apply
+                        </button>
+                    </div>
+                    <div id="couponMessage" class="coupon-message"></div>
+                </div>
+            </div>
+
             <!-- Pricing Grid -->
             <div id="pricingGrid" class="pricing-grid" style="display: none;">
                 <!-- Free Tier -->
@@ -591,6 +695,7 @@
 
                 <!-- Viewer Tier -->
                 <div class="pricing-card">
+                    <img src="/assets/subscriber-viewer.png" alt="Viewer Tier" class="tier-icon">
                     <div class="pricing-header">
                         <div class="tier-name">Viewer</div>
                         <div class="tier-price">
@@ -612,7 +717,7 @@
 
                 <!-- Creator Tier -->
                 <div class="pricing-card recommended">
-                    <div class="recommended-badge">POPULAR</div>
+                    <img src="/assets/subscriber-creator.png" alt="Creator Tier" class="tier-icon">
                     <div class="pricing-header">
                         <div class="tier-name">Creator</div>
                         <div class="tier-price">
@@ -637,6 +742,7 @@
 
                 <!-- Pro Creator Tier -->
                 <div class="pricing-card">
+                    <img src="/assets/subscriber-procreator.png" alt="Pro Creator Tier" class="tier-icon">
                     <div class="pricing-header">
                         <div class="tier-name">Pro Creator</div>
                         <div class="tier-price">

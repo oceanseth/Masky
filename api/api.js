@@ -530,32 +530,13 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            // For HeyGen videos, get fresh URL
+            // For HeyGen videos, check if we have a cached URL that's still valid
             const heygenVideoId = projectData.heygenVideoId;
             if (!heygenVideoId) {
                 return {
                     statusCode: 404,
                     headers,
                     body: JSON.stringify({ error: 'No video found for this project' })
-                };
-            }
-
-            // Fetch fresh URL from HeyGen
-            const payload = await heygen.getVideoStatus(heygenVideoId);
-            const data = payload?.data || payload || {};
-            const signedUrl = data.video_signed_url?.url || null;
-            const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
-            const directUrl = data.video_url || data.videoUrl || null;
-            const resolvedUrl = signedUrl || directUrl || null;
-
-            if (!resolvedUrl) {
-                return {
-                    statusCode: 404,
-                    headers,
-                    body: JSON.stringify({ 
-                        error: 'Video URL not available',
-                        status: data.status || payload?.status || 'unknown'
-                    })
                 };
             }
 
@@ -581,6 +562,83 @@ exports.handler = async (event, context) => {
                 return null;
             };
 
+            const parseExpiryTimestamp = (value) => {
+                if (!value) return null;
+                const normalized = normalizeExpiry(value);
+                if (!normalized) return null;
+                const parsed = new Date(normalized);
+                return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+            };
+
+            // Check if we have a cached URL that's still valid (with 15 minute buffer)
+            const cachedUrl = projectData.heygenVideoUrl || null;
+            const cachedExpiry = projectData.heygenVideoUrlExpiresAt || null;
+            const expiryBufferMs = 15 * 60 * 1000; // 15 minutes
+            const now = Date.now();
+
+            if (cachedUrl && cachedExpiry) {
+                const expiryTimestamp = parseExpiryTimestamp(cachedExpiry);
+                if (expiryTimestamp && expiryTimestamp - expiryBufferMs > now) {
+                    // Cached URL is still valid, return it
+                    return {
+                        statusCode: 200,
+                        headers: {
+                            ...headers,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            videoUrl: cachedUrl,
+                            type: 'heygen',
+                            expiresAt: normalizeExpiry(cachedExpiry),
+                            status: projectData.heygenStatus || projectData.heygenLastStatus || null,
+                            cached: true
+                        })
+                    };
+                }
+            }
+
+            // Fetch fresh URL from HeyGen
+            const payload = await heygen.getVideoStatus(heygenVideoId);
+            const data = payload?.data || payload || {};
+            const signedUrl = data.video_signed_url?.url || null;
+            const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
+            const directUrl = data.video_url || data.videoUrl || null;
+            const resolvedUrl = signedUrl || directUrl || null;
+
+            if (!resolvedUrl) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ 
+                        error: 'Video URL not available',
+                        status: data.status || payload?.status || 'unknown'
+                    })
+                };
+            }
+
+            const normalizedExpiry = normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null);
+            const videoStatus = data.status || payload?.status || null;
+
+            // Save the fresh URL to Firestore for future use
+            const projectRef = db.collection('projects').doc(projectId);
+            const updateData = {
+                heygenVideoUrl: resolvedUrl,
+                heygenVideoUrlExpiresAt: normalizedExpiry,
+                heygenLastStatus: videoStatus,
+                heygenLastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            
+            // Only update videoUrl if status is completed
+            if (videoStatus === 'completed') {
+                updateData.heygenVideoReady = true;
+            }
+            
+            await projectRef.update(updateData).catch(err => {
+                console.warn('Failed to save fresh video URL to Firestore:', err);
+                // Don't fail the request if saving fails
+            });
+
             return {
                 statusCode: 200,
                 headers: {
@@ -590,8 +648,9 @@ exports.handler = async (event, context) => {
                 body: JSON.stringify({
                     videoUrl: resolvedUrl,
                     type: 'heygen',
-                    expiresAt: normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null),
-                    status: data.status || payload?.status || null
+                    expiresAt: normalizedExpiry,
+                    status: videoStatus,
+                    cached: false
                 })
             };
         } catch (err) {
@@ -880,15 +939,9 @@ exports.handler = async (event, context) => {
             if (heygenTasks.length) {
                 await Promise.all(heygenTasks.map(async (task) => {
                     const { projectRecord, videoId, lastKnownStatus } = task;
+                    const projectId = projectRecord.projectId;
+                    
                     try {
-                        const payload = await heygen.getVideoStatus(videoId);
-                        const data = payload?.data || payload || {};
-                        const signedUrl = data.video_signed_url?.url || null;
-                        const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
-                        const directUrl = data.video_url || data.videoUrl || null;
-                        const resolvedUrl = signedUrl || directUrl || null;
-                        const status = data.status || payload?.status || lastKnownStatus || null;
-
                         const normalizeExpiry = (value) => {
                             if (!value) return null;
                             if (typeof value === 'string') {
@@ -911,6 +964,69 @@ exports.handler = async (event, context) => {
                             return null;
                         };
 
+                        const parseExpiryTimestamp = (value) => {
+                            if (!value) return null;
+                            const normalized = normalizeExpiry(value);
+                            if (!normalized) return null;
+                            const parsed = new Date(normalized);
+                            return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+                        };
+
+                        // Check if we have a cached URL that's still valid (with 15 minute buffer)
+                        const projectDoc = await db.collection('projects').doc(projectId).get();
+                        const projectData = projectDoc.exists ? projectDoc.data() : {};
+                        const cachedUrl = projectData.heygenVideoUrl || null;
+                        const cachedExpiry = projectData.heygenVideoUrlExpiresAt || null;
+                        const expiryBufferMs = 15 * 60 * 1000; // 15 minutes
+                        const now = Date.now();
+                        let resolvedUrl = null;
+                        let normalizedExpiry = null;
+                        let status = lastKnownStatus || null;
+
+                        if (cachedUrl && cachedExpiry) {
+                            const expiryTimestamp = parseExpiryTimestamp(cachedExpiry);
+                            if (expiryTimestamp && expiryTimestamp - expiryBufferMs > now) {
+                                // Use cached URL
+                                resolvedUrl = cachedUrl;
+                                normalizedExpiry = normalizeExpiry(cachedExpiry);
+                                status = projectData.heygenStatus || projectData.heygenLastStatus || status;
+                            }
+                        }
+
+                        // If no valid cached URL, fetch fresh one
+                        if (!resolvedUrl) {
+                            const payload = await heygen.getVideoStatus(videoId);
+                            const data = payload?.data || payload || {};
+                            const signedUrl = data.video_signed_url?.url || null;
+                            const signedExpiry = data.video_signed_url?.expired_time || data.video_signed_url?.expire_time || null;
+                            const directUrl = data.video_url || data.videoUrl || null;
+                            resolvedUrl = signedUrl || directUrl || null;
+                            status = data.status || payload?.status || lastKnownStatus || null;
+                            normalizedExpiry = normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null);
+
+                            // Save the fresh URL to Firestore for future use
+                            if (resolvedUrl && projectDoc.exists) {
+                                const projectRef = db.collection('projects').doc(projectId);
+                                const updateData = {
+                                    heygenVideoUrl: resolvedUrl,
+                                    heygenVideoUrlExpiresAt: normalizedExpiry,
+                                    heygenLastStatus: status,
+                                    heygenLastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
+                                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                                };
+                                
+                                // Only update videoUrl if status is completed
+                                if (status === 'completed') {
+                                    updateData.heygenVideoReady = true;
+                                }
+                                
+                                await projectRef.update(updateData).catch(err => {
+                                    console.warn(`Failed to save fresh video URL to Firestore for project ${projectId}:`, err);
+                                    // Don't fail the request if saving fails
+                                });
+                            }
+                        }
+
                         if (!projectRecord.heygen) {
                             projectRecord.heygen = { videoId, status: null, ready: false, lastCheckedAt: null };
                         }
@@ -925,10 +1041,10 @@ exports.handler = async (event, context) => {
                             url: resolvedUrl,
                             lastCheckedAt: new Date().toISOString(),
                             muted: false,
-                            expiresAt: normalizeExpiry(signedExpiry || data.expire_time || data.expired_time || data.expiredTime || null),
+                            expiresAt: normalizedExpiry,
                             raw: {
-                                video_url: data.video_url || null,
-                                video_signed_url: data.video_signed_url || null
+                                video_url: resolvedUrl ? (data?.video_url || null) : null,
+                                video_signed_url: resolvedUrl ? (data?.video_signed_url || null) : null
                             }
                         });
                     } catch (err) {
@@ -2999,9 +3115,11 @@ async function createCheckoutSession(event) {
             body = event.body || {};
         }
 
-        const { tier, priceId, successUrl, cancelUrl } = body;
+        const { tier, priceId, successUrl, cancelUrl, couponCode, isUpgrade } = body;
 
-        if (!tier || !['standard', 'pro'].includes(tier)) {
+        // Support all tier names (including legacy names)
+        const validTiers = ['viewer', 'creator', 'proCreator', 'standard', 'pro'];
+        if (!tier || !validTiers.includes(tier)) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({ error: 'Invalid tier specified' })
@@ -3021,7 +3139,9 @@ async function createCheckoutSession(event) {
         // Get or create Stripe customer
         const db = admin.firestore();
         const userDoc = await db.collection('users').doc(userId).get();
-        let stripeCustomerId = userDoc.data()?.stripeCustomerId;
+        const userData = userDoc.data() || {};
+        let stripeCustomerId = userData.stripeCustomerId;
+        const existingSubscriptionId = userData.stripeSubscriptionId;
 
         if (!stripeCustomerId) {
             const customer = await stripe.customers.create({
@@ -3038,8 +3158,16 @@ async function createCheckoutSession(event) {
             }, { merge: true });
         }
 
-        // Create checkout session
-        const session = await stripe.checkout.sessions.create({
+        // Normalize tier name (handle legacy names)
+        let normalizedTier = tier;
+        if (tier === 'standard') {
+            normalizedTier = 'creator';
+        } else if (tier === 'pro') {
+            normalizedTier = 'proCreator';
+        }
+
+        // Prepare checkout session parameters
+        const sessionParams = {
             customer: stripeCustomerId,
             payment_method_types: ['card'],
             line_items: [
@@ -3053,9 +3181,211 @@ async function createCheckoutSession(event) {
             cancel_url: cancelUrl,
             metadata: {
                 firebaseUID: userId,
-                tier: tier
+                tier: normalizedTier
             }
-        });
+        };
+
+        // Validate and add coupon code if provided
+        if (couponCode && couponCode.trim()) {
+            const trimmedCoupon = couponCode.trim();
+            let promotionCodeId = null;
+            let couponId = null;
+            
+            try {
+                // First, try to retrieve as a promotion code (customer-facing codes like "Masky-Progenitor")
+                // List all active promotion codes and find a match (case-insensitive)
+                try {
+                    // Try to find promotion code by exact code match first (case-sensitive)
+                    let matchedPromoCode = null;
+                    
+                    // First, try exact match (case-sensitive) with expanded coupon
+                    try {
+                        const exactMatch = await stripe.promotionCodes.list({
+                            code: trimmedCoupon,
+                            limit: 1,
+                            active: true,
+                            expand: ['data.coupon']
+                        });
+                        
+                        if (exactMatch.data.length > 0) {
+                            matchedPromoCode = exactMatch.data[0];
+                            console.log(`Found exact match for promotion code: "${trimmedCoupon}"`);
+                        }
+                    } catch (exactError) {
+                        console.log(`Exact match failed, trying case-insensitive search: ${exactError.message}`);
+                    }
+                    
+                    // If no exact match, search all active codes (case-insensitive)
+                    if (!matchedPromoCode) {
+                        let allPromotionCodes = [];
+                        let hasMore = true;
+                        let startingAfter = null;
+                        
+                        while (hasMore) {
+                            const params = {
+                                limit: 100,
+                                active: true,
+                                expand: ['data.coupon']
+                            };
+                            if (startingAfter) {
+                                params.starting_after = startingAfter;
+                            }
+                            
+                            const promotionCodesResponse = await stripe.promotionCodes.list(params);
+                            allPromotionCodes = allPromotionCodes.concat(promotionCodesResponse.data);
+                            
+                            hasMore = promotionCodesResponse.has_more;
+                            if (hasMore && promotionCodesResponse.data.length > 0) {
+                                startingAfter = promotionCodesResponse.data[promotionCodesResponse.data.length - 1].id;
+                            } else {
+                                hasMore = false;
+                            }
+                        }
+                        
+                        console.log(`Found ${allPromotionCodes.length} active promotion codes. Searching for: "${trimmedCoupon}"`);
+                        
+                        // Find case-insensitive match by the customer-facing code
+                        matchedPromoCode = allPromotionCodes.find(
+                            pc => {
+                                if (!pc.code) return false;
+                                const match = pc.code.toLowerCase() === trimmedCoupon.toLowerCase();
+                                if (match) {
+                                    console.log(`Matched promotion code: "${pc.code}" (ID: ${pc.id})`);
+                                }
+                                return match;
+                            }
+                        );
+                        
+                        if (!matchedPromoCode) {
+                            console.log(`Promotion code "${trimmedCoupon}" not found. Available codes:`, 
+                                allPromotionCodes.map(pc => pc.code).filter(Boolean).slice(0, 10));
+                        }
+                    }
+                    
+                    if (matchedPromoCode) {
+                        promotionCodeId = matchedPromoCode.id;
+                        
+                        // Extract coupon ID from promotion object
+                        // Stripe promotion codes have the structure: promotion.coupon (string ID) or promotion.coupon (expanded object)
+                        if (matchedPromoCode.promotion && matchedPromoCode.promotion.coupon) {
+                            if (typeof matchedPromoCode.promotion.coupon === 'string') {
+                                couponId = matchedPromoCode.promotion.coupon;
+                            } else if (matchedPromoCode.promotion.coupon.id) {
+                                couponId = matchedPromoCode.promotion.coupon.id;
+                            }
+                        }
+                        
+                        // Fallback: try old structure (direct coupon property) for backwards compatibility
+                        if (!couponId && matchedPromoCode.coupon) {
+                            if (typeof matchedPromoCode.coupon === 'string') {
+                                couponId = matchedPromoCode.coupon;
+                            } else if (matchedPromoCode.coupon.id) {
+                                couponId = matchedPromoCode.coupon.id;
+                            }
+                        }
+                        
+                        if (!couponId) {
+                            throw new Error(`Unable to extract coupon ID from promotion code. Promotion structure: ${JSON.stringify(matchedPromoCode.promotion)}`);
+                        }
+                        
+                        console.log(`Found promotion code "${trimmedCoupon}" -> promo ID: ${promotionCodeId}, coupon ID: ${couponId}`);
+                    }
+                } catch (promoError) {
+                    // If promotion code lookup fails, try as coupon ID
+                    console.error(`Promotion code lookup failed, trying as coupon ID: ${trimmedCoupon}`, promoError.message, promoError.stack);
+                }
+                
+                // If not found as promotion code, try as coupon ID directly
+                if (!couponId) {
+                    try {
+                        const coupon = await stripe.coupons.retrieve(trimmedCoupon);
+                        if (coupon.valid) {
+                            couponId = coupon.id;
+                        } else {
+                            return {
+                                statusCode: 400,
+                                body: JSON.stringify({ 
+                                    error: 'Invalid coupon code',
+                                    message: 'This coupon code is no longer valid'
+                                })
+                            };
+                        }
+                    } catch (couponError) {
+                        // Coupon ID also not found
+                        throw new Error('COUPON_NOT_FOUND');
+                    }
+                }
+                
+                // Validate the coupon is still valid
+                const coupon = await stripe.coupons.retrieve(couponId);
+                if (!coupon.valid) {
+                    return {
+                        statusCode: 400,
+                        body: JSON.stringify({ 
+                            error: 'Invalid coupon code',
+                            message: 'This coupon code is no longer valid'
+                        })
+                    };
+                }
+                
+                // Add discount to checkout session
+                // If we found a promotion code, use promotion_code parameter
+                // Otherwise, use coupon parameter
+                if (promotionCodeId) {
+                    sessionParams.discounts = [{
+                        promotion_code: promotionCodeId
+                    }];
+                } else {
+                    sessionParams.discounts = [{
+                        coupon: couponId
+                    }];
+                }
+                
+            } catch (error) {
+                // Handle specific errors
+                if (error.message === 'COUPON_NOT_FOUND' || 
+                    (error.type === 'StripeInvalidRequestError' && error.code === 'resource_missing')) {
+                    return {
+                        statusCode: 400,
+                        body: JSON.stringify({ 
+                            error: 'Invalid coupon code',
+                            message: `Coupon code "${trimmedCoupon}" not found. Please check the code and try again.`
+                        })
+                    };
+                }
+                // Re-throw other errors to be caught by outer catch
+                throw error;
+            }
+        }
+
+        // Handle upgrades for existing subscribers
+        if (isUpgrade && existingSubscriptionId) {
+            try {
+                // Get the existing subscription
+                const existingSubscription = await stripe.subscriptions.retrieve(existingSubscriptionId);
+                
+                // If subscription is active, we'll let Stripe handle the upgrade through checkout
+                // The checkout session will create a new subscription, and we can handle the upgrade
+                // in the webhook when checkout.session.completed fires
+                // For now, we'll create the checkout session normally and Stripe will handle proration
+                
+                // Add subscription_data to indicate this is an upgrade
+                sessionParams.subscription_data = {
+                    metadata: {
+                        firebaseUID: userId,
+                        tier: normalizedTier,
+                        isUpgrade: 'true',
+                        previousSubscriptionId: existingSubscriptionId
+                    }
+                };
+            } catch (error) {
+                console.error('Error retrieving existing subscription:', error);
+                // Continue with normal checkout if subscription retrieval fails
+            }
+        }
+
+        // Create checkout session
+        const session = await stripe.checkout.sessions.create(sessionParams);
 
         return {
             statusCode: 200,
@@ -3802,9 +4132,29 @@ async function handleStripeWebhook(event) {
                     const customerId = session.customer;
                     const subscriptionId = session.subscription;
 
-                    // Get the subscription details from Stripe to get current_period_end
+                    // Get the subscription details from Stripe to get current_period_end and metadata
                     const { stripe } = await stripeInitializer.initialize();
                     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+                    
+                    // Check if this is an upgrade from subscription metadata
+                    const isUpgrade = subscription.metadata?.isUpgrade === 'true';
+                    const previousSubscriptionId = subscription.metadata?.previousSubscriptionId;
+
+                    // If this is an upgrade, cancel the previous subscription
+                    if (isUpgrade && previousSubscriptionId) {
+                        try {
+                            const previousSubscription = await stripe.subscriptions.retrieve(previousSubscriptionId);
+                            
+                            // Only cancel if it's still active
+                            if (previousSubscription.status === 'active' || previousSubscription.status === 'trialing') {
+                                await stripe.subscriptions.cancel(previousSubscriptionId);
+                                console.log(`Cancelled previous subscription ${previousSubscriptionId} for upgrade to ${tier}`);
+                            }
+                        } catch (error) {
+                            console.error('Error cancelling previous subscription:', error);
+                            // Continue even if cancellation fails
+                        }
+                    }
 
                     // Update user data
                     await db.collection('users').doc(userId).set({

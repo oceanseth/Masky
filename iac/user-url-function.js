@@ -29,16 +29,24 @@ function handler(event) {
     // Rewrite user URLs (/{username}) to /user.html
     // Pattern: /{username} where username doesn't contain slashes and isn't a file
     // Exclude known paths and files with extensions
+    // Extract pathname (remove query string)
+    var pathname = uri.split('?')[0];
+    
+    // Don't treat root path (/) as a username
+    if (pathname === '/') {
+        return request;
+    }
+    
     var excludedPaths = ['/api', '/assets', '/src', '/favicon.ico', '/index.html', '/membership.html', '/twitchevent.html', '/user.html'];
-    var hasExtension = /\.([a-zA-Z0-9]+)$/.test(uri.split('?')[0]);
+    var hasExtension = /\.([a-zA-Z0-9]+)$/.test(pathname);
     var isExcluded = excludedPaths.some(function(path) {
-        return uri === path || uri.startsWith(path + '/');
+        return pathname === path || pathname.startsWith(path + '/');
     });
     
     // Match pattern: /{username} (single path segment, no leading/trailing slashes except the first one)
     var userUrlPattern = /^\/([^\/]+)$/;
     
-    if (userUrlPattern.test(uri) && !isExcluded && !hasExtension) {
+    if (userUrlPattern.test(pathname) && !isExcluded && !hasExtension) {
         // Rewrite to /user.html while preserving query string
         var queryString = request.querystring ? '?' + request.querystring : '';
         request.uri = '/user.html' + queryString;

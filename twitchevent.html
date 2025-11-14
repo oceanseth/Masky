@@ -335,8 +335,9 @@
             ].join('::');
         }
 
-        function findVideoCacheEntry(eventType, projectId, type, videoId) {
-            const key = buildVideoEntryKey(eventType, projectId, type, videoId);
+        // eventKey is in format "platform:eventType"
+        function findVideoCacheEntry(eventKey, projectId, type, videoId) {
+            const key = buildVideoEntryKey(eventKey, projectId, type, videoId);
             return videoEntryIndex.get(key) || null;
         }
 
@@ -346,89 +347,99 @@
             eventVideoCache = new Map();
             videoEntryIndex = new Map();
 
-            if (!config || !config.providers || !config.providers.twitch) {
+            if (!config || !config.providers || Object.keys(config.providers).length === 0) {
                 cachedEventTypes = [];
                 return { eventTypes: [], projectCount: 0 };
             }
 
-            const provider = config.providers.twitch;
-            const projects = Array.isArray(provider.projects) ? provider.projects : [];
+            // Process projects from all platforms
+            const providers = config.providers || {};
             const eventTypes = new Set();
+            const platformEventTypes = new Map(); // Map to track platform for each event type
             let projectCount = 0;
 
-            projects.forEach(project => {
-                const rawEventType = project.eventType || 'channel.follow';
-                const eventType = normalizeEventType(rawEventType);
-                eventTypes.add(eventType);
+            // Iterate over all platforms
+            Object.entries(providers).forEach(([platform, provider]) => {
+                const projects = Array.isArray(provider.projects) ? provider.projects : [];
+                
+                projects.forEach(project => {
+                    const rawEventType = project.eventType || 'channel.follow';
+                    const eventType = normalizeEventType(rawEventType);
+                    const eventKey = `${platform}:${eventType}`;
+                    eventTypes.add(eventKey);
+                    platformEventTypes.set(eventKey, { platform, eventType, rawEventType });
 
-                const alertConfigSource =
-                    project.activeAlertConfig ||
-                    project.alertConfig?.[eventType] ||
-                    project.alertConfig?.[rawEventType] ||
-                    getDefaultAlertConfig(eventType);
+                    const alertConfigSource =
+                        project.activeAlertConfig ||
+                        project.alertConfig?.[eventType] ||
+                        project.alertConfig?.[rawEventType] ||
+                        getDefaultAlertConfig(eventType);
 
-                const alertConfig = JSON.parse(JSON.stringify(alertConfigSource || getDefaultAlertConfig(eventType)));
+                    const alertConfig = JSON.parse(JSON.stringify(alertConfigSource || getDefaultAlertConfig(eventType)));
 
-                if (eventType === 'channel.channel_points_custom_reward_redemption.add') {
-                    const minimumOverrideRaw = project.channelPointsMinimumCost;
-                    const minimumOverride = Number.isFinite(minimumOverrideRaw)
-                        ? minimumOverrideRaw
-                        : Number.parseInt(minimumOverrideRaw, 10);
-                    if (Number.isFinite(minimumOverride) && minimumOverride >= 0) {
-                        if (!alertConfig.conditions) {
-                            alertConfig.conditions = {};
+                    if (eventType === 'channel.channel_points_custom_reward_redemption.add') {
+                        const minimumOverrideRaw = project.channelPointsMinimumCost;
+                        const minimumOverride = Number.isFinite(minimumOverrideRaw)
+                            ? minimumOverrideRaw
+                            : Number.parseInt(minimumOverrideRaw, 10);
+                        if (Number.isFinite(minimumOverride) && minimumOverride >= 0) {
+                            if (!alertConfig.conditions) {
+                                alertConfig.conditions = {};
+                            }
+                            alertConfig.conditions.minimumCost = Math.floor(minimumOverride);
                         }
-                        alertConfig.conditions.minimumCost = Math.floor(minimumOverride);
+
+                        const rewardTitleOverrideRaw = typeof project.channelPointsRewardTitle === 'string'
+                            ? project.channelPointsRewardTitle.trim()
+                            : '';
+                        if (rewardTitleOverrideRaw && rewardTitleOverrideRaw.toLowerCase() !== 'any') {
+                            if (!alertConfig.conditions) {
+                                alertConfig.conditions = {};
+                            }
+                            alertConfig.conditions.rewardTitle = rewardTitleOverrideRaw;
+                        } else if (alertConfig.conditions && Object.prototype.hasOwnProperty.call(alertConfig.conditions, 'rewardTitle')) {
+                            delete alertConfig.conditions.rewardTitle;
+                        }
                     }
 
-                    const rewardTitleOverrideRaw = typeof project.channelPointsRewardTitle === 'string'
-                        ? project.channelPointsRewardTitle.trim()
-                        : '';
-                    if (rewardTitleOverrideRaw && rewardTitleOverrideRaw.toLowerCase() !== 'any') {
-                        if (!alertConfig.conditions) {
-                            alertConfig.conditions = {};
-                        }
-                        alertConfig.conditions.rewardTitle = rewardTitleOverrideRaw;
-                    } else if (alertConfig.conditions && Object.prototype.hasOwnProperty.call(alertConfig.conditions, 'rewardTitle')) {
-                        delete alertConfig.conditions.rewardTitle;
+                    if (!projectConfigs.has(eventKey)) {
+                        projectConfigs.set(eventKey, []);
                     }
-                }
-
-                if (!projectConfigs.has(eventType)) {
-                    projectConfigs.set(eventType, []);
-                }
-                projectConfigs.get(eventType).push({
-                    projectId: project.projectId,
-                    config: alertConfig,
-                    rawEventType
-                });
-
-                if (!eventVideoCache.has(eventType)) {
-                    eventVideoCache.set(eventType, []);
-                }
-
-                const sources = Array.isArray(project.videoSources) ? project.videoSources : [];
-                if (!sources.length) {
-                    console.warn(`Project ${project.projectId} (${eventType}) has no video sources.`);
-                }
-
-                sources.forEach(source => {
-                    const entry = {
+                    projectConfigs.get(eventKey).push({
                         projectId: project.projectId,
-                        type: source.type || 'heygen',
-                        videoId: source.videoId || null,
-                        currentUrl: source.url || null,
-                        status: source.status || null,
-                        lastFetched: Date.now(),
-                        expiresAt: parseExpiresAt(source.expiresAt || source.expireAt || source.expiredAt || null),
-                        muted: Boolean(source.muted),
-                        config: alertConfig
-                    };
-                    eventVideoCache.get(eventType).push(entry);
-                    videoEntryIndex.set(buildVideoEntryKey(eventType, entry.projectId, entry.type, entry.videoId), entry);
-                });
+                        config: alertConfig,
+                        rawEventType,
+                        platform: platform
+                    });
 
-                projectCount += 1;
+                    if (!eventVideoCache.has(eventKey)) {
+                        eventVideoCache.set(eventKey, []);
+                    }
+
+                    const sources = Array.isArray(project.videoSources) ? project.videoSources : [];
+                    if (!sources.length) {
+                        console.warn(`Project ${project.projectId} (${platform}:${eventType}) has no video sources.`);
+                    }
+
+                    sources.forEach(source => {
+                        const entry = {
+                            projectId: project.projectId,
+                            type: source.type || 'heygen',
+                            videoId: source.videoId || null,
+                            currentUrl: source.url || null,
+                            status: source.status || null,
+                            lastFetched: Date.now(),
+                            expiresAt: parseExpiresAt(source.expiresAt || source.expireAt || source.expiredAt || null),
+                            muted: Boolean(source.muted),
+                            config: alertConfig,
+                            platform: platform
+                        };
+                        eventVideoCache.get(eventKey).push(entry);
+                        videoEntryIndex.set(buildVideoEntryKey(eventKey, entry.projectId, entry.type, entry.videoId), entry);
+                    });
+
+                    projectCount += 1;
+                });
             });
 
             cachedEventTypes = Array.from(eventTypes);
@@ -517,12 +528,12 @@
         }
 
         function ensureEventListeners(eventTypes = []) {
+            // eventTypes are now in format "platform:eventType"
             eventTypes
-                .map(normalizeEventType)
                 .filter(Boolean)
-                .forEach(eventType => {
-                    if (!activeEventListenerKeys.has(eventType)) {
-                        setupEventListener(eventType);
+                .forEach(eventTypeKey => {
+                    if (!activeEventListenerKeys.has(eventTypeKey)) {
+                        setupEventListener(eventTypeKey);
                     }
                 });
         }
@@ -548,10 +559,10 @@
             return { eventTypes };
         }
 
-        async function resolveVideoUrl(cacheEntry, eventType, options = {}) {
+        // eventKey is in format "platform:eventType"
+        async function resolveVideoUrl(cacheEntry, eventKey, options = {}) {
             if (!cacheEntry) return null;
             const allowRefresh = options?.allowRefresh !== false;
-            const normalizedEventType = normalizeEventType(eventType);
 
             if (cacheEntry.type === 'uploaded') {
                 return cacheEntry.currentUrl || cacheEntry.videoUrl || null;
@@ -571,7 +582,9 @@
 
             await refreshUserProjects({ force: true, preload: false });
 
-            const updated = findVideoCacheEntry(normalizedEventType, cacheEntry.projectId, cacheEntry.type, cacheEntry.videoId);
+            // Use eventKey from cacheEntry if available, otherwise use provided eventKey
+            const lookupKey = cacheEntry.platform ? `${cacheEntry.platform}:${cacheEntry.eventType || eventKey.split(':')[1]}` : eventKey;
+            const updated = findVideoCacheEntry(lookupKey, cacheEntry.projectId, cacheEntry.type, cacheEntry.videoId);
             if (updated) {
                 Object.assign(cacheEntry, updated);
             }
@@ -582,13 +595,13 @@
         // Preload all videos into detached video elements to warm cache
         async function preloadAllEventVideos() {
             preloadedVideoElements = new Map();
-            for (const [eventType, items] of eventVideoCache.entries()) {
-                const normalizedEventType = normalizeEventType(eventType);
-                console.groupCollapsed(`Preloading videos for ${normalizedEventType}`);
+            for (const [eventKey, items] of eventVideoCache.entries()) {
+                // eventKey is in format "platform:eventType"
+                console.groupCollapsed(`Preloading videos for ${eventKey}`);
                 const list = [];
                 await Promise.all(items.map(async (item) => {
                     try {
-                        const videoUrl = await resolveVideoUrl(item, normalizedEventType, { allowRefresh: false });
+                        const videoUrl = await resolveVideoUrl(item, eventKey, { allowRefresh: false });
                         if (!videoUrl) {
                             console.warn('No video URL available for preloading', {
                                 projectId: item.projectId,
@@ -608,10 +621,10 @@
                         console.warn('Failed to preload video for project', item.projectId, e);
                     }
                 }));
-                preloadedVideoElements.set(normalizedEventType, list);
+                preloadedVideoElements.set(eventKey, list);
                 console.groupEnd();
             }
-            console.log('Preloaded HeyGen videos by event type:',
+            console.log('Preloaded HeyGen videos by event key:',
                 Object.fromEntries(Array.from(preloadedVideoElements.entries()).map(([key, list]) => [key, list.length])));
         }
 
@@ -701,15 +714,40 @@
         }
 
         // Set up real-time listener for a specific event type key
+        // eventTypeKey format: "platform:eventType" (e.g., "twitch:channel.follow" or "masky:donation")
         function setupListenerForType(eventTypeKey) {
-            const eventsRef = collection(db, 'users', currentUserId, 'events', `twitch_${eventTypeKey}`, 'alerts');
+            // Parse platform and eventType from eventTypeKey
+            const [platform, eventType] = eventTypeKey.includes(':') 
+                ? eventTypeKey.split(':', 2) 
+                : ['twitch', eventTypeKey]; // Fallback to twitch for backward compatibility
+            
+            // Determine the Firestore path based on platform
+            let eventsCollectionPath;
+            if (platform === 'masky' && eventType === 'donation') {
+                // For Masky donations, use donation directly (no platform prefix)
+                eventsCollectionPath = `users/${currentUserId}/events/donation/alerts`;
+            } else if (platform === 'twitch') {
+                // For Twitch events, use twitch_ prefix
+                eventsCollectionPath = `users/${currentUserId}/events/twitch_${eventType}/alerts`;
+            } else {
+                // For other platforms, use platform_eventType format
+                eventsCollectionPath = `users/${currentUserId}/events/${platform}_${eventType}/alerts`;
+            }
+            
+            // Parse the path into collection references
+            const pathParts = eventsCollectionPath.split('/');
+            let eventsRef = collection(db, pathParts[0], pathParts[1]);
+            for (let i = 2; i < pathParts.length - 1; i += 2) {
+                eventsRef = collection(eventsRef, pathParts[i], pathParts[i + 1]);
+            }
+            const alertsRef = collection(eventsRef, pathParts[pathParts.length - 2], pathParts[pathParts.length - 1]);
             
             // Listen to all new documents - don't filter by timestamp to avoid missing events
             // that arrive just before the listener starts. onSnapshot with docChanges() 
             // will only fire for new documents added after the listener is established.
-            const q = query(eventsRef);
+            const q = query(alertsRef);
             
-            console.log(`Setting up listener for event type: ${eventTypeKey} at path: users/${currentUserId}/events/twitch_${eventTypeKey}/alerts`);
+            console.log(`Setting up listener for event type: ${eventTypeKey} at path: ${eventsCollectionPath}`);
             
             if (!processedEventDocIds.has(eventTypeKey)) {
                 processedEventDocIds.set(eventTypeKey, new Set());
@@ -734,8 +772,20 @@
 
                         processedIds.add(docId);
 
-                        const incomingEventType = alertData?.eventType;
-                        alertData.eventType = normalizeEventType(incomingEventType || eventTypeKey);
+                        // For donation events, type is stored as 'donation', not 'eventType'
+                        // For Twitch events, eventType is stored in eventType field
+                        const incomingEventType = alertData?.eventType || alertData?.type || eventType;
+                        // Normalize event type but preserve platform context
+                        alertData.eventType = normalizeEventType(incomingEventType);
+                        // Store the full event key for matching with projects
+                        alertData.eventKey = eventTypeKey;
+                        alertData.platform = platform;
+                        
+                        // For donation events, ensure type is set correctly
+                        if (platform === 'masky' && eventType === 'donation') {
+                            alertData.type = 'donation';
+                            alertData.eventType = 'donation';
+                        }
 
                         console.log(`New alert received for ${eventTypeKey}:`, alertData);
                         // Try to play Heygen video for this event; fallback to text alert
@@ -754,25 +804,42 @@
             unsubscribeEvents.push(unsubscribe);
         }
 
-        function setupEventListener(eventType) {
-            const variants = getEventTypeVariants(eventType);
-            variants.forEach(variant => {
-                if (activeEventListenerKeys.has(variant)) {
+        function setupEventListener(eventTypeKey) {
+            // eventTypeKey is now in format "platform:eventType"
+            // For Twitch events, also handle variants (e.g., channel.channel_points_custom_reward_redemption)
+            if (eventTypeKey.startsWith('twitch:')) {
+                const eventType = eventTypeKey.split(':', 2)[1];
+                const variants = getEventTypeVariants(eventType);
+                variants.forEach(variant => {
+                    const variantKey = `twitch:${variant}`;
+                    if (activeEventListenerKeys.has(variantKey)) {
+                        return;
+                    }
+                    activeEventListenerKeys.add(variantKey);
+                    setupListenerForType(variantKey);
+                });
+            } else {
+                // For non-Twitch events (like masky:donation), just set up listener directly
+                if (activeEventListenerKeys.has(eventTypeKey)) {
                     return;
                 }
-                activeEventListenerKeys.add(variant);
-                setupListenerForType(variant);
-            });
+                activeEventListenerKeys.add(eventTypeKey);
+                setupListenerForType(eventTypeKey);
+            }
         }
 
         // Play a random preloaded Heygen video for the given event type
-        async function playHeygenVideoForEvent(eventType, eventData = null) {
-            const normalizedEventType = normalizeEventType(eventType);
-            const items = eventVideoCache.get(normalizedEventType) || [];
+        // eventKey is in format "platform:eventType" (e.g., "twitch:channel.follow" or "masky:donation")
+        async function playHeygenVideoForEvent(eventKey, eventData = null) {
+            const items = eventVideoCache.get(eventKey) || [];
             if (!items.length) {
-                console.log(`No videos cached for event type: ${normalizedEventType}`);
+                console.log(`No videos cached for event key: ${eventKey}`);
                 return false;
             }
+
+            // Extract eventType for normalization and config lookup
+            const [, eventType] = eventKey.includes(':') ? eventKey.split(':', 2) : ['twitch', eventKey];
+            const normalizedEventType = normalizeEventType(eventType);
 
             const eligibleItems = items.filter(item => {
                 const cfg = item?.config || getDefaultAlertConfig(normalizedEventType);
@@ -782,16 +849,16 @@
             });
 
             if (!eligibleItems.length) {
-                console.log(`No eligible videos (after filtering by config/conditions) for event type: ${normalizedEventType}`);
+                console.log(`No eligible videos (after filtering by config/conditions) for event key: ${eventKey}`);
                 return false;
             }
 
             const randomIndex = Math.floor(Math.random() * eligibleItems.length);
             const selected = eligibleItems[randomIndex];
             const selectedConfig = selected?.config || getDefaultAlertConfig(normalizedEventType);
-            const videoUrl = await resolveVideoUrl(selected, normalizedEventType);
+            const videoUrl = await resolveVideoUrl(selected, eventKey);
             if (!videoUrl) {
-                console.warn(`No playable video URL available for event type: ${normalizedEventType}`, {
+                console.warn(`No playable video URL available for event key: ${eventKey}`, {
                     projectId: selected.projectId,
                     videoId: selected.videoId,
                     lastStatus: selected.lastStatus
@@ -800,7 +867,11 @@
             }
             const shouldMute = Boolean(selected.muted);
             
-            console.log(`🎲 Random video selection for ${normalizedEventType}:`);
+            // Check for preloaded video element
+            const preloadedList = preloadedVideoElements?.get(eventKey) || [];
+            const preloadedEntry = preloadedList.find(x => x.url === videoUrl && x.projectId === selected.projectId);
+            
+            console.log(`🎲 Random video selection for ${eventKey}:`);
             console.log(`  - Available videos: ${items.length}`);
             console.log(`  - Eligible videos: ${eligibleItems.length}`);
             console.log(`  - Random index: ${randomIndex}`);
@@ -809,6 +880,7 @@
             console.log(`  - Video ID: ${selected.videoId || 'N/A'}`);
             console.log(`  - Video URL: ${videoUrl}`);
             console.log(`  - Muted: ${shouldMute}`);
+            console.log(`  - Preloaded: ${preloadedEntry ? 'Yes' : 'No'}`);
 
             const overlay = document.getElementById('videoOverlay');
             overlay.innerHTML = '';
@@ -822,8 +894,7 @@
             videoContainer.style.maxWidth = '90vw';
             videoContainer.style.maxHeight = '90vh';
 
-            const preloadedList = preloadedVideoElements.get(normalizedEventType) || [];
-            const preloadedEntry = preloadedList.find(x => x.url === videoUrl);
+            // Create a new video element (browser cache will handle preloaded videos)
             const video = document.createElement('video');
             video.src = videoUrl;
             video.autoplay = true;
@@ -837,19 +908,25 @@
             video.style.pointerEvents = 'none';
 
             let messageElement = null;
-            if (selectedConfig.message && eventData) {
+            if (selectedConfig.message) {
                 let message = selectedConfig.message;
-                message = message.replace('{username}', eventData.user_name || eventData.from_broadcaster_user_name || 'Someone');
+                // For donation events, data is on alertData directly, not in eventData
+                const dataSource = normalizedEventType === 'donation' ? (alertData || {}) : (eventData || {});
+                message = message.replace('{username}', dataSource.user_name || dataSource.donorName || dataSource.from_broadcaster_user_name || 'Someone');
 
                 if (normalizedEventType === 'channel.cheer') {
-                    message = message.replace('{bits}', eventData.bits || '0');
+                    message = message.replace('{bits}', dataSource.bits || '0');
                 } else if (normalizedEventType === 'channel.raid') {
-                    message = message.replace('{viewers}', eventData.viewers || '0');
+                    message = message.replace('{viewers}', dataSource.viewers || '0');
                 } else if (isChannelPointsEvent(normalizedEventType)) {
-                    message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
-                    message = message.replace('{cost}', eventData.reward?.cost || '0');
+                    message = message.replace('{reward}', dataSource.reward?.title || 'Custom Reward');
+                    message = message.replace('{cost}', dataSource.reward?.cost || '0');
                 } else if (normalizedEventType === 'channel.chat_command') {
-                    message = message.replace('{command}', eventData.command || 'command');
+                    message = message.replace('{command}', dataSource.command || 'command');
+                } else if (normalizedEventType === 'donation') {
+                    // Handle donation message placeholders
+                    message = message.replace('{amount}', alertData.amount ? `$${alertData.amount.toFixed(2)}` : '$0.00');
+                    message = message.replace('{donor}', alertData.donorName || 'Anonymous');
                 }
 
                 messageElement = document.createElement('div');
@@ -897,8 +974,10 @@
 
             overlay.appendChild(videoContainer);
 
-            if (preloadedEntry?.el?.readyState >= 2) {
-                // already preloaded
+            // Note: Browser cache will handle preloaded videos automatically
+            // The preloadedEntry is just for logging purposes
+            if (preloadedEntry) {
+                console.log('Video is preloaded and should load quickly from cache');
             }
             
             const cleanupVideo = () => {
@@ -922,16 +1001,29 @@
         }
 
         function playVideoOrShowAlert(alertData) {
+            // Use eventKey if available (format: "platform:eventType"), otherwise fallback to eventType
+            const eventKey = alertData?.eventKey || (alertData?.platform && alertData?.eventType 
+                ? `${alertData.platform}:${alertData.eventType}` 
+                : null);
             const eventType = alertData?.eventType;
-            const eventData = alertData?.eventData || null;
-            if (!eventType) {
-                console.warn('playVideoOrShowAlert called without a valid eventType', alertData);
+            // For donation events, data is on alertData directly, not in eventData
+            // For Twitch events, data is in eventData
+            const eventData = alertData?.eventData || (alertData?.type === 'donation' ? alertData : null);
+            
+            // If no eventKey or eventType, use default
+            if (!eventKey && !eventType) {
+                console.warn('playVideoOrShowAlert called without a valid eventType or eventKey', alertData);
                 showAlert(alertData);
                 return Promise.resolve(false);
             }
+            
+            // Use eventKey if available, otherwise construct from platform and eventType
+            const finalEventKey = eventKey || (alertData?.platform ? `${alertData.platform}:${eventType}` : `twitch:${eventType}`);
             const normalizedEventType = normalizeEventType(eventType);
             alertData.eventType = normalizedEventType;
-            return playHeygenVideoForEvent(normalizedEventType, eventData)
+            alertData.eventKey = finalEventKey;
+            
+            return playHeygenVideoForEvent(finalEventKey, eventData, alertData)
                 .then(played => {
                     if (!played) {
                         showAlert(alertData);
@@ -939,7 +1031,7 @@
                     return played;
                 })
                 .catch(err => {
-                    console.error(`Failed to play HeyGen video for ${normalizedEventType}:`, err);
+                    console.error(`Failed to play HeyGen video for ${finalEventKey}:`, err);
                     showAlert(alertData);
                     return false;
                 });
@@ -1029,20 +1121,26 @@
 
         // Display alert on screen
         function showAlert(alertData) {
-            const { eventType, eventData } = alertData;
+            const { eventType, eventData, eventKey } = alertData;
             const normalizedEventType = normalizeEventType(eventType);
             
-            const configEntries = projectConfigs.get(normalizedEventType) || projectConfigs.get(eventType) || [];
+            // For donation events, data is on alertData directly, not in eventData
+            // For Twitch events, data is in eventData
+            const dataSource = normalizedEventType === 'donation' ? alertData : (eventData || {});
+            
+            // Use eventKey if available, otherwise try to match by eventType
+            const finalEventKey = eventKey || (alertData?.platform ? `${alertData.platform}:${eventType}` : `twitch:${eventType}`);
+            const configEntries = projectConfigs.get(finalEventKey) || projectConfigs.get(normalizedEventType) || projectConfigs.get(eventType) || [];
             const eligibleConfigs = configEntries
                 .map(entry => entry?.config || entry)
-                .filter(cfg => cfg && cfg.enabled && meetsConditions(normalizedEventType, eventData, cfg));
+                .filter(cfg => cfg && cfg.enabled && meetsConditions(normalizedEventType, dataSource, cfg));
 
             let config;
             if (eligibleConfigs.length) {
                 config = eligibleConfigs[Math.floor(Math.random() * eligibleConfigs.length)];
             } else {
                 const fallbackConfig = getDefaultAlertConfig(normalizedEventType);
-                if (!fallbackConfig.enabled || !meetsConditions(normalizedEventType, eventData, fallbackConfig)) {
+                if (!fallbackConfig.enabled || !meetsConditions(normalizedEventType, dataSource, fallbackConfig)) {
                     console.log(`Alert disabled or conditions not met for event type: ${normalizedEventType}`);
                     return;
                 }
@@ -1053,18 +1151,22 @@
             let message = config.message;
             
             // Replace placeholders with actual data
-            message = message.replace('{username}', eventData.user_name || eventData.from_broadcaster_user_name || 'Someone');
+            message = message.replace('{username}', dataSource.user_name || dataSource.donorName || dataSource.from_broadcaster_user_name || 'Someone');
             
             // Handle event-specific placeholders
             if (normalizedEventType === 'channel.cheer') {
-                message = message.replace('{bits}', eventData.bits || '0');
+                message = message.replace('{bits}', dataSource.bits || '0');
             } else if (normalizedEventType === 'channel.raid') {
-                message = message.replace('{viewers}', eventData.viewers || '0');
+                message = message.replace('{viewers}', dataSource.viewers || '0');
             } else if (isChannelPointsEvent(normalizedEventType)) {
-                message = message.replace('{reward}', eventData.reward?.title || 'Custom Reward');
-                message = message.replace('{cost}', eventData.reward?.cost || '0');
+                message = message.replace('{reward}', dataSource.reward?.title || 'Custom Reward');
+                message = message.replace('{cost}', dataSource.reward?.cost || '0');
             } else if (normalizedEventType === 'channel.chat_command') {
-                message = message.replace('{command}', eventData.command || 'command');
+                message = message.replace('{command}', dataSource.command || 'command');
+            } else if (normalizedEventType === 'donation') {
+                // Handle donation message placeholders
+                message = message.replace('{amount}', alertData.amount ? `$${alertData.amount.toFixed(2)}` : '$0.00');
+                message = message.replace('{donor}', alertData.donorName || 'Anonymous');
             }
 
             console.log(`Showing alert: ${message} (${normalizedEventType})`);

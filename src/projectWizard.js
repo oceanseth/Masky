@@ -266,9 +266,10 @@ class ProjectWizard {
                                 </label>
                             </div>
                             <div class="form-group">
-                                <label for="platformSelect">Select your streaming platform:</label>
+                                <label for="platformSelect">Select Platform to monitor events from:</label>
                                 <select id="platformSelect" class="form-select">
                                     <option value="twitch" selected>Twitch</option>
+                                    <option value="masky">Masky</option>
                                     <option value="youtube" disabled>YouTube (Coming Soon)</option>
                                     <option value="facebook" disabled>Facebook (Coming Soon)</option>
                                     <option value="instagram" disabled>Instagram (Coming Soon)</option>
@@ -502,10 +503,16 @@ class ProjectWizard {
     setDefaultValues() {
         // Set default platform to Twitch
         const platformSelect = document.getElementById('platformSelect');
+        const currentPlatform = this.projectData.platform || (platformSelect?.value || 'twitch');
         if (platformSelect && !platformSelect.value) {
-            platformSelect.value = 'twitch';
-            this.projectData.platform = 'twitch';
+            platformSelect.value = currentPlatform;
+            this.projectData.platform = currentPlatform;
+        } else if (platformSelect) {
+            this.projectData.platform = platformSelect.value;
         }
+
+        // Update event type options based on platform
+        this.updateEventTypeOptions(this.projectData.platform);
 
         // Set default project type
         const projectType = this.projectData.projectType || 'generate';
@@ -527,20 +534,22 @@ class ProjectWizard {
             muteCheckbox.checked = Boolean(this.projectData.isMuted) && isUploadType;
         }
         
-        // Set default event type
+        // Set default event type (already handled by updateEventTypeOptions, but ensure it's set)
         const eventTypeSelect = document.getElementById('eventType');
-        const normalizedEventType = this.normalizeEventType(this.projectData.eventType || eventTypeSelect?.value || 'channel.follow');
-        this.projectData.eventType = normalizedEventType;
-        if (eventTypeSelect) {
-            eventTypeSelect.value = normalizedEventType;
+        if (eventTypeSelect && !this.projectData.eventType) {
+            this.projectData.eventType = eventTypeSelect.value;
         }
-        this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
-        this.updateChannelPointsMinimumUI();
-        this.updateChannelPointsRewardUI();
-        if (this.isChannelPointsEventType(this.projectData.eventType)) {
-            this.loadChannelPointsRewards().catch(() => {
-                // Errors handled in loadChannelPointsRewards
-            });
+        
+        // For non-masky platforms, handle channel points
+        if (this.projectData.platform !== 'masky') {
+            this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
+            this.updateChannelPointsMinimumUI();
+            this.updateChannelPointsRewardUI();
+            if (this.isChannelPointsEventType(this.projectData.eventType)) {
+                this.loadChannelPointsRewards().catch(() => {
+                    // Errors handled in loadChannelPointsRewards
+                });
+            }
         }
         
         // Set default project name if empty
@@ -567,7 +576,9 @@ class ProjectWizard {
         const platformSelect = document.getElementById('platformSelect');
         if (platformSelect) {
             platformSelect.addEventListener('change', (e) => {
+                const previousPlatform = this.projectData.platform;
                 this.projectData.platform = e.target.value;
+                this.handlePlatformChange(previousPlatform, e.target.value);
                 this.validateStep1();
             });
         }
@@ -742,13 +753,33 @@ class ProjectWizard {
         const commandTriggerInput = document.getElementById('commandTriggerInput');
         const projectTypeInputs = document.querySelectorAll('input[name="projectType"]');
 
-        if (platformSelect) platformSelect.value = this.projectData.platform || '';
-        if (projectName) projectName.value = this.projectData.projectName || '';
-        const normalizedEventType = this.normalizeEventType(this.projectData.eventType || 'channel.follow');
-        this.projectData.eventType = normalizedEventType;
-        if (eventType) {
-            eventType.value = normalizedEventType;
+        const platform = this.projectData.platform || 'twitch';
+        if (platformSelect) {
+            platformSelect.value = platform;
+            this.projectData.platform = platform;
         }
+        
+        // Update event type options based on platform first
+        this.updateEventTypeOptions(platform);
+        
+        if (projectName) projectName.value = this.projectData.projectName || '';
+        
+        // Handle event type based on platform
+        if (platform === 'masky') {
+            // For masky, event type should be donation
+            this.projectData.eventType = 'donation';
+            if (eventType) {
+                eventType.value = 'donation';
+            }
+        } else {
+            // For twitch, normalize event type
+            const normalizedEventType = this.normalizeEventType(this.projectData.eventType || 'channel.follow');
+            this.projectData.eventType = normalizedEventType;
+            if (eventType) {
+                eventType.value = normalizedEventType;
+            }
+        }
+        
         if (videoUrl) videoUrl.value = this.projectData.videoUrl || '';
         if (commandTriggerInput) commandTriggerInput.value = this.projectData.commandTrigger || '';
         const projectType = this.projectData.projectType || 'generate';
@@ -769,9 +800,6 @@ class ProjectWizard {
         if (muteCheckbox) {
             muteCheckbox.checked = showMute ? this.projectData.isMuted : false;
         }
-        
-        // Ensure projectData has the correct values
-        this.projectData.eventType = normalizedEventType;
 
         // Ensure command trigger group visibility matches current event type
         const cmdGroup = document.getElementById('commandTriggerGroup');
@@ -779,16 +807,19 @@ class ProjectWizard {
             cmdGroup.style.display = (this.projectData.eventType === 'channel.chat_command') ? 'block' : 'none';
         }
 
-        this.projectData.channelPointsMinimumCost = this.extractInitialChannelPointsMinimumCost(this.projectData);
-        this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
-        this.updateChannelPointsMinimumUI();
-        const initialRewardTitle = this.extractInitialChannelPointsRewardTitle(this.projectData);
-        this.setChannelPointsRewardTitle(initialRewardTitle, false);
-        this.updateChannelPointsRewardUI();
-        if (this.isChannelPointsEventType(this.projectData.eventType)) {
-            this.loadChannelPointsRewards().catch(() => {
-                // Errors handled in loader
-            });
+        // Only handle channel points for non-masky platforms
+        if (platform !== 'masky') {
+            this.projectData.channelPointsMinimumCost = this.extractInitialChannelPointsMinimumCost(this.projectData);
+            this.setChannelPointsMinimumCost(this.projectData.channelPointsMinimumCost, false);
+            this.updateChannelPointsMinimumUI();
+            const initialRewardTitle = this.extractInitialChannelPointsRewardTitle(this.projectData);
+            this.setChannelPointsRewardTitle(initialRewardTitle, false);
+            this.updateChannelPointsRewardUI();
+            if (this.isChannelPointsEventType(this.projectData.eventType)) {
+                this.loadChannelPointsRewards().catch(() => {
+                    // Errors handled in loader
+                });
+            }
         }
         
         // Reset dirty flags when loading existing data
@@ -976,12 +1007,18 @@ class ProjectWizard {
             
             if (this.currentStep < this.getMaxStep()) {
                 this.currentStep++;
+                
+                // Skip step 4 (Twitch connection) for masky platform
+                if (this.currentStep === 4 && this.projectData.platform === 'masky') {
+                    this.currentStep = 5; // Skip directly to step 5 (content generation)
+                }
+                
                 this.showStep(this.currentStep);
                 this.updateNavigationButtons();
                 
                 // Auto-execute step actions for generate flow only
                 if (this.projectData.projectType !== 'upload') {
-                    if (this.currentStep === 4) {
+                    if (this.currentStep === 4 && this.projectData.platform !== 'masky') {
                         this.connectToTwitch();
                     } else if (this.currentStep === 5) {
                         this.generateContent();
@@ -994,6 +1031,12 @@ class ProjectWizard {
     previousStep() {
         if (this.currentStep > 1) {
             this.currentStep--;
+            
+            // Skip step 4 (Twitch connection) for masky platform when going backwards
+            if (this.currentStep === 4 && this.projectData.platform === 'masky') {
+                this.currentStep = 3; // Skip directly to step 3 (avatar upload)
+            }
+            
             this.showStep(this.currentStep);
             this.updateNavigationButtons();
         }
@@ -3193,6 +3236,11 @@ class ProjectWizard {
      * Get default project name based on event type
      */
     getDefaultProjectName(eventType) {
+        // Special handling for Masky donation events
+        if (eventType === 'donation') {
+            return 'Donation Reaction';
+        }
+        
         const eventNames = {
             'channel.follow': 'Follow',
             'channel.subscribe': 'Subscribe',
@@ -3206,6 +3254,98 @@ class ProjectWizard {
         
         const eventName = eventNames[eventType] || eventType.replace('channel.', '').replace('_', ' ');
         return `My ${eventName} Alert`;
+    }
+
+    /**
+     * Update event type options based on platform
+     */
+    updateEventTypeOptions(platform) {
+        const eventTypeSelect = document.getElementById('eventType');
+        if (!eventTypeSelect) return;
+
+        // Clear existing options
+        eventTypeSelect.innerHTML = '';
+
+        if (platform === 'masky') {
+            // For Masky, only show Donation event type
+            const option = document.createElement('option');
+            option.value = 'donation';
+            option.textContent = 'Donation';
+            option.selected = true;
+            eventTypeSelect.appendChild(option);
+            
+            // Update project data
+            this.projectData.eventType = 'donation';
+            
+            // Update project name to default
+            const projectNameInput = document.getElementById('projectName');
+            if (projectNameInput) {
+                const defaultName = this.getDefaultProjectName('donation');
+                projectNameInput.value = defaultName;
+                this.projectData.projectName = defaultName;
+            }
+        } else {
+            // For Twitch and other platforms, show all Twitch event types
+            const twitchEventTypes = [
+                { value: 'channel.follow', label: 'New Follower' },
+                { value: 'channel.subscribe', label: 'New Subscriber' },
+                { value: 'channel.cheer', label: 'New Cheer' },
+                { value: 'channel.raid', label: 'New Raid' },
+                { value: 'channel.channel_points_custom_reward_redemption.add', label: 'Channel Points Redeem' },
+                { value: 'channel.chat_command', label: 'Chat Command' }
+            ];
+
+            twitchEventTypes.forEach(eventType => {
+                const option = document.createElement('option');
+                option.value = eventType.value;
+                option.textContent = eventType.label;
+                if (eventType.value === 'channel.follow' && !this.projectData.eventType) {
+                    option.selected = true;
+                } else if (eventType.value === this.projectData.eventType) {
+                    option.selected = true;
+                }
+                eventTypeSelect.appendChild(option);
+            });
+
+            // If current event type is donation (from masky), reset to default
+            if (this.projectData.eventType === 'donation') {
+                this.projectData.eventType = 'channel.follow';
+                eventTypeSelect.value = 'channel.follow';
+                
+                // Update project name to default
+                const projectNameInput = document.getElementById('projectName');
+                if (projectNameInput) {
+                    const defaultName = this.getDefaultProjectName('channel.follow');
+                    projectNameInput.value = defaultName;
+                    this.projectData.projectName = defaultName;
+                }
+            }
+        }
+
+        // Hide/show channel points options
+        this.updateChannelPointsMinimumUI();
+        this.updateChannelPointsRewardUI();
+        
+        // Hide/show command trigger field
+        const cmdGroup = document.getElementById('commandTriggerGroup');
+        if (cmdGroup) {
+            const isCommandType = this.projectData.eventType === 'channel.chat_command';
+            cmdGroup.style.display = isCommandType ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Handle platform change
+     */
+    handlePlatformChange(previousPlatform, newPlatform) {
+        // Update event type options based on new platform
+        this.updateEventTypeOptions(newPlatform);
+        
+        // If switching to masky, ensure event type is donation
+        if (newPlatform === 'masky') {
+            this.projectData.platform = 'masky';
+            this.projectData.eventType = 'donation';
+        }
     }
 
     /**
@@ -3247,8 +3387,11 @@ class ProjectWizard {
                 await this.saveProjectToFirestore();
             }
 
-            await this.ensureCurrentEventSubscription();
-            await this.refreshSubscriptionStatus();
+            // Only create Twitch subscription for Twitch platform projects
+            if (this.projectData.platform === 'twitch') {
+                await this.ensureCurrentEventSubscription();
+                await this.refreshSubscriptionStatus();
+            }
 
             // Check if we already have a completed video
             if (this.projectData.videoUrl && this.projectData.heygenVideoId) {
@@ -3575,7 +3718,7 @@ class ProjectWizard {
             videoStoragePath: isUploadProject ? (this.projectData.videoStoragePath || null) : null,
             isMuted: isUploadProject ? Boolean(this.projectData.isMuted) : false,
             alertConfig: this.projectData.alertConfig || {},
-            twitchSubscription: true, // Set to true since we connected in step 4
+            twitchSubscription: this.projectData.platform === 'masky' ? false : true, // Only true for Twitch projects (connected in step 4)
             isActive: true,
             createdAt: new Date(),
             updatedAt: new Date()
@@ -3806,7 +3949,7 @@ class ProjectWizard {
                             ? this.projectData.channelPointsRewardTitle
                             : null)
                         : null,
-                    twitchSubscription: true, // Always true since we connected in step 4
+                    twitchSubscription: this.projectData.platform === 'masky' ? false : true, // Only true for Twitch projects
                     updatedAt: new Date()
                 };
 
@@ -3826,8 +3969,11 @@ class ProjectWizard {
                 await this.saveProjectToFirestore();
             }
 
-            await this.ensureCurrentEventSubscription();
-            await this.refreshSubscriptionStatus();
+            // Only create Twitch subscription for Twitch platform projects
+            if (this.projectData.platform === 'twitch') {
+                await this.ensureCurrentEventSubscription();
+                await this.refreshSubscriptionStatus();
+            }
 
             // Update the project URL with the user's UID (not project ID)
             const projectUrl = document.getElementById('projectUrl');

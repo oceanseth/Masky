@@ -57,7 +57,7 @@ get_ssm_param() {
     local name=$1
     local display_name=$2
     
-    echo -n "  Fetching $display_name..."
+    echo -n "  Fetching $display_name..." >&2
     
     local value=$(aws ssm get-parameter \
         --name "$name" \
@@ -67,10 +67,10 @@ get_ssm_param() {
         --output text 2>/dev/null)
     
     if [ $? -eq 0 ] && [ -n "$value" ]; then
-        echo -e " ${GREEN}✓${NC}"
+        echo -e " ${GREEN}✓${NC}" >&2
         echo "$value"
     else
-        echo -e " ${RED}✗ (not found or no access)${NC}"
+        echo -e " ${RED}✗ (not found or no access)${NC}" >&2
         echo ""
     fi
 }

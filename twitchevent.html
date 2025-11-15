@@ -673,6 +673,45 @@
                 return cacheEntry.currentUrl || null;
             }
 
+            // Try to fetch fresh URL from API first
+            if (cacheEntry.projectId) {
+                try {
+                    console.log(`Fetching fresh video URL for project ${cacheEntry.projectId}...`);
+                    
+                    // Use the same API base URL pattern as fetchUserEventConfiguration
+                    // For local development, check if we're on localhost:3000 and use localhost:3001 for API
+                    let apiBaseUrl = eventConfigSnapshot?.api?.baseUrl || '';
+                    if (!apiBaseUrl && window.location.hostname === 'localhost' && window.location.port === '3000') {
+                        apiBaseUrl = 'http://localhost:3001';
+                    }
+                    const trimmedBase = apiBaseUrl.replace(/\/$/, '');
+                    const endpoint = trimmedBase ? `${trimmedBase}/api/projects/${cacheEntry.projectId}/video-url` : `/api/projects/${cacheEntry.projectId}/video-url`;
+                    
+                    const response = await fetch(endpoint);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.videoUrl) {
+                            // Update cache entry with fresh URL
+                            cacheEntry.currentUrl = data.videoUrl;
+                            cacheEntry.expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : null;
+                            cacheEntry.status = data.status || null;
+                            cacheEntry.lastFetched = Date.now();
+                            
+                            console.log(`Successfully fetched fresh URL for project ${cacheEntry.projectId}`);
+                            return data.videoUrl;
+                        } else {
+                            console.warn(`API returned no video URL for project ${cacheEntry.projectId}:`, data);
+                        }
+                    } else {
+                        console.warn(`Failed to fetch video URL for project ${cacheEntry.projectId}:`, response.status, response.statusText);
+                    }
+                } catch (error) {
+                    console.warn(`Error fetching video URL for project ${cacheEntry.projectId}:`, error);
+                }
+            }
+
+            // Fallback: refresh user projects configuration
             await refreshUserProjects({ force: true, preload: false });
 
             // Use eventKey from cacheEntry if available, otherwise use provided eventKey
@@ -694,12 +733,15 @@
                 const list = [];
                 await Promise.all(items.map(async (item) => {
                     try {
-                        const videoUrl = await resolveVideoUrl(item, eventKey, { allowRefresh: false });
+                        // Allow refresh during preloading to fetch fresh URLs if needed
+                        const videoUrl = await resolveVideoUrl(item, eventKey, { allowRefresh: true });
                         if (!videoUrl) {
                             console.warn('No video URL available for preloading', {
                                 projectId: item.projectId,
                                 videoId: item.videoId,
-                                type: item.type
+                                type: item.type,
+                                currentUrl: item.currentUrl,
+                                expiresAt: item.expiresAt
                             });
                             return;
                         }

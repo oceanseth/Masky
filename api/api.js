@@ -1596,6 +1596,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Refund redemption endpoint
+    if (path.includes('/redemptions/refund') && method === 'POST') {
+        const response = await refundRedemption(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Join tribe
     if (path.includes('/tribe/join') && method === 'POST') {
         const response = await joinTribe(event);
@@ -4387,7 +4399,9 @@ async function redeemPoints(event) {
         let totalDonated = 0;
         donationsSnapshot.forEach(doc => {
             const donation = doc.data();
-            totalDonated += donation.amount || 0;
+            // Ensure amount is a number (handle potential string storage)
+            const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+            totalDonated += amount || 0;
         });
 
         // Get total spent on redemptions
@@ -4400,13 +4414,16 @@ async function redeemPoints(event) {
         let totalSpent = 0;
         redemptionsSnapshot.forEach(doc => {
             const redemption = doc.data();
-            totalSpent += redemption.creditCost || 0;
+            // Ensure creditCost is a number (handle potential string storage)
+            const creditCost = typeof redemption.creditCost === 'number' ? redemption.creditCost : parseFloat(redemption.creditCost || 0);
+            totalSpent += creditCost || 0;
         });
 
         const availablePoints = totalDonated - totalSpent;
 
-        // Check if user has enough points
-        if (availablePoints < creditCost) {
+        // Check if user has enough points (use small epsilon for floating point comparison)
+        const epsilon = 0.01;
+        if (availablePoints + epsilon < creditCost) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({ error: 'Not enough points' })
@@ -4417,11 +4434,14 @@ async function redeemPoints(event) {
         const redemptionData = {
             userId: userId,
             viewerId: viewerId,
+            viewerName: viewerData.displayName || 'Anonymous',
+            viewerTwitchUsername: viewerData.twitchUsername || null,
             redemptionId: redemptionId,
             redemptionName: redemptionName || 'Unknown',
             creditCost: creditCost,
             customString: customString || null,
             dismissed: false,
+            refunded: false,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
 
@@ -4510,6 +4530,107 @@ async function redeemPoints(event) {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Failed to redeem points',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Refund a redemption - removes the redemption and refunds points to the user
+ */
+async function refundRedemption(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { redemptionId } = body;
+
+        if (!redemptionId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing redemptionId' })
+            };
+        }
+
+        // Verify authentication
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized' })
+            };
+        }
+
+        const idToken = authHeader.substring(7);
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const streamerId = decoded.uid;
+
+        const db = admin.firestore();
+
+        // Get redemption data
+        const redemptionRef = db.collection('redemptions').doc(redemptionId);
+        const redemptionDoc = await redemptionRef.get();
+
+        if (!redemptionDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'Redemption not found' })
+            };
+        }
+
+        const redemptionData = redemptionDoc.data();
+
+        // Verify that the authenticated user is the streamer (owner of the redemption)
+        if (redemptionData.userId !== streamerId) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Only the streamer can refund redemptions' })
+            };
+        }
+
+        // Check if already refunded or dismissed
+        if (redemptionData.refunded || redemptionData.dismissed) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Redemption already processed' })
+            };
+        }
+
+        // Mark as refunded and delete the redemption record
+        // This effectively refunds the points since points = donations - redemptions
+        await redemptionRef.delete();
+
+        // If it was a custom video, we might want to delete the video too
+        // For now, we'll just delete the redemption record
+
+        console.log('Redemption refunded:', { redemptionId, userId: redemptionData.userId, viewerId: redemptionData.viewerId, creditCost: redemptionData.creditCost });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                message: 'Redemption refunded successfully'
+            })
+        };
+
+    } catch (error) {
+        console.error('Error refunding redemption:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to refund redemption',
                 message: error.message 
             })
         };

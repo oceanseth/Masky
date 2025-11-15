@@ -598,13 +598,13 @@
                     document.querySelector('.donate-section').style.display = 'none';
                 }
 
-                // Load available redemptions
-                if (userPageConfig.redemptions && userPageConfig.redemptions.length > 0) {
-                    loadAvailableRedemptions(userPageConfig.redemptions);
-                }
-
-            // Check if viewer is logged in
+            // Check if viewer is logged in (this will also load points)
             checkViewerAuth();
+            
+            // Load available redemptions after auth check (they will be re-rendered with points after auth completes)
+            if (userPageConfig.redemptions && userPageConfig.redemptions.length > 0) {
+                loadAvailableRedemptions(userPageConfig.redemptions);
+            }
             
             // Check if viewer is the owner and show configure button
             checkIfOwner();
@@ -705,13 +705,17 @@
                     document.getElementById('twitchLoginSection').style.display = 'none';
                     // Check subscription status and load credits
                     await checkSubscriptionAndLoadCredits();
+                    // Reload redemptions with updated points
+                    if (userPageConfig?.redemptions && userPageConfig.redemptions.length > 0) {
+                        await loadAvailableRedemptions(userPageConfig.redemptions);
+                    }
                     // Update header with user profile
                     updateHeaderWithUserProfile(user);
                 } else {
                     currentViewerUserId = null;
                     // Show Twitch login button
                     document.getElementById('twitchLoginSection').style.display = 'block';
-                    document.getElementById('videoCreditsSection').style.display = 'none';
+                    document.getElementById('pointsSection').style.display = 'none';
                     // Show hamburger menu
                     showHamburgerMenu();
                     const twitchLoginBtn = document.getElementById('twitchLoginBtn');
@@ -733,11 +737,15 @@
                         currentViewerUserId = user.uid;
                         document.getElementById('twitchLoginSection').style.display = 'none';
                         await checkSubscriptionAndLoadCredits();
+                        // Reload redemptions with updated points
+                        if (userPageConfig?.redemptions && userPageConfig.redemptions.length > 0) {
+                            await loadAvailableRedemptions(userPageConfig.redemptions);
+                        }
                         updateHeaderWithUserProfile(user);
                     } else {
                         currentViewerUserId = null;
                         document.getElementById('twitchLoginSection').style.display = 'block';
-                        document.getElementById('videoCreditsSection').style.display = 'none';
+                        document.getElementById('pointsSection').style.display = 'none';
                         showHamburgerMenu();
                     }
                 });
@@ -881,7 +889,9 @@
                         userId: donation.userId
                     });
                     if (donation.viewerId === currentViewerUserId) {
-                        totalDonated += donation.amount || 0;
+                        // Ensure amount is a number (handle potential string storage)
+                        const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+                        totalDonated += amount || 0;
                     }
                 });
                 console.log('[calculateTotalDonated] Total donated:', totalDonated);
@@ -911,7 +921,9 @@
                 let totalSpent = 0;
                 redemptionsSnapshot.forEach(doc => {
                     const redemption = doc.data();
-                    totalSpent += redemption.creditCost || 0;
+                    // Ensure creditCost is a number (handle potential string storage)
+                    const creditCost = typeof redemption.creditCost === 'number' ? redemption.creditCost : parseFloat(redemption.creditCost || 0);
+                    totalSpent += creditCost || 0;
                 });
                 
                 console.log('[calculateTotalSpent] Total spent:', totalSpent);
@@ -948,8 +960,9 @@
             try {
                 const points = await calculateUserPoints();
 
-                // Display points
-                document.getElementById('pointsCount').textContent = points.toFixed(2);
+                // Display points - show whole numbers without decimals if .00
+                const pointsDisplay = points % 1 === 0 ? points.toString() : points.toFixed(2);
+                document.getElementById('pointsCount').textContent = pointsDisplay;
                 document.getElementById('pointsSection').style.display = 'block';
             } catch (error) {
                 console.error('Error loading points:', error);
@@ -978,7 +991,9 @@
                 card.className = 'redemption-card';
                 card.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem;';
                 
-                const canAfford = userPoints >= redemption.creditCost;
+                // Use small epsilon for floating point comparison
+                const epsilon = 0.01;
+                const canAfford = userPoints + epsilon >= redemption.creditCost;
                 
                 card.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
@@ -1065,7 +1080,9 @@
             }
             
             const userPoints = await calculateUserPoints();
-            if (userPoints < redemption.creditCost) {
+            // Use a small epsilon for floating point comparison to handle precision issues
+            const epsilon = 0.01;
+            if (userPoints + epsilon < redemption.creditCost) {
                 alert('Not enough points!');
                 return;
             }

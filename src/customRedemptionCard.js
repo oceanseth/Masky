@@ -149,22 +149,54 @@ export async function renderRedemptionQueue(container, userId) {
             return aTime - bTime;
         });
         
+        // Get viewer display names (fallback to stored viewerName)
+        const redemptionsWithNames = await Promise.all(redemptions.map(async (redemption) => {
+            let displayName = redemption.viewerName || 'Anonymous';
+            let twitchUsername = redemption.viewerTwitchUsername || null;
+            
+            // Try to fetch current user data if viewerId exists
+            if (redemption.viewerId) {
+                try {
+                    const { doc, getDoc } = await import('./firebase.js');
+                    const viewerDoc = await getDoc(doc(db, 'users', redemption.viewerId));
+                    if (viewerDoc.exists()) {
+                        const viewerData = viewerDoc.data();
+                        displayName = viewerData.displayName || displayName;
+                        twitchUsername = viewerData.twitchUsername || twitchUsername;
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch viewer data:', error);
+                }
+            }
+            
+            return {
+                ...redemption,
+                displayName,
+                twitchUsername
+            };
+        }));
+        
         container.innerHTML = `
             <h4 style="color: #c084fc; margin-bottom: 1rem; font-size: 1.1rem;">Redemption Queue</h4>
             <div class="redemption-queue-list" style="max-height: 500px; overflow-y: auto;">
-                ${redemptions.length === 0 ? `
+                ${redemptionsWithNames.length === 0 ? `
                     <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">
                         No pending redemptions
                     </div>
-                ` : redemptions.map(redemption => `
+                ` : redemptionsWithNames.map(redemption => `
                     <div class="redemption-queue-item" data-redemption-id="${redemption.id}" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
-                            <div>
+                            <div style="flex: 1;">
                                 <div style="font-weight: 600; color: #c084fc; margin-bottom: 0.25rem;">${redemption.redemptionName || 'Unknown Redemption'}</div>
-                                <div style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">${redemption.donorName || 'Anonymous'}</div>
+                                <div style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">
+                                    ${redemption.displayName || 'Anonymous'}${redemption.twitchUsername ? ` (@${redemption.twitchUsername})` : ''}
+                                </div>
                                 ${redemption.customString ? `<div style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${redemption.customString}"</div>` : ''}
                             </div>
-                            <button class="dismiss-redemption-btn" data-redemption-id="${redemption.id}" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Dismiss</button>
+                            <div style="display: flex; gap: 0.5rem; margin-left: 1rem;">
+                                <button class="refund-redemption-btn" data-redemption-id="${redemption.id}" style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.5); color: #22c55e; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Refund</button>
+                                <button class="dismiss-redemption-btn" data-redemption-id="${redemption.id}" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Dismiss</button>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
@@ -175,6 +207,10 @@ export async function renderRedemptionQueue(container, userId) {
         container.querySelectorAll('.dismiss-redemption-btn').forEach(btn => {
             btn.onclick = async () => {
                 const redemptionId = btn.dataset.redemptionId;
+                if (!confirm('Are you sure you want to dismiss this redemption? This will hide it from the queue but the points will remain spent.')) {
+                    return;
+                }
+                
                 try {
                     const redemptionRef = doc(db, 'redemptions', redemptionId);
                     await updateDoc(redemptionRef, {
@@ -200,6 +236,63 @@ export async function renderRedemptionQueue(container, userId) {
                 } catch (error) {
                     console.error('Error dismissing redemption:', error);
                     alert('Failed to dismiss redemption. Please try again.');
+                }
+            };
+        });
+        
+        // Wire up refund buttons
+        container.querySelectorAll('.refund-redemption-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const redemptionId = btn.dataset.redemptionId;
+                if (!confirm('Are you sure you want to refund this redemption? The points will be returned to the user and the redemption will be removed.')) {
+                    return;
+                }
+                
+                try {
+                    const { getCurrentUser } = await import('./firebase.js');
+                    const user = getCurrentUser();
+                    if (!user) {
+                        alert('Please sign in to refund redemptions');
+                        return;
+                    }
+                    
+                    const idToken = await user.getIdToken();
+                    const { config } = await import('./config.js');
+                    
+                    const response = await fetch(`${config.api.baseUrl}/api/redemptions/refund`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${idToken}`
+                        },
+                        body: JSON.stringify({
+                            redemptionId: redemptionId
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to refund redemption');
+                    }
+                    
+                    // Remove from UI
+                    const queueItem = container.querySelector(`[data-redemption-id="${redemptionId}"]`);
+                    if (queueItem) {
+                        queueItem.remove();
+                    }
+                    
+                    // If queue is empty, show empty state
+                    const queueList = container.querySelector('.redemption-queue-list');
+                    if (queueList && queueList.querySelectorAll('.redemption-queue-item').length === 0) {
+                        queueList.innerHTML = `
+                            <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">
+                                No pending redemptions
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    console.error('Error refunding redemption:', error);
+                    alert('Failed to refund redemption: ' + error.message);
                 }
             };
         });

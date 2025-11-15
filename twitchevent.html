@@ -723,12 +723,15 @@
                 const list = [];
                 await Promise.all(items.map(async (item) => {
                     try {
-                        const videoUrl = await resolveVideoUrl(item, eventKey, { allowRefresh: false });
+                        // Allow refresh during preloading to fetch fresh URLs if needed
+                        const videoUrl = await resolveVideoUrl(item, eventKey, { allowRefresh: true });
                         if (!videoUrl) {
                             console.warn('No video URL available for preloading', {
                                 projectId: item.projectId,
                                 videoId: item.videoId,
-                                type: item.type
+                                type: item.type,
+                                currentUrl: item.currentUrl,
+                                expiresAt: item.expiresAt
                             });
                             return;
                         }

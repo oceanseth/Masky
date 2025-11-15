@@ -673,6 +673,35 @@
                 return cacheEntry.currentUrl || null;
             }
 
+            // Try to fetch fresh URL from API first
+            if (cacheEntry.projectId) {
+                try {
+                    console.log(`Fetching fresh video URL for project ${cacheEntry.projectId}...`);
+                    const response = await fetch(`/api/projects/${cacheEntry.projectId}/video-url`);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.videoUrl) {
+                            // Update cache entry with fresh URL
+                            cacheEntry.currentUrl = data.videoUrl;
+                            cacheEntry.expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : null;
+                            cacheEntry.status = data.status || null;
+                            cacheEntry.lastFetched = Date.now();
+                            
+                            console.log(`Successfully fetched fresh URL for project ${cacheEntry.projectId}`);
+                            return data.videoUrl;
+                        } else {
+                            console.warn(`API returned no video URL for project ${cacheEntry.projectId}:`, data);
+                        }
+                    } else {
+                        console.warn(`Failed to fetch video URL for project ${cacheEntry.projectId}:`, response.status, response.statusText);
+                    }
+                } catch (error) {
+                    console.warn(`Error fetching video URL for project ${cacheEntry.projectId}:`, error);
+                }
+            }
+
+            // Fallback: refresh user projects configuration
             await refreshUserProjects({ force: true, preload: false });
 
             // Use eventKey from cacheEntry if available, otherwise use provided eventKey

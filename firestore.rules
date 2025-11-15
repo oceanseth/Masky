@@ -177,6 +177,11 @@ service cloud.firestore {
       allow write: if false; // Only server can write custom videos
     }
     
+    // System deployment events - allow public read access for overlay refresh
+    match /_system/deployments/events/{eventId} {
+      allow read: if true;
+    }
+    
     // Deny all other access
     match /{document=**} {
       allow read, write: if false;

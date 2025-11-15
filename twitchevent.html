@@ -677,7 +677,17 @@
             if (cacheEntry.projectId) {
                 try {
                     console.log(`Fetching fresh video URL for project ${cacheEntry.projectId}...`);
-                    const response = await fetch(`/api/projects/${cacheEntry.projectId}/video-url`);
+                    
+                    // Use the same API base URL pattern as fetchUserEventConfiguration
+                    // For local development, check if we're on localhost:3000 and use localhost:3001 for API
+                    let apiBaseUrl = eventConfigSnapshot?.api?.baseUrl || '';
+                    if (!apiBaseUrl && window.location.hostname === 'localhost' && window.location.port === '3000') {
+                        apiBaseUrl = 'http://localhost:3001';
+                    }
+                    const trimmedBase = apiBaseUrl.replace(/\/$/, '');
+                    const endpoint = trimmedBase ? `${trimmedBase}/api/projects/${cacheEntry.projectId}/video-url` : `/api/projects/${cacheEntry.projectId}/video-url`;
+                    
+                    const response = await fetch(endpoint);
                     
                     if (response.ok) {
                         const data = await response.json();

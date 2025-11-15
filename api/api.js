@@ -78,29 +78,37 @@ const handleTwitchOAuth = async (event) => {
             userRecord = await admin.auth().getUser(uid);
         } catch (error) {
             if (error.code === 'auth/user-not-found') {
-                // Create new user
-                userRecord = await admin.auth().createUser({
+                // Create new user - only include email if it's defined
+                const createUserData = {
                     uid: uid,
-                    displayName: twitchUser.display_name,
-                    photoURL: twitchUser.profile_image_url,
-                    email: twitchUser.email
-                });
+                    displayName: twitchUser.display_name || null,
+                    photoURL: twitchUser.profile_image_url || null
+                };
+                if (twitchUser.email) {
+                    createUserData.email = twitchUser.email;
+                }
+                userRecord = await admin.auth().createUser(createUserData);
             } else {
                 throw error;
             }
         }
 
         // Store user data in Firestore (including Twitch username for URL lookup)
+        // Only include fields that are defined (Firestore doesn't allow undefined values)
         const db = admin.firestore();
         const userDocRef = db.collection('users').doc(uid);
-        await userDocRef.set({
+        const userData = {
             twitchId: twitchUser.id,
-            displayName: twitchUser.display_name,
-            photoURL: twitchUser.profile_image_url,
-            email: twitchUser.email,
+            displayName: twitchUser.display_name || null,
+            photoURL: twitchUser.profile_image_url || null,
             twitchUsername: (twitchUser.login || twitchUser.display_name?.toLowerCase() || null), // Store lowercase username
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
+        // Only include email if it's defined
+        if (twitchUser.email) {
+            userData.email = twitchUser.email;
+        }
+        await userDocRef.set(userData, { merge: true });
 
         await twitchInitializer.storeAdminSession(admin, {
             uid,
@@ -136,9 +144,9 @@ const handleTwitchOAuth = async (event) => {
                 firebaseToken: customToken,
                 user: {
                     uid: uid,
-                    displayName: twitchUser.display_name,
-                    photoURL: twitchUser.profile_image_url,
-                    email: twitchUser.email,
+                    displayName: twitchUser.display_name || null,
+                    photoURL: twitchUser.profile_image_url || null,
+                    email: twitchUser.email || null,
                     twitchId: twitchUser.id
                 }
             })
@@ -389,6 +397,40 @@ const handleAdminImpersonate = async (event) => {
     }
 };
 
+/**
+ * Determine the API base URL based on the request headers and URL
+ * Used for OAuth redirect URIs and other API endpoints
+ */
+function getApiBaseUrl(event) {
+    // Check request URL first (for direct redirects from Twitch)
+    const requestUrl = event.requestContext?.domainName || '';
+    if (requestUrl && (requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1'))) {
+        return 'http://localhost:3001';
+    }
+    
+    // Check for local development indicators in headers
+    const origin = event.headers?.origin || event.headers?.Origin || '';
+    const referer = event.headers?.referer || event.headers?.Referer || '';
+    const host = event.headers?.host || event.headers?.Host || '';
+    
+    // Check if request is from localhost
+    const isLocalhost = origin.includes('localhost') || 
+                       origin.includes('127.0.0.1') ||
+                       referer.includes('localhost') ||
+                       referer.includes('127.0.0.1') ||
+                       host.includes('localhost') ||
+                       host.includes('127.0.0.1') ||
+                       host === 'localhost:3001' ||
+                       host === '127.0.0.1:3001';
+    
+    if (isLocalhost) {
+        return 'http://localhost:3001';
+    }
+    
+    // Production default
+    return 'https://masky.ai';
+}
+
 exports.handler = async (event, context) => {
     console.log('Event received:', JSON.stringify({ 
         path: event.path, 
@@ -407,6 +449,9 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Credentials': requestOrigin !== '*' ? 'true' : 'false',
         'Access-Control-Max-Age': '86400'
     };
+    
+    // Get API base URL for this request
+    const apiBaseUrl = getApiBaseUrl(event);
 
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
@@ -1211,13 +1256,17 @@ exports.handler = async (event, context) => {
 
             // If authorization code present, invoke callback exchange flow
             if (code) {
+                // Get API base URL for redirect URI
+                const apiBaseUrl = getApiBaseUrl(event);
+                const redirectUri = `${apiBaseUrl}/api/twitch_oauth`;
+                
                 const callbackEvent = {
                     ...event,
                     httpMethod: 'POST',
                     body: JSON.stringify({
                         code,
-                        // Use the actual API endpoint as redirect URI
-                        redirectUri: 'https://masky.ai/api/twitch_oauth'
+                        // Use the appropriate API endpoint as redirect URI (localhost or production)
+                        redirectUri: redirectUri
                     }),
                     isBase64Encoded: false
                 };
@@ -1231,6 +1280,13 @@ exports.handler = async (event, context) => {
                     headers: event.headers,
                     referer: event.headers?.Referer || event.headers?.referer,
                     allParams: Object.fromEntries(params.entries())
+                });
+                
+                // Log the response for debugging
+                console.log('OAuth callback response:', {
+                    statusCode: response?.statusCode,
+                    hasBody: !!response?.body,
+                    bodyPreview: response?.body ? (typeof response.body === 'string' ? response.body.substring(0, 200) : JSON.stringify(response.body).substring(0, 200)) : 'none'
                 });
                 
                 // Always return HTML for popup OAuth flow
@@ -1278,25 +1334,35 @@ exports.handler = async (event, context) => {
                 // Show debug info on page
                 const debugInfo = document.getElementById('debugInfo');
                 debugInfo.style.display = 'block';
+                let errorDetails = null;
+                try {
+                    if (response.body) {
+                        errorDetails = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;
+                    }
+                } catch (e) {
+                    errorDetails = { rawBody: response.body };
+                }
                 debugInfo.innerHTML = '<h4>Debug Information</h4><pre>' + JSON.stringify({
                     statusCode: response.statusCode,
                     hasOpener: !!window.opener,
                     currentOrigin: window.location.origin,
-                    responseKeys: Object.keys(response)
+                    responseKeys: Object.keys(response),
+                    errorDetails: errorDetails
                 }, null, 2) + '</pre>';
                 
                 if (response.statusCode === 200) {
                     // Success - send message to parent and close popup
                     console.log('Processing successful OAuth response:', response);
                     
-                    if (window.opener) {
+                    const userData = response.body ? JSON.parse(response.body) : null;
+                    const message = {
+                        type: 'TWITCH_OAUTH_SUCCESS',
+                        user: userData
+                    };
+                    
+                    // Try to send message to opener
+                    if (window.opener && !window.opener.closed) {
                         try {
-                            const userData = response.body ? JSON.parse(response.body) : null;
-                            const message = {
-                                type: 'TWITCH_OAUTH_SUCCESS',
-                                user: userData
-                            };
-                            
                             console.log('Sending success message to parent:', message);
                             console.log('Target origin:', window.location.origin);
                             console.log('Window opener exists:', !!window.opener);
@@ -1304,34 +1370,78 @@ exports.handler = async (event, context) => {
                             // Use '*' to allow any origin - security is handled by checking event.origin in the receiver
                             window.opener.postMessage(message, '*');
                             console.log('Success message sent to parent');
+                            
+                            // Close popup after short delay
+                            setTimeout(() => {
+                                console.log('Closing popup window');
+                                if (!window.opener || window.opener.closed) {
+                                    window.close();
+                                } else {
+                                    window.close();
+                                }
+                            }, 2000);
                         } catch (e) {
                             console.error('Error sending success message:', e);
+                            // Still try to close after delay
+                            setTimeout(() => {
+                                window.close();
+                            }, 5000);
                         }
                     } else {
-                        console.error('No window.opener found - popup may have been opened incorrectly');
+                        console.warn('No window.opener found or opener closed - trying to communicate via localStorage as fallback');
+                        
+                        // Fallback: Use localStorage to communicate if opener is not available
+                        try {
+                            const eventKey = 'twitch_oauth_success_' + Date.now();
+                            localStorage.setItem(eventKey, JSON.stringify(message));
+                            
+                            // Dispatch storage event for same-origin listeners
+                            window.dispatchEvent(new StorageEvent('storage', {
+                                key: eventKey,
+                                newValue: JSON.stringify(message)
+                            }));
+                            
+                            console.log('Stored success message in localStorage as fallback');
+                        } catch (e) {
+                            console.error('Could not use localStorage fallback:', e);
+                        }
+                        
+                        // Give user time to see the success message
+                        setTimeout(() => {
+                            window.close();
+                        }, 3000);
                     }
-                    document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! Closing window in 10 seconds...</div>';
-                    // Give more time for the message to be received and for debugging
-                    setTimeout(() => {
-                        console.log('Closing popup window');
-                        window.close();
-                    }, 10000);
+                    
+                    document.getElementById('status').innerHTML = '<div class="success">✓ Authentication successful! ' + 
+                        (window.opener && !window.opener.closed ? 'Closing window...' : 'You can close this window.') + 
+                        '</div>';
                 } else {
                     // Error - send error message to parent
-                    const errorData = response.body ? JSON.parse(response.body) : { error: 'Unknown error' };
+                    let errorData = { error: 'Unknown error' };
+                    try {
+                        errorData = response.body ? (typeof response.body === 'string' ? JSON.parse(response.body) : response.body) : { error: 'Unknown error' };
+                    } catch (e) {
+                        console.error('Failed to parse error response body:', e);
+                        errorData = { error: 'Failed to parse error response', rawBody: response.body };
+                    }
+                    
+                    const errorMessage = errorData.message || errorData.error || 'Authentication failed';
+                    console.error('OAuth error:', errorData);
+                    
                     if (window.opener) {
                         try {
                             // Use '*' to allow any origin - security is handled by checking event.origin in the receiver
                             window.opener.postMessage({
                                 type: 'TWITCH_OAUTH_ERROR',
-                                error: errorData.error || 'Authentication failed'
+                                error: errorMessage,
+                                details: errorData
                             }, '*');
-                            console.log('Error message sent to parent:', errorData.error);
+                            console.log('Error message sent to parent:', errorMessage);
                         } catch (e) {
                             console.error('Error sending error message:', e);
                         }
                     }
-                    document.getElementById('status').innerHTML = '<div class="error">✗ Authentication failed: ' + (errorData.error || 'Unknown error') + '</div>';
+                    document.getElementById('status').innerHTML = '<div class="error">✗ Authentication failed: ' + errorMessage + (errorData.details ? '<br><small>' + errorData.details + '</small>' : '') + '</div>';
                     setTimeout(() => {
                         console.log('Closing popup window after error');
                         window.close();
@@ -1668,26 +1778,49 @@ exports.handler = async (event, context) => {
                     const botTokens = botTokensDoc.data();
                     // Validate bot token has required scopes
                     if (botTokens.accessToken && botTokens.scopes) {
-                        const hasUserReadChat = botTokens.scopes.includes('user:read:chat') || 
-                                               botTokens.scopes.includes('chat:read');
-                        const hasUserBot = botTokens.scopes.includes('user:bot');
+                        // Normalize scopes to array (might be stored as string or array)
+                        const scopes = Array.isArray(botTokens.scopes) ? botTokens.scopes : 
+                                      (typeof botTokens.scopes === 'string' ? botTokens.scopes.split(' ').filter(Boolean) : []);
                         
-                        if (hasUserReadChat && hasUserBot) {
+                        const hasUserReadChat = scopes.includes('user:read:chat') || 
+                                               scopes.includes('chat:read');
+                        
+                        console.log('Checking bot authorization:', {
+                            hasAccessToken: !!botTokens.accessToken,
+                            scopes: scopes,
+                            hasUserReadChat,
+                            botTwitchId: botTokens.twitchId
+                        });
+                        
+                        // For EventSub channel.chat.message, the bot account only needs user:read:chat
+                        // The user:bot scope is not required and may not be available through standard OAuth
+                        if (hasUserReadChat) {
                             botHasAuthorized = true;
-                            console.log('Bot account has authorized with required scopes');
+                            console.log('Bot account has authorized with required scopes:', scopes);
                         } else {
                             console.log('Bot account authorized but missing required scopes:', {
                                 hasUserReadChat,
-                                hasUserBot,
-                                scopes: botTokens.scopes
+                                scopes: scopes,
+                                rawScopes: botTokens.scopes
                             });
                         }
+                    } else {
+                        console.log('Bot tokens exist but missing accessToken or scopes:', {
+                            hasAccessToken: !!botTokens.accessToken,
+                            hasScopes: !!botTokens.scopes
+                        });
                     }
+                } else {
+                    console.log('Bot tokens document does not exist in Firestore');
                 }
                 
                 // Generate bot authorization URL if not authorized
                 if (!botHasAuthorized) {
-                    botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                    // Get API base URL for redirect URI
+                    const apiBaseUrl = getApiBaseUrl(event);
+                    const redirectUri = `${apiBaseUrl}/api/twitch_oauth`;
+                    // Only request user:read:chat - user:bot is not a valid scope or not needed
+                    botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('user:read:chat')}`;
                     console.log('Bot account not authorized. Auth URL:', botAuthUrl);
                 }
                 
@@ -1723,7 +1856,7 @@ exports.handler = async (event, context) => {
                 console.log('Subscription condition:', {
                     broadcaster_user_id: twitchId,
                     user_id: botUserId,
-                    note: 'Bot account must have authorized this app with user:read:chat + user:bot scopes'
+                    note: 'Bot account must have authorized this app with user:read:chat scope'
                 });
                 
                 const requestBody = {
@@ -1731,7 +1864,7 @@ exports.handler = async (event, context) => {
                     version: '1',
                     condition: {
                         broadcaster_user_id: twitchId, // The broadcaster's channel
-                        user_id: botUserId // Bot account ID - must have authorized with user:read:chat + user:bot
+                        user_id: botUserId // Bot account ID - must have authorized with user:read:chat
                     },
                     transport: {
                         method: 'webhook',
@@ -1760,7 +1893,7 @@ exports.handler = async (event, context) => {
                         headers,
                         body: JSON.stringify({
                             error: 'Bot account not authorized',
-                            message: 'The bot account (maskyai) must authorize the app with user:read:chat and user:bot scopes before creating chat subscriptions.',
+                            message: 'The bot account (maskyai) must authorize the app with user:read:chat scope before creating chat subscriptions.',
                             code: 'BOT_ACCOUNT_NOT_AUTHORIZED',
                             botAuthUrl: botAuthUrl,
                             instructions: [
@@ -1859,7 +1992,10 @@ exports.handler = async (event, context) => {
                         if (twitchResponse.status === 403 && errorData.message?.includes('authorization')) {
                             errorMessage += `\n\nThe bot account (ID: ${botUserId}) must authorize your app.`;
                             if (!botAuthUrl) {
-                                botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                                // Get API base URL for redirect URI
+                                const apiBaseUrl = getApiBaseUrl(event);
+                                const redirectUri = `${apiBaseUrl}/api/twitch_oauth`;
+                                botAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
                             }
                         }
                         
@@ -1867,7 +2003,12 @@ exports.handler = async (event, context) => {
                         error.twitchPayload = twitchPayload;
                         error.twitchResponse = errorData;
                         error.twitchStatus = twitchResponse.status;
-                        error.botAuthUrl = botAuthUrl || `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://masky.ai/api/twitch_oauth')}&response_type=code&scope=${encodeURIComponent('user:read:chat user:bot')}`;
+                        if (!error.botAuthUrl) {
+                            // Get API base URL for redirect URI
+                            const apiBaseUrl = getApiBaseUrl(event);
+                            const redirectUri = `${apiBaseUrl}/api/twitch_oauth`;
+                            error.botAuthUrl = botAuthUrl || `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('user:read:chat')}`;
+                        }
                         throw error;
                     }
                 } else {

@@ -861,15 +861,26 @@ class TwitchInitializer {
 
       // Exchange code for access token
       const tokenUrl = 'https://id.twitch.tv/oauth2/token';
+      // Use provided redirectUri or default to production
+      // Note: redirectUri should be provided by the caller based on the request origin
+      const finalRedirectUri = redirectUri || 'https://masky.ai/api/twitch_oauth';
+      
       const params = new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         code: code,
         grant_type: 'authorization_code',
-        redirect_uri: redirectUri || 'https://masky.ai/api/twitch_oauth'
+        redirect_uri: finalRedirectUri
       });
 
       const url = require('url');
+      
+      console.log('Exchanging authorization code for token:', {
+        redirectUri: redirectUri || 'https://masky.ai/api/twitch_oauth',
+        codeLength: code?.length || 0,
+        hasClientId: !!clientId,
+        hasClientSecret: !!clientSecret
+      });
       
       const tokenResponse = await new Promise((resolve, reject) => {
         const postData = params.toString();
@@ -893,10 +904,23 @@ class TwitchInitializer {
               try {
                 resolve(JSON.parse(data));
               } catch (e) {
-                reject(new Error('Failed to parse token response'));
+                reject(new Error(`Failed to parse token response: ${e.message}`));
               }
             } else {
-              reject(new Error(`Token exchange failed: ${data}`));
+              let errorMessage = `Token exchange failed (status ${res.statusCode})`;
+              try {
+                const errorData = JSON.parse(data);
+                errorMessage += `: ${errorData.message || errorData.error || data}`;
+                if (errorData.error_description) {
+                  errorMessage += ` - ${errorData.error_description}`;
+                }
+              } catch (e) {
+                errorMessage += `: ${data}`;
+              }
+              const error = new Error(errorMessage);
+              error.statusCode = res.statusCode;
+              error.responseBody = data;
+              reject(error);
             }
           });
         });
@@ -926,29 +950,37 @@ class TwitchInitializer {
         userRecord = await admin.auth().getUser(uid);
       } catch (error) {
         if (error.code === 'auth/user-not-found') {
-          // Create new user
-          userRecord = await admin.auth().createUser({
+          // Create new user - only include email if it's defined
+          const createUserData = {
             uid: uid,
-            displayName: twitchUser.display_name,
-            photoURL: twitchUser.profile_image_url,
-            email: twitchUser.email
-          });
+            displayName: twitchUser.display_name || null,
+            photoURL: twitchUser.profile_image_url || null
+          };
+          if (twitchUser.email) {
+            createUserData.email = twitchUser.email;
+          }
+          userRecord = await admin.auth().createUser(createUserData);
         } else {
           throw error;
         }
       }
 
       // Store user data in Firestore (including Twitch username for URL lookup)
+      // Only include fields that are defined (Firestore doesn't allow undefined values)
       const db = admin.firestore();
       const userDocRef = db.collection('users').doc(uid);
-      await userDocRef.set({
+      const userData = {
         twitchId: twitchUser.id,
-        displayName: twitchUser.display_name,
-        photoURL: twitchUser.profile_image_url,
-        email: twitchUser.email,
+        displayName: twitchUser.display_name || null,
+        photoURL: twitchUser.profile_image_url || null,
         twitchUsername: (twitchUser.login || twitchUser.display_name?.toLowerCase() || null), // Store lowercase username
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+      };
+      // Only include email if it's defined
+      if (twitchUser.email) {
+        userData.email = twitchUser.email;
+      }
+      await userDocRef.set(userData, { merge: true });
 
       // Check if this is the bot account and store tokens separately
       const botUserId = '1386063343'; // From config
@@ -967,6 +999,16 @@ class TwitchInitializer {
           console.warn('Could not validate bot token scopes:', e.message);
         }
         
+        // Normalize scopes to array - tokenResponse.scope might be a string or array
+        let scopes = [];
+        if (validation?.scopes) {
+          scopes = Array.isArray(validation.scopes) ? validation.scopes : 
+                   (typeof validation.scopes === 'string' ? validation.scopes.split(' ').filter(Boolean) : []);
+        } else if (tokenResponse.scope) {
+          scopes = Array.isArray(tokenResponse.scope) ? tokenResponse.scope : 
+                   (typeof tokenResponse.scope === 'string' ? tokenResponse.scope.split(' ').filter(Boolean) : []);
+        }
+        
         const botTokenData = {
           twitchId: twitchUser.id,
           accessToken: accessToken,
@@ -974,7 +1016,7 @@ class TwitchInitializer {
           expiresAt: tokenResponse.expires_in ? 
             admin.firestore.Timestamp.fromMillis(Date.now() + (tokenResponse.expires_in * 1000)) : 
             null,
-          scopes: validation?.scopes || tokenResponse.scope || [],
+          scopes: scopes, // Store as array
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           displayName: twitchUser.display_name
         };
@@ -982,7 +1024,9 @@ class TwitchInitializer {
         await botTokensRef.set(botTokenData, { merge: true });
         console.log('Bot account tokens stored:', {
           twitchId: twitchUser.id,
-          hasRequiredScopes: validation?.scopes?.includes('user:read:chat') && validation?.scopes?.includes('user:bot')
+          scopes: scopes,
+          hasUserReadChat: scopes.includes('user:read:chat'),
+          hasRequiredScopes: scopes.includes('user:read:chat') // Only user:read:chat is required
         });
       }
 
@@ -1022,9 +1066,9 @@ class TwitchInitializer {
           firebaseToken: customToken,
           user: {
             uid: uid,
-            displayName: twitchUser.display_name,
-            photoURL: twitchUser.profile_image_url,
-            email: twitchUser.email,
+            displayName: twitchUser.display_name || null,
+            photoURL: twitchUser.profile_image_url || null,
+            email: twitchUser.email || null,
             twitchId: twitchUser.id
           }
         })
@@ -1032,11 +1076,21 @@ class TwitchInitializer {
 
     } catch (error) {
       console.error('Twitch OAuth callback error:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        statusCode: error.statusCode
+      });
       return {
         statusCode: 500,
         body: JSON.stringify({ 
           error: 'Internal server error',
-          message: error.message 
+          message: error.message,
+          details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+          errorCode: error.code || error.statusCode || error.status
         })
       };
     }

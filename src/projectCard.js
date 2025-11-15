@@ -90,51 +90,54 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete)
     const playBtn = card.querySelector('[data-role="play-video"]');
     const video = card.querySelector('[data-role="project-video"]');
     const overlay = card.querySelector('.video-overlay');
+    const placeholder = card.querySelector('.video-placeholder');
     
-    if (playBtn && video) {
-        let isRefreshingUrl = false;
+    // Function to fetch fresh video URL from API
+    let isRefreshingUrl = false;
+    async function refreshVideoUrl() {
+        if (isRefreshingUrl || !project.projectId) return null;
         
-        // Function to fetch fresh video URL from API
-        async function refreshVideoUrl() {
-            if (isRefreshingUrl || !project.projectId) return null;
+        isRefreshingUrl = true;
+        try {
+            const { config } = await import('./config.js');
+            const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
+            const endpoint = trimmedBase ? `${trimmedBase}/api/projects/${project.projectId}/video-url` : `/api/projects/${project.projectId}/video-url`;
             
-            isRefreshingUrl = true;
-            try {
-                const { config } = await import('./config.js');
-                const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
-                const endpoint = trimmedBase ? `${trimmedBase}/api/projects/${project.projectId}/video-url` : `/api/projects/${project.projectId}/video-url`;
-                
-                const response = await fetch(endpoint, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Cache-Control': 'no-store'
-                    },
-                    cache: 'no-store'
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch fresh URL: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                return data.videoUrl || null;
-            } catch (error) {
-                console.error('[ProjectCard] Failed to refresh video URL:', error);
-                return null;
-            } finally {
-                isRefreshingUrl = false;
+            const response = await fetch(endpoint, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-store'
+                },
+                cache: 'no-store'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch fresh URL: ${response.status}`);
             }
+            
+            const data = await response.json();
+            return data.videoUrl || null;
+        } catch (error) {
+            console.error('[ProjectCard] Failed to refresh video URL:', error);
+            return null;
+        } finally {
+            isRefreshingUrl = false;
         }
+    }
+    
+    // Helper function to bind video event handlers
+    function bindVideoHandlers(videoEl, playBtnEl, overlayEl) {
+        if (!videoEl || !playBtnEl) return;
         
         // Handle video loading errors (e.g., 403 Forbidden)
-        video.addEventListener('error', async (e) => {
-            const error = video.error;
+        videoEl.addEventListener('error', async (e) => {
+            const error = videoEl.error;
             const errorCode = error?.code;
             
             console.error('[ProjectCard] Video load error:', {
                 projectId: project.projectId,
-                videoUrl: video.src,
+                videoUrl: videoEl.src,
                 error: error,
                 errorCode: errorCode
             });
@@ -146,45 +149,45 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete)
                 // Try to fetch a fresh URL
                 const freshUrl = await refreshVideoUrl();
                 
-                if (freshUrl && freshUrl !== video.src) {
+                if (freshUrl && freshUrl !== videoEl.src) {
                     console.log('[ProjectCard] Retrying with fresh URL:', freshUrl);
-                    video.src = freshUrl;
-                    video.load(); // Reload the video with new URL
+                    videoEl.src = freshUrl;
+                    videoEl.load(); // Reload the video with new URL
                     return; // Don't show error yet, let it try to load
                 }
             }
             
             // Show error state in overlay if refresh failed or not applicable
-            if (overlay) {
-                overlay.innerHTML = `
+            if (overlayEl) {
+                overlayEl.innerHTML = `
                     <div style="text-align: center; color: rgba(255,255,255,0.9); padding: 1rem;">
                         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚠️</div>
                         <div style="font-size: 0.85rem;">Video unavailable</div>
                         <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.25rem;">URL may have expired</div>
                     </div>`;
-                overlay.style.background = 'rgba(0,0,0,0.7)';
-                overlay.style.pointerEvents = 'none';
+                overlayEl.style.background = 'rgba(0,0,0,0.7)';
+                overlayEl.style.pointerEvents = 'none';
             }
         });
         
-        playBtn.addEventListener('click', async (e) => {
+        playBtnEl.addEventListener('click', async (e) => {
             e.stopPropagation();
             
-            if (video.paused) {
+            if (videoEl.paused) {
                 // Before playing, check if video has an error and refresh URL if needed
-                if (video.error) {
+                if (videoEl.error) {
                     const freshUrl = await refreshVideoUrl();
-                    if (freshUrl && freshUrl !== video.src) {
-                        video.src = freshUrl;
-                        video.load();
+                    if (freshUrl && freshUrl !== videoEl.src) {
+                        videoEl.src = freshUrl;
+                        videoEl.load();
                         // Wait a bit for the video to load before playing
                         await new Promise((resolve) => {
                             const timeout = setTimeout(resolve, 500);
-                            video.addEventListener('loadeddata', () => {
+                            videoEl.addEventListener('loadeddata', () => {
                                 clearTimeout(timeout);
                                 resolve();
                             }, { once: true });
-                            video.addEventListener('error', () => {
+                            videoEl.addEventListener('error', () => {
                                 clearTimeout(timeout);
                                 resolve();
                             }, { once: true });
@@ -193,53 +196,117 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete)
                 }
                 
                 // Enable audio and play
-                video.muted = false;
-                video.play().catch(err => {
+                videoEl.muted = false;
+                videoEl.play().catch(err => {
                     console.error('[ProjectCard] Video play error:', err);
                     // If play fails, try refreshing URL once more
                     refreshVideoUrl().then(freshUrl => {
-                        if (freshUrl && freshUrl !== video.src) {
-                            video.src = freshUrl;
-                            video.load();
-                            video.play().catch(() => {
+                        if (freshUrl && freshUrl !== videoEl.src) {
+                            videoEl.src = freshUrl;
+                            videoEl.load();
+                            videoEl.play().catch(() => {
                                 // If still fails, show error
-                                if (overlay) {
-                                    overlay.style.opacity = '1';
-                                    overlay.style.pointerEvents = 'auto';
+                                if (overlayEl) {
+                                    overlayEl.style.opacity = '1';
+                                    overlayEl.style.pointerEvents = 'auto';
                                 }
                             });
                         } else {
                             // Show error
-                            if (overlay) {
-                                overlay.style.opacity = '1';
-                                overlay.style.pointerEvents = 'auto';
+                            if (overlayEl) {
+                                overlayEl.style.opacity = '1';
+                                overlayEl.style.pointerEvents = 'auto';
                             }
                         }
                     });
                 });
-                if (overlay) {
-                    overlay.style.opacity = '0';
-                    overlay.style.pointerEvents = 'none';
+                if (overlayEl) {
+                    overlayEl.style.opacity = '0';
+                    overlayEl.style.pointerEvents = 'none';
                 }
                 
                 // When video ends, show overlay again
-                video.onended = () => {
-                    if (overlay) {
-                        overlay.style.opacity = '1';
-                        overlay.style.pointerEvents = 'auto';
+                videoEl.onended = () => {
+                    if (overlayEl) {
+                        overlayEl.style.opacity = '1';
+                        overlayEl.style.pointerEvents = 'auto';
                     }
-                    video.currentTime = 0;
-                    video.muted = true;
+                    videoEl.currentTime = 0;
+                    videoEl.muted = true;
                 };
             } else {
-                video.pause();
-                video.muted = true;
-                if (overlay) {
-                    overlay.style.opacity = '1';
-                    overlay.style.pointerEvents = 'auto';
+                videoEl.pause();
+                videoEl.muted = true;
+                if (overlayEl) {
+                    overlayEl.style.opacity = '1';
+                    overlayEl.style.pointerEvents = 'auto';
                 }
             }
         });
+        
+        // Click on video to pause when playing
+        videoEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Only pause if video is currently playing
+            if (!videoEl.paused) {
+                videoEl.pause();
+                videoEl.muted = true;
+                if (overlayEl) {
+                    overlayEl.style.opacity = '1';
+                    overlayEl.style.pointerEvents = 'auto';
+                }
+            }
+        });
+    }
+    
+    // If project has heygenVideoId but no videoUrl, fetch it and update the card
+    if (!video && placeholder && project.heygenVideoId && !project.videoUrl) {
+        // Fetch the video URL and replace the placeholder with the video element
+        refreshVideoUrl().then(freshUrl => {
+            if (freshUrl && placeholder && placeholder.parentElement) {
+                // Replace placeholder with video element
+                const videoContainer = document.createElement('div');
+                videoContainer.className = 'video-thumbnail-container';
+                videoContainer.style.cssText = 'position:relative; aspect-ratio:16/9; background:#1a1a1a; border-radius:12px; overflow:hidden;';
+                
+                const newVideo = document.createElement('video');
+                newVideo.src = freshUrl;
+                newVideo.muted = true;
+                newVideo.preload = 'metadata';
+                newVideo.setAttribute('data-role', 'project-video');
+                newVideo.style.cssText = 'width:100%; height:100%; object-fit:cover;';
+                
+                const newOverlay = document.createElement('div');
+                newOverlay.className = 'video-overlay';
+                newOverlay.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center; background: rgba(0,0,0,0.4); transition: background 0.3s ease;';
+                
+                const newPlayBtn = document.createElement('button');
+                newPlayBtn.className = 'video-play-btn';
+                newPlayBtn.setAttribute('data-role', 'play-video');
+                newPlayBtn.onclick = (e) => e.stopPropagation();
+                newPlayBtn.style.cssText = 'background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; font-size: 1.5rem;';
+                newPlayBtn.innerHTML = '▶️';
+                
+                newOverlay.appendChild(newPlayBtn);
+                videoContainer.appendChild(newVideo);
+                videoContainer.appendChild(newOverlay);
+                
+                placeholder.parentElement.replaceChild(videoContainer, placeholder);
+                
+                // Update project data with the new URL
+                project.videoUrl = freshUrl;
+                
+                // Bind video event handlers
+                bindVideoHandlers(newVideo, newPlayBtn, newOverlay);
+            }
+        }).catch(err => {
+            console.error('[ProjectCard] Failed to fetch video URL for placeholder:', err);
+        });
+    }
+    
+    if (playBtn && video) {
+        bindVideoHandlers(video, playBtn, overlay);
     }
     
     // Handle status toggle

@@ -1584,6 +1584,30 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Redemptions endpoint
+    if (path.includes('/redemptions/redeem') && method === 'POST') {
+        const response = await redeemPoints(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Refund redemption endpoint
+    if (path.includes('/redemptions/refund') && method === 'POST') {
+        const response = await refundRedemption(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Join tribe
     if (path.includes('/tribe/join') && method === 'POST') {
         const response = await joinTribe(event);
@@ -4309,6 +4333,304 @@ async function joinTribe(event) {
             statusCode: 500,
             body: JSON.stringify({ 
                 error: 'Failed to join tribe',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Redeem points for a redemption
+ */
+async function redeemPoints(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId, viewerId, redemptionId, redemptionName, creditCost, customString, videoUrl, message, avatarId } = body;
+
+        if (!userId || !viewerId || !redemptionId || !creditCost) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing required fields' })
+            };
+        }
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Get user and viewer data
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User not found' })
+            };
+        }
+
+        const viewerDoc = await db.collection('users').doc(viewerId).get();
+        if (!viewerDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'Viewer not found' })
+            };
+        }
+
+        const viewerData = viewerDoc.data();
+
+        // Calculate user's current points (donations - spent)
+        const donationsRef = db.collection('donations');
+        const donationsQuery = donationsRef
+            .where('userId', '==', userId)
+            .where('viewerId', '==', viewerId);
+        const donationsSnapshot = await donationsQuery.get();
+        
+        let totalDonated = 0;
+        donationsSnapshot.forEach(doc => {
+            const donation = doc.data();
+            // Ensure amount is a number (handle potential string storage)
+            const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+            totalDonated += amount || 0;
+        });
+
+        // Get total spent on redemptions
+        const redemptionsRef = db.collection('redemptions');
+        const redemptionsQuery = redemptionsRef
+            .where('userId', '==', userId)
+            .where('viewerId', '==', viewerId);
+        const redemptionsSnapshot = await redemptionsQuery.get();
+        
+        let totalSpent = 0;
+        redemptionsSnapshot.forEach(doc => {
+            const redemption = doc.data();
+            // Ensure creditCost is a number (handle potential string storage)
+            const creditCost = typeof redemption.creditCost === 'number' ? redemption.creditCost : parseFloat(redemption.creditCost || 0);
+            totalSpent += creditCost || 0;
+        });
+
+        const availablePoints = totalDonated - totalSpent;
+
+        // Check if user has enough points (use small epsilon for floating point comparison)
+        const epsilon = 0.01;
+        if (availablePoints + epsilon < creditCost) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Not enough points' })
+            };
+        }
+
+        // Create redemption record
+        const redemptionData = {
+            userId: userId,
+            viewerId: viewerId,
+            viewerName: viewerData.displayName || 'Anonymous',
+            viewerTwitchUsername: viewerData.twitchUsername || null,
+            redemptionId: redemptionId,
+            redemptionName: redemptionName || 'Unknown',
+            creditCost: creditCost,
+            customString: customString || null,
+            dismissed: false,
+            refunded: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // If it's a custom video redemption, handle it specially
+        if (redemptionId === 'custom-video') {
+            if (!videoUrl) {
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({ error: 'Missing videoUrl for custom video redemption' })
+                };
+            }
+
+            // Create custom video
+            const customVideoData = {
+                userId: userId,
+                viewerId: viewerId,
+                videoUrl: videoUrl,
+                message: message || null,
+                avatarId: avatarId || null,
+                paid: false, // Using points, not paid
+                status: 'pending',
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            const videoRef = await db.collection('customVideos').add(customVideoData);
+
+            // Publish custom video event to user's events collection for stream overlay
+            const customVideoEventData = {
+                type: 'custom-video',
+                videoId: videoRef.id,
+                videoUrl: videoUrl,
+                message: message || null,
+                avatarId: avatarId || null,
+                viewerName: viewerData.displayName || 'Anonymous',
+                viewerId: viewerId,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection('users').doc(userId)
+                .collection('events').doc('custom-video')
+                .collection('alerts').add(customVideoEventData);
+
+            redemptionData.videoId = videoRef.id;
+        }
+
+        // Store redemption
+        const redemptionRef = await db.collection('redemptions').add(redemptionData);
+
+        // If redemption should show in queue, publish event
+        const userData = userDoc.data();
+        const userPageConfig = userData.userPageConfig || {};
+        const redemptions = userPageConfig.redemptions || [];
+        const redemptionConfig = redemptions.find(r => r.id === redemptionId);
+        
+        if (redemptionConfig && redemptionConfig.showInQueue !== false) {
+            // Publish redemption event to user's events collection for stream overlay
+            const redemptionEventData = {
+                type: 'redemption',
+                redemptionId: redemptionRef.id,
+                redemptionName: redemptionName,
+                donorName: viewerData.displayName || 'Anonymous',
+                customString: customString || null,
+                viewerId: viewerId,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection('users').doc(userId)
+                .collection('events').doc('redemption')
+                .collection('alerts').add(redemptionEventData);
+        }
+
+        console.log('Redemption created:', { redemptionId: redemptionRef.id, userId, viewerId, creditCost });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                redemptionId: redemptionRef.id,
+                remainingPoints: availablePoints - creditCost
+            })
+        };
+
+    } catch (error) {
+        console.error('Error redeeming points:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to redeem points',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Refund a redemption - removes the redemption and refunds points to the user
+ */
+async function refundRedemption(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { redemptionId } = body;
+
+        if (!redemptionId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing redemptionId' })
+            };
+        }
+
+        // Verify authentication
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized' })
+            };
+        }
+
+        const idToken = authHeader.substring(7);
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const streamerId = decoded.uid;
+
+        const db = admin.firestore();
+
+        // Get redemption data
+        const redemptionRef = db.collection('redemptions').doc(redemptionId);
+        const redemptionDoc = await redemptionRef.get();
+
+        if (!redemptionDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'Redemption not found' })
+            };
+        }
+
+        const redemptionData = redemptionDoc.data();
+
+        // Verify that the authenticated user is the streamer (owner of the redemption)
+        if (redemptionData.userId !== streamerId) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Only the streamer can refund redemptions' })
+            };
+        }
+
+        // Check if already refunded or dismissed
+        if (redemptionData.refunded || redemptionData.dismissed) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Redemption already processed' })
+            };
+        }
+
+        // Mark as refunded and delete the redemption record
+        // This effectively refunds the points since points = donations - redemptions
+        await redemptionRef.delete();
+
+        // If it was a custom video, we might want to delete the video too
+        // For now, we'll just delete the redemption record
+
+        console.log('Redemption refunded:', { redemptionId, userId: redemptionData.userId, viewerId: redemptionData.viewerId, creditCost: redemptionData.creditCost });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true,
+                message: 'Redemption refunded successfully'
+            })
+        };
+
+    } catch (error) {
+        console.error('Error refunding redemption:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to refund redemption',
                 message: error.message 
             })
         };

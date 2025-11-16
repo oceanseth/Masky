@@ -4,6 +4,17 @@
  */
 
 /**
+ * Shuffle array using Fisher-Yates algorithm
+ * @param {Array} array - Array to shuffle
+ */
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
+/**
  * Initialize and render avatar carousel
  * @param {string} containerSelector - CSS selector for the container element
  * @param {string} userId - User ID to load avatars for
@@ -75,6 +86,9 @@ export async function renderAvatarCarousel(containerSelector, userId) {
             `;
             return;
         }
+
+        // Randomize avatar order before displaying
+        shuffleArray(avatars);
 
         // Create carousel HTML
         container.innerHTML = `

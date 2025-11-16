@@ -1,11 +1,12 @@
 import { getCurrentUser, onAuthChange } from './firebase.js';
 import { db, collection, doc, getDoc, setDoc, query, where, getDocs } from './firebase.js';
 import { config } from './config.js';
+import { renderRedemptionCard, renderRedemptionQueue } from './customRedemptionCard.js';
 
 /**
  * Render user page configuration UI
  */
-export function renderUserPageConfig(container) {
+export async function renderUserPageConfig(container) {
     const containerElement = typeof container === 'string' ? document.querySelector(container) : container;
     if (!containerElement) {
         console.error('User page config container not found:', container);
@@ -38,16 +39,21 @@ export function renderUserPageConfig(container) {
             </div>
 
             <div class="config-section" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
-                <h4 style="color: #c084fc; margin-bottom: 1rem; font-size: 1.1rem;">Custom Videos</h4>
-                <div class="config-item" style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">Custom Video Price (USD)</label>
-                    <input type="number" id="customVideoPrice" min="1" step="0.01" value="5" style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
-                </div>
-                <div class="config-item" style="margin-bottom: 1rem;">
-                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                        <input type="checkbox" id="allowAvatarDisplay" style="width: 18px; height: 18px; cursor: pointer;">
-                        <span>Allow Avatar Display (users can select from your avatars)</span>
-                    </label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                    <div>
+                        <h4 style="color: #c084fc; margin-bottom: 0.5rem; font-size: 1.1rem;">Redemptions</h4>
+                        <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-bottom: 1.5rem;">As users donate, they get points to use on redemptions.</p>
+                        
+                        <div id="redemptionsList" style="margin-bottom: 1rem;">
+                            <!-- Redemption cards will be rendered here -->
+                        </div>
+                        
+                        <button id="addNewRedemptionBtn" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(192,132,252,0.2); border: 1px solid rgba(192,132,252,0.5); color: #c084fc;">Add New Redemption</button>
+                    </div>
+                    
+                    <div id="redemptionQueueContainer" style="border-left: 1px solid rgba(192,132,252,0.3); padding-left: 2rem;">
+                        <!-- Redemption queue will be rendered here -->
+                    </div>
                 </div>
             </div>
 
@@ -77,14 +83,32 @@ export function renderUserPageConfig(container) {
     `;
 
     // Load existing config
-    loadUserPageConfig();
+    await loadUserPageConfig();
 
     // Wire up save button
     const saveBtn = root.querySelector('#saveUserPageConfig');
     if (saveBtn) {
         saveBtn.onclick = saveUserPageConfig;
     }
+    
+    // Wire up add new redemption button
+    const addRedemptionBtn = root.querySelector('#addNewRedemptionBtn');
+    if (addRedemptionBtn) {
+        addRedemptionBtn.onclick = () => addNewRedemption();
+    }
+    
+    // Load redemption queue
+    const user = getCurrentUser();
+    if (user) {
+        const queueContainer = root.querySelector('#redemptionQueueContainer');
+        if (queueContainer) {
+            await renderRedemptionQueue(queueContainer, user.uid);
+        }
+    }
 }
+
+// Store redemptions in memory
+let currentRedemptions = [];
 
 /**
  * Load user page configuration from Firestore
@@ -103,8 +127,6 @@ async function loadUserPageConfig() {
 
             // Set form values
             document.getElementById('enableDonations').checked = config.enableDonations !== false;
-            document.getElementById('customVideoPrice').value = config.customVideoPrice || 5;
-            document.getElementById('allowAvatarDisplay').checked = config.allowAvatarDisplay === true;
             
             // Set tribe name - if empty, use default with placeholder
             const defaultTribeName = `{streamer} subscribers`;
@@ -114,10 +136,112 @@ async function loadUserPageConfig() {
             document.getElementById('tribeJoinCost').value = config.tribeJoinCost || 10;
             document.getElementById('monthlyTribeVideos').value = config.monthlyTribeVideos || 5;
             document.getElementById('subscribersJoinTribeFree').checked = config.subscribersJoinTribeFree === true;
+            
+            // Load redemptions
+            const redemptions = config.redemptions || [];
+            
+            // Ensure Custom Video redemption exists (hardcoded, always present)
+            const customVideoRedemption = {
+                id: 'custom-video',
+                name: 'Custom Video',
+                description: 'Create a custom video that will play on stream',
+                creditCost: config.customVideoPrice || 5,
+                allowCustomUserString: true,
+                showInQueue: true, // Always true for custom video
+                allowAvatarDisplay: config.allowAvatarDisplay === true
+            };
+            
+            // Check if custom video redemption already exists in redemptions
+            const existingCustomVideo = redemptions.find(r => r.id === 'custom-video');
+            if (existingCustomVideo) {
+                // Merge with existing, but keep it as custom-video
+                Object.assign(existingCustomVideo, customVideoRedemption);
+            } else {
+                // Add custom video redemption at the beginning
+                redemptions.unshift(customVideoRedemption);
+            }
+            
+            currentRedemptions = redemptions;
+            
+            // Render redemption cards
+            renderRedemptions();
+        } else {
+            // Initialize with default Custom Video redemption
+            const customVideoRedemption = {
+                id: 'custom-video',
+                name: 'Custom Video',
+                description: 'Create a custom video that will play on stream',
+                creditCost: 5,
+                allowCustomUserString: true,
+                showInQueue: true, // Always true for custom video
+                allowAvatarDisplay: false
+            };
+            currentRedemptions = [customVideoRedemption];
+            renderRedemptions();
         }
     } catch (error) {
         console.error('Error loading user page config:', error);
     }
+}
+
+/**
+ * Render all redemption cards
+ */
+function renderRedemptions() {
+    const container = document.getElementById('redemptionsList');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    currentRedemptions.forEach((redemption, index) => {
+        const isCustomVideo = redemption.id === 'custom-video';
+        const onDelete = isCustomVideo ? null : (id) => deleteRedemption(id);
+        const onUpdate = (updatedRedemption) => updateRedemption(updatedRedemption);
+        
+        renderRedemptionCard(container, redemption, onUpdate, onDelete);
+        
+        // Add separator between redemptions (except after the last one)
+        if (index < currentRedemptions.length - 1) {
+            const separator = document.createElement('div');
+            separator.style.cssText = 'height: 1px; background: rgba(192,132,252,0.3); margin: 1rem 0;';
+            container.appendChild(separator);
+        }
+    });
+}
+
+/**
+ * Add a new redemption
+ */
+function addNewRedemption() {
+    const newRedemption = {
+        id: `redemption-${Date.now()}`,
+        name: 'New Redemption',
+        description: '',
+        creditCost: 5,
+        allowCustomUserString: false,
+        showInQueue: true
+    };
+    
+    currentRedemptions.push(newRedemption);
+    renderRedemptions();
+}
+
+/**
+ * Update a redemption
+ */
+function updateRedemption(updatedRedemption) {
+    const index = currentRedemptions.findIndex(r => r.id === updatedRedemption.id);
+    if (index !== -1) {
+        currentRedemptions[index] = updatedRedemption;
+    }
+}
+
+/**
+ * Delete a redemption
+ */
+function deleteRedemption(redemptionId) {
+    currentRedemptions = currentRedemptions.filter(r => r.id !== redemptionId);
+    renderRedemptions();
 }
 
 /**
@@ -139,10 +263,24 @@ async function saveUserPageConfig() {
             const tribeNameInput = document.getElementById('tribeName').value.trim();
             const defaultTribeName = `{streamer} subscribers`;
             
+            // Extract Custom Video redemption settings for backward compatibility
+            const customVideoRedemption = currentRedemptions.find(r => r.id === 'custom-video');
+            const customVideoPrice = customVideoRedemption?.creditCost || 5;
+            const allowAvatarDisplay = customVideoRedemption?.allowAvatarDisplay || false;
+            
+            // Ensure showInQueue is always true for custom video
+            const redemptionsToSave = currentRedemptions.map(r => {
+                if (r.id === 'custom-video') {
+                    return { ...r, showInQueue: true };
+                }
+                return r;
+            });
+            
             const config = {
                 enableDonations: document.getElementById('enableDonations').checked,
-                customVideoPrice: parseFloat(document.getElementById('customVideoPrice').value) || 5,
-                allowAvatarDisplay: document.getElementById('allowAvatarDisplay').checked,
+                customVideoPrice: customVideoPrice, // Keep for backward compatibility
+                allowAvatarDisplay: allowAvatarDisplay, // Keep for backward compatibility
+                redemptions: redemptionsToSave, // Store all redemptions (with showInQueue forced to true for custom video)
                 tribeName: tribeNameInput || defaultTribeName,
                 tribeJoinCost: parseFloat(document.getElementById('tribeJoinCost').value) || 10,
                 monthlyTribeVideos: parseInt(document.getElementById('monthlyTribeVideos').value) || 5,
@@ -186,15 +324,26 @@ export async function getUserPageConfig(userId) {
         
         if (userDoc.exists()) {
             const userData = userDoc.data();
-            return userData.userPageConfig || {
+            const defaultConfig = {
                 enableDonations: true,
                 customVideoPrice: 5,
                 allowAvatarDisplay: false,
+                redemptions: [{
+                    id: 'custom-video',
+                    name: 'Custom Video',
+                    description: 'Create a custom video that will play on stream',
+                    creditCost: 5,
+                    allowCustomUserString: true,
+                    showInQueue: true, // Always true for custom video
+                    allowAvatarDisplay: false
+                }],
                 tribeName: '',
                 tribeJoinCost: 10,
                 monthlyTribeVideos: 5,
                 subscribersJoinTribeFree: false
             };
+            
+            return userData.userPageConfig || defaultConfig;
         }
         return null;
     } catch (error) {

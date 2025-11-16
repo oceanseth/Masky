@@ -55,14 +55,7 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
             </label>
         </div>
         
-        ${isCustomVideo ? `
-        <div class="config-item" style="margin-bottom: 1rem;">
-            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" class="redemption-allow-avatar-display" ${redemption.allowAvatarDisplay ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer;">
-                <span>Allow Avatar Display (users can select from your avatars)</span>
-            </label>
-        </div>
-        ` : ''}
+        
     `;
     
     // Add tooltip hover functionality
@@ -102,9 +95,7 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
                 showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false), // Always true for custom video
             };
             
-            if (isCustomVideo) {
-                updatedRedemption.allowAvatarDisplay = card.querySelector('.redemption-allow-avatar-display')?.checked || false;
-            }
+            
             
             if (onUpdate) {
                 onUpdate(updatedRedemption);
@@ -194,6 +185,8 @@ export async function renderRedemptionQueue(container, userId) {
                                 ${redemption.customString ? `<div style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${redemption.customString}"</div>` : ''}
                             </div>
                             <div style="display: flex; gap: 0.5rem; margin-left: 1rem;">
+                                ${redemption.redemptionId === 'custom-video' && redemption.videoId ? `<button class="approve-redemption-btn" data-user-id="${userId}" data-viewer-id="${redemption.viewerId || ''}" data-video-id="${redemption.videoId}" data-viewer-name="${redemption.displayName || 'Anonymous'}" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Approve</button>` : ''}
+                                ${redemption.redemptionId === 'custom-video' && redemption.videoId ? `<button class="preview-redemption-btn" data-video-id="${redemption.videoId}" style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); color: #3b82f6; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Preview</button>` : ''}
                                 <button class="refund-redemption-btn" data-redemption-id="${redemption.id}" style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.5); color: #22c55e; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Refund</button>
                                 <button class="dismiss-redemption-btn" data-redemption-id="${redemption.id}" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Dismiss</button>
                             </div>
@@ -296,6 +289,82 @@ export async function renderRedemptionQueue(container, userId) {
                 }
             };
         });
+
+        // Wire up preview buttons
+        container.querySelectorAll('.preview-redemption-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const videoId = btn.dataset.videoId;
+                if (!videoId) return;
+                try {
+                    const { db, doc, getDoc } = await import('./firebase.js');
+                    const videoDoc = await getDoc(doc(db, 'customVideos', videoId));
+                    if (!videoDoc.exists()) {
+                        alert('Video not found');
+                        return;
+                    }
+                    const videoData = videoDoc.data();
+                    const safeUrl = sanitizeVideoUrl(videoData?.videoUrl);
+                    if (!safeUrl) {
+                        alert('The stored video URL appears invalid or unsafe.');
+                        return;
+                    }
+                    const w = window.open('', 'preview', 'width=640,height=420');
+                    if (!w) {
+                        alert('Popup blocked. Please allow popups for preview.');
+                        return;
+                    }
+                    w.document.write(`<!DOCTYPE html><html><head><title>Preview</title><style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;} video{max-width:100%;max-height:100%;}</style></head><body><video src="${safeUrl}" autoplay muted playsinline></video></body></html>`);
+                    w.document.close();
+                } catch (e) {
+                    console.error('Preview failed:', e);
+                    alert('Failed to preview video.');
+                }
+            };
+        });
+
+        // Wire up approve buttons - publishes event to overlay
+        container.querySelectorAll('.approve-redemption-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const videoId = btn.dataset.videoId;
+                const streamerId = btn.dataset.userId;
+                const viewerId = btn.dataset.viewerId || null;
+                const viewerName = btn.dataset.viewerName || 'Anonymous';
+                if (!videoId || !streamerId) {
+                    alert('Missing data to approve this custom video');
+                    return;
+                }
+                try {
+                    const { db, doc, collection, addDoc, getDoc } = await import('./firebase.js');
+                    // Fetch video to get URL and optional message
+                    const videoDoc = await getDoc(doc(db, 'customVideos', videoId));
+                    if (!videoDoc.exists()) {
+                        alert('Video not found');
+                        return;
+                    }
+                    const vd = videoDoc.data();
+                    const safeUrl = sanitizeVideoUrl(vd?.videoUrl);
+                    if (!safeUrl) {
+                        alert('The stored video URL appears invalid or unsafe.');
+                        return;
+                    }
+                    const alertsRef = collection(db, 'users', streamerId, 'events', 'custom-video', 'alerts');
+                    await addDoc(alertsRef, {
+                        type: 'custom-video',
+                        videoId: videoId,
+                        videoUrl: safeUrl,
+                        message: vd?.message || null,
+                        viewerName: viewerName,
+                        viewerId: viewerId,
+                        timestamp: new Date()
+                    });
+                    // Optional: give quick UI feedback
+                    alert('Approved! The video will play on the overlay.');
+                } catch (e) {
+                    console.error('Error approving custom video:', e);
+                    alert('Failed to approve the video: ' + (e?.message || 'Unknown error'));
+                }
+            };
+        });
         
     } catch (error) {
         console.error('Error loading redemption queue:', error);
@@ -305,6 +374,20 @@ export async function renderRedemptionQueue(container, userId) {
                 Error loading redemption queue
             </div>
         `;
+    }
+}
+
+function sanitizeVideoUrl(raw) {
+    try {
+        const trimmed = String(raw).trim();
+        const url = new URL(trimmed);
+        const protocol = url.protocol.toLowerCase();
+        if (protocol !== 'http:' && protocol !== 'https:') {
+            return null;
+        }
+        return trimmed.replace(/[\u0000-\u001F\u007F]/g, '');
+    } catch {
+        return null;
     }
 }
 

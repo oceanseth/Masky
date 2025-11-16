@@ -289,25 +289,69 @@
             const q = query(eventsCollectionRef);
             
             console.log('Setting up deployment listener...');
+
+            // Track the last processed deployment timestamp (persisted)
+            const LOCAL_STORAGE_KEY = 'overlay:lastDeploymentTimestampMs';
+            function getMs(value) {
+                if (!value) return null;
+                if (typeof value?.toMillis === 'function') {
+                    try { return value.toMillis(); } catch { /* noop */ }
+                }
+                if (typeof value === 'number') {
+                    return value > 1e12 ? value : value * 1000;
+                }
+                if (typeof value === 'string') {
+                    const parsed = Date.parse(value);
+                    if (!Number.isNaN(parsed)) return parsed;
+                    const num = Number(value);
+                    if (!Number.isNaN(num)) return num > 1e12 ? num : num * 1000;
+                }
+                return null;
+            }
+            let lastProcessedDeploymentTsMs = (() => {
+                const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+                const n = Number(stored);
+                return Number.isFinite(n) ? n : 0;
+            })();
             
             unsubscribeDeploymentListener = onSnapshot(q, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added') {
                         const deploymentData = change.doc.data();
                         const docId = change.doc.id;
-                        
-                        // Skip if this is the same event we already processed
-                        if (lastDeploymentEventId === docId) {
+                        const eventTsMs = getMs(deploymentData?.timestamp);
+
+                        // If no timestamp is available, fall back to docId check to avoid loops
+                        if (!eventTsMs) {
+                            if (lastDeploymentEventId === docId) return;
+                            lastDeploymentEventId = docId;
+                            console.log('New deployment detected (no timestamp). Reloading once.', {
+                                version: deploymentData.version,
+                                branch: deploymentData.branch,
+                                docId
+                            });
+                            triggerReloadAfterVideo();
                             return;
                         }
-                        
-                        lastDeploymentEventId = docId;
-                        console.log('New deployment detected:', {
+
+                        // Only react to strictly newer deployments than we have processed
+                        if (eventTsMs <= lastProcessedDeploymentTsMs) {
+                            return;
+                        }
+
+                        // Update memory and persist newest timestamp seen
+                        lastProcessedDeploymentTsMs = Math.max(lastProcessedDeploymentTsMs, eventTsMs);
+                        try {
+                            localStorage.setItem(LOCAL_STORAGE_KEY, String(lastProcessedDeploymentTsMs));
+                        } catch {}
+
+                        console.log('New deployment detected (timestamp-based):', {
                             version: deploymentData.version,
                             branch: deploymentData.branch,
-                            timestamp: deploymentData.timestamp
+                            timestampMs: eventTsMs,
+                            previousProcessedMs: lastProcessedDeploymentTsMs
                         });
-                        
+
                         // Trigger reload after current video finishes
                         triggerReloadAfterVideo();
                     }
@@ -368,6 +412,130 @@
         // Setup deployment listener (no userId needed for system events)
         // This listens to global deployment events, not user-specific events
         setupDeploymentListener();
+
+        // Listen for custom video events and play them directly
+        function setupCustomVideoListener() {
+            if (!currentUserId) return;
+            const userDocRef = doc(db, 'users', currentUserId);
+            const eventsCollectionRef = collection(userDocRef, 'events');
+            const customVideoDocRef = doc(eventsCollectionRef, 'custom-video');
+            const alertsRef = collection(customVideoDocRef, 'alerts');
+            const q = query(alertsRef);
+            let initial = true;
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach(change => {
+                    if (change.type !== 'added') return;
+                    if (initial) return;
+                    const data = change.doc.data();
+                    const safeUrl = sanitizeVideoUrl(data?.videoUrl);
+                    if (!safeUrl) {
+                        console.warn('Unsafe or invalid video URL in custom-video event');
+                        return;
+                    }
+                    const username = data?.viewerName || 'Someone';
+                    playCustomVideo(safeUrl, `${username} redeemed custom video`);
+                });
+                initial = false;
+            }, (error) => {
+                console.error('Error listening to custom-video events:', error);
+            });
+
+            if (!unsubscribeEvents) unsubscribeEvents = [];
+            unsubscribeEvents.push(unsubscribe);
+        }
+
+        function sanitizeVideoUrl(raw) {
+            try {
+                const trimmed = String(raw).trim();
+                const url = new URL(trimmed);
+                const protocol = url.protocol.toLowerCase();
+                if (protocol !== 'http:' && protocol !== 'https:') {
+                    return null;
+                }
+                return trimmed.replace(/[\u0000-\u001F\u007F]/g, '');
+            } catch {
+                return null;
+            }
+        }
+
+        async function playCustomVideo(videoUrl, messageText) {
+            const overlay = document.getElementById('videoOverlay');
+            overlay.innerHTML = '';
+
+            const container = document.createElement('div');
+            container.style.position = 'relative';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.maxWidth = '90vw';
+            container.style.maxHeight = '90vh';
+
+            const video = document.createElement('video');
+            video.src = videoUrl;
+            video.autoplay = true;
+            video.controls = false;
+            video.playsInline = true;
+            video.muted = false;
+            video.style.maxWidth = '90vw';
+            video.style.maxHeight = '90vh';
+            video.style.borderRadius = '12px';
+            video.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5)';
+            video.style.pointerEvents = 'none';
+            currentlyPlayingVideo = video;
+
+            const msg = document.createElement('div');
+            msg.textContent = messageText || '';
+            msg.style.cssText = `
+                background: #8b5cf6;
+                color: #ffffff;
+                font-size: 2rem;
+                font-weight: 700;
+                padding: 1rem 2rem;
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+                text-align: center;
+                font-family: 'Orbitron', sans-serif;
+                text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+                max-width: 80%;
+                word-wrap: break-word;
+                white-space: normal;
+                pointer-events: none;
+                margin-top: 1rem;
+            `;
+
+            container.appendChild(video);
+            container.appendChild(msg);
+            overlay.appendChild(container);
+
+            const cleanup = () => {
+                if (currentlyPlayingVideo === video) {
+                    currentlyPlayingVideo = null;
+                }
+                if (container.parentNode) {
+                    container.parentNode.removeChild(container);
+                }
+                if (pendingReload && !currentlyPlayingVideo) {
+                    performReload();
+                }
+            };
+
+            video.addEventListener('ended', cleanup, { once: true });
+            video.addEventListener('error', cleanup, { once: true });
+
+            try {
+                await video.play();
+            } catch (e) {
+                try {
+                    video.muted = true;
+                    await video.play();
+                    video.muted = false;
+                } catch (e2) {
+                    console.error('Failed to autoplay custom video', e2);
+                }
+            }
+        }
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
@@ -629,6 +797,8 @@
                         setupEventListener(eventTypeKey);
                     }
                 });
+            // Always ensure custom video listener is active
+            setupCustomVideoListener();
         }
 
         async function loadUserProjects(options = {}) {

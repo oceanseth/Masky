@@ -147,8 +147,7 @@ async function loadUserPageConfig() {
                 description: 'Create a custom video that will play on stream',
                 creditCost: config.customVideoPrice || 5,
                 allowCustomUserString: true,
-                showInQueue: true, // Always true for custom video
-                allowAvatarDisplay: config.allowAvatarDisplay === true
+                showInQueue: true // Always true for custom video
             };
             
             // Check if custom video redemption already exists in redemptions
@@ -173,8 +172,7 @@ async function loadUserPageConfig() {
                 description: 'Create a custom video that will play on stream',
                 creditCost: 5,
                 allowCustomUserString: true,
-                showInQueue: true, // Always true for custom video
-                allowAvatarDisplay: false
+                showInQueue: true // Always true for custom video
             };
             currentRedemptions = [customVideoRedemption];
             renderRedemptions();
@@ -266,7 +264,6 @@ async function saveUserPageConfig() {
             // Extract Custom Video redemption settings for backward compatibility
             const customVideoRedemption = currentRedemptions.find(r => r.id === 'custom-video');
             const customVideoPrice = customVideoRedemption?.creditCost || 5;
-            const allowAvatarDisplay = customVideoRedemption?.allowAvatarDisplay || false;
             
             // Ensure showInQueue is always true for custom video
             const redemptionsToSave = currentRedemptions.map(r => {
@@ -279,7 +276,6 @@ async function saveUserPageConfig() {
             const config = {
                 enableDonations: document.getElementById('enableDonations').checked,
                 customVideoPrice: customVideoPrice, // Keep for backward compatibility
-                allowAvatarDisplay: allowAvatarDisplay, // Keep for backward compatibility
                 redemptions: redemptionsToSave, // Store all redemptions (with showInQueue forced to true for custom video)
                 tribeName: tribeNameInput || defaultTribeName,
                 tribeJoinCost: parseFloat(document.getElementById('tribeJoinCost').value) || 10,
@@ -324,18 +320,16 @@ export async function getUserPageConfig(userId) {
         
         if (userDoc.exists()) {
             const userData = userDoc.data();
-            const defaultConfig = {
+                const defaultConfig = {
                 enableDonations: true,
                 customVideoPrice: 5,
-                allowAvatarDisplay: false,
                 redemptions: [{
                     id: 'custom-video',
                     name: 'Custom Video',
                     description: 'Create a custom video that will play on stream',
                     creditCost: 5,
                     allowCustomUserString: true,
-                    showInQueue: true, // Always true for custom video
-                    allowAvatarDisplay: false
+                        showInQueue: true // Always true for custom video
                 }],
                 tribeName: '',
                 tribeJoinCost: 10,

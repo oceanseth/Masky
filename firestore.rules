@@ -70,6 +70,16 @@ service cloud.firestore {
         }
       }
 
+      // User uploads subcollection - viewers may create records for their own uploads, streamers can manage
+      match /uploads/{uploadId} {
+        // Allow streamer to read/manage their uploads
+        allow read, update, delete: if isOwner(userId);
+        // Allow a viewer to create a record only for themselves
+        allow create: if isAuthenticated() &&
+          request.resource.data.viewerId is string &&
+          request.resource.data.viewerId == request.auth.uid;
+      }
+
       // User voices subcollection - users can only access their own voices
       match /voices/{voiceId} {
         allow read, write: if isOwner(userId);

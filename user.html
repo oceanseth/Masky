@@ -355,7 +355,6 @@
                         min="1"
                         step="0.01"
                     >
-                    <span style="color: rgba(255, 255, 255, 0.7); margin-left: 0.5rem;">USD</span>
                 </div>
                 <button id="donateBtn" class="donate-btn">Donate Now</button>
             </div>
@@ -369,60 +368,24 @@
                 <button id="twitchLoginBtn" class="donate-btn" style="background: #9146FF;">Sign in with Twitch</button>
             </div>
 
-            <!-- Video Credits Display -->
-            <div id="videoCreditsSection" class="donate-section" style="display: none; margin-top: 2rem; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
-                <h2 class="donate-title" style="color: #3b82f6;">Your Video Credits</h2>
+            <!-- Points/Credits Display -->
+            <div id="pointsSection" class="donate-section" style="display: none; margin-top: 2rem; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
+                <h2 class="donate-title" style="color: #3b82f6;">Your Points</h2>
                 <div style="text-align: center; margin: 1rem 0;">
-                    <div style="font-size: 3rem; font-weight: bold; color: #3b82f6;" id="videoCreditsCount">0</div>
-                    <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem;">Custom videos available</p>
+                    <div style="font-size: 3rem; font-weight: bold; color: #3b82f6;" id="pointsCount">0</div>
+                    <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem;">Points available for redemptions</p>
                 </div>
             </div>
 
-            <!-- Custom Video Creation Section -->
-            <div id="customVideoSection" class="donate-section" style="display: none; margin-top: 2rem;">
-                <h2 class="donate-title">Create Custom Video</h2>
-                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem;">
-                    Create a custom video that will play on stream! Price: $<span id="customVideoPriceDisplay">5</span>
+            <!-- Available Redemptions Section -->
+            <div id="redemptionsSection" class="donate-section" style="display: none; margin-top: 2rem;">
+                <h2 class="donate-title">Available Redemptions</h2>
+                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1.5rem;">
+                    Spend your points on these redemptions!
                 </p>
-
-                <!-- Avatar Selection (if enabled) -->
-                <div id="avatarSelectionSection" style="display: none; margin-bottom: 1.5rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Select Avatar:</label>
-                    <div id="avatarsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-                        <!-- Avatars will be loaded here -->
-                    </div>
+                <div id="redemptionsList" style="display: grid; gap: 1rem;">
+                    <!-- Redemptions will be loaded here -->
                 </div>
-
-                <!-- Video Upload/URL -->
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Video URL or Upload:</label>
-                    <input 
-                        type="text" 
-                        id="videoUrlInput" 
-                        placeholder="Enter video URL (YouTube, Vimeo, or direct link)"
-                        style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff; margin-bottom: 0.5rem;"
-                    >
-                    <input 
-                        type="file" 
-                        id="videoFileInput" 
-                        accept="video/*"
-                        style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;"
-                    >
-                    <small style="color: rgba(255, 255, 255, 0.6); display: block; margin-top: 0.25rem;">Or upload a video file</small>
-                </div>
-
-                <!-- Video Message (optional) -->
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Message (optional):</label>
-                    <textarea 
-                        id="videoMessageInput" 
-                        placeholder="Add a message to display with your video"
-                        rows="3"
-                        style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff; resize: vertical;"
-                    ></textarea>
-                </div>
-
-                <button id="createCustomVideoBtn" class="donate-btn">Create Custom Video</button>
             </div>
 
             <div class="projects-section">
@@ -634,14 +597,13 @@
                     document.querySelector('.donate-section').style.display = 'none';
                 }
 
-                // Show/hide custom video section (always show, but will require login)
-                if (userPageConfig.customVideoPrice) {
-                    document.getElementById('customVideoSection').style.display = 'block';
-                    document.getElementById('customVideoPriceDisplay').textContent = userPageConfig.customVideoPrice;
-                }
-
-            // Check if viewer is logged in
+            // Check if viewer is logged in (this will also load points)
             checkViewerAuth();
+            
+            // Load available redemptions after auth check (they will be re-rendered with points after auth completes)
+            if (userPageConfig.redemptions && userPageConfig.redemptions.length > 0) {
+                loadAvailableRedemptions(userPageConfig.redemptions);
+            }
             
             // Check if viewer is the owner and show configure button
             checkIfOwner();
@@ -742,13 +704,17 @@
                     document.getElementById('twitchLoginSection').style.display = 'none';
                     // Check subscription status and load credits
                     await checkSubscriptionAndLoadCredits();
+                    // Reload redemptions with updated points
+                    if (userPageConfig?.redemptions && userPageConfig.redemptions.length > 0) {
+                        await loadAvailableRedemptions(userPageConfig.redemptions);
+                    }
                     // Update header with user profile
                     updateHeaderWithUserProfile(user);
                 } else {
                     currentViewerUserId = null;
                     // Show Twitch login button
                     document.getElementById('twitchLoginSection').style.display = 'block';
-                    document.getElementById('videoCreditsSection').style.display = 'none';
+                    document.getElementById('pointsSection').style.display = 'none';
                     // Show hamburger menu
                     showHamburgerMenu();
                     const twitchLoginBtn = document.getElementById('twitchLoginBtn');
@@ -770,11 +736,15 @@
                         currentViewerUserId = user.uid;
                         document.getElementById('twitchLoginSection').style.display = 'none';
                         await checkSubscriptionAndLoadCredits();
+                        // Reload redemptions with updated points
+                        if (userPageConfig?.redemptions && userPageConfig.redemptions.length > 0) {
+                            await loadAvailableRedemptions(userPageConfig.redemptions);
+                        }
                         updateHeaderWithUserProfile(user);
                     } else {
                         currentViewerUserId = null;
                         document.getElementById('twitchLoginSection').style.display = 'block';
-                        document.getElementById('videoCreditsSection').style.display = 'none';
+                        document.getElementById('pointsSection').style.display = 'none';
                         showHamburgerMenu();
                     }
                 });
@@ -918,7 +888,9 @@
                         userId: donation.userId
                     });
                     if (donation.viewerId === currentViewerUserId) {
-                        totalDonated += donation.amount || 0;
+                        // Ensure amount is a number (handle potential string storage)
+                        const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+                        totalDonated += amount || 0;
                     }
                 });
                 console.log('[calculateTotalDonated] Total donated:', totalDonated);
@@ -929,25 +901,31 @@
             }
         }
 
-        // Calculate total spent on custom videos
+        // Calculate total spent on redemptions
         async function calculateTotalSpent() {
             if (!currentViewerUserId || !currentUserId) return 0;
 
             try {
                 const { db, collection, query, where, getDocs } = await import('/src/firebase.js');
                 
-                const customVideosRef = collection(db, 'customVideos');
-                const paidVideosQuery = query(
-                    customVideosRef,
+                // Get all redemptions for this user/viewer
+                const redemptionsRef = collection(db, 'redemptions');
+                const redemptionsQuery = query(
+                    redemptionsRef,
                     where('userId', '==', currentUserId),
-                    where('viewerId', '==', currentViewerUserId),
-                    where('paid', '==', true)
+                    where('viewerId', '==', currentViewerUserId)
                 );
-                const paidVideosSnapshot = await getDocs(paidVideosQuery);
+                const redemptionsSnapshot = await getDocs(redemptionsQuery);
                 
-                const videoPrice = userPageConfig?.customVideoPrice || 5;
-                const totalSpent = paidVideosSnapshot.size * videoPrice;
-                console.log('[calculateTotalSpent] Total spent:', totalSpent, '(', paidVideosSnapshot.size, 'videos × $', videoPrice, ')');
+                let totalSpent = 0;
+                redemptionsSnapshot.forEach(doc => {
+                    const redemption = doc.data();
+                    // Ensure creditCost is a number (handle potential string storage)
+                    const creditCost = typeof redemption.creditCost === 'number' ? redemption.creditCost : parseFloat(redemption.creditCost || 0);
+                    totalSpent += creditCost || 0;
+                });
+                
+                console.log('[calculateTotalSpent] Total spent:', totalSpent);
                 return totalSpent;
             } catch (error) {
                 console.error('Error calculating total spent:', error);
@@ -955,68 +933,285 @@
             }
         }
 
-        // Check subscription status and load video credits
-        async function checkSubscriptionAndLoadCredits() {
-            if (!currentViewerUserId || !currentUserId) return;
+        // Calculate user points (1 point per dollar donated, minus spent)
+        async function calculateUserPoints() {
+            if (!currentViewerUserId || !currentUserId) return 0;
 
             try {
-                const { db, collection, query, where, getDocs, doc, getDoc } = await import('/src/firebase.js');
-                
                 // Calculate current balance
                 const totalDonated = await calculateTotalDonated();
                 const totalSpent = await calculateTotalSpent();
                 
-                console.log('[checkSubscriptionAndLoadCredits] Balance:', {
-                    totalDonated,
-                    totalSpent,
-                    balance: totalDonated - totalSpent
-                });
+                // Points = dollars donated - dollars spent
+                const points = Math.max(0, totalDonated - totalSpent);
+                
+                return points;
+            } catch (error) {
+                console.error('Error calculating user points:', error);
+                return 0;
+            }
+        }
 
-                // Calculate video credits
-                const videoPrice = userPageConfig?.customVideoPrice || 5;
+        // Check subscription status and load points
+        async function checkSubscriptionAndLoadCredits() {
+            if (!currentViewerUserId || !currentUserId) return;
+
+            try {
+                const points = await calculateUserPoints();
+
+                // Display points - show whole numbers without decimals if .00
+                const pointsDisplay = points % 1 === 0 ? points.toString() : points.toFixed(2);
+                document.getElementById('pointsCount').textContent = pointsDisplay;
+                document.getElementById('pointsSection').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading points:', error);
+            }
+        }
+        
+        // Load and display available redemptions
+        async function loadAvailableRedemptions(redemptions) {
+            const container = document.getElementById('redemptionsList');
+            if (!container) return;
+            
+            // Filter redemptions that should be shown
+            const availableRedemptions = redemptions.filter(r => r.showInQueue !== false);
+            
+            if (availableRedemptions.length === 0) {
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.6); text-align: center;">No redemptions available</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            const userPoints = await calculateUserPoints();
+            
+            availableRedemptions.forEach(redemption => {
+                const card = document.createElement('div');
+                card.className = 'redemption-card';
+                card.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem;';
                 
-                // Get free custom videos (these count as "used" credits, paid videos don't)
-                const customVideosRef = collection(db, 'customVideos');
-                const freeVideosQuery = query(
-                    customVideosRef,
-                    where('userId', '==', currentUserId),
-                    where('viewerId', '==', currentViewerUserId),
-                    where('paid', '==', false)
-                );
-                const freeVideosSnapshot = await getDocs(freeVideosQuery);
-                const freeVideosCount = freeVideosSnapshot.size;
+                // Use small epsilon for floating point comparison
+                const epsilon = 0.01;
+                const canAfford = userPoints + epsilon >= redemption.creditCost;
                 
-                // Calculate credits from balance (donations - spent)
-                const balance = totalDonated - totalSpent;
-                const creditsFromBalance = Math.floor(Math.max(0, balance) / videoPrice);
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <div>
+                            <h3 style="color: #c084fc; margin: 0 0 0.5rem 0; font-size: 1.2rem;">${redemption.name || 'Unnamed Redemption'}</h3>
+                            ${redemption.description ? `<p style="color: rgba(255,255,255,0.7); margin: 0; font-size: 0.9rem;">${redemption.description}</p>` : ''}
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: #c084fc; font-size: 1.5rem; font-weight: bold;">${redemption.creditCost}</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">points</div>
+                        </div>
+                    </div>
+                    ${redemption.id === 'custom-video' ? `
+                        <div id="customVideoForm-${redemption.id}" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(192,132,252,0.3);">
+                            ${userPageConfig?.allowAvatarDisplay ? `
+                            <div id="avatarSelectionSection-${redemption.id}" style="margin-bottom: 1rem;">
+                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Select Avatar:</label>
+                                <div id="avatarsGrid-${redemption.id}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                                    <!-- Avatars will be loaded here -->
+                                </div>
+                            </div>
+                            ` : ''}
+                            <div style="margin-bottom: 1rem;">
+                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Video URL or Upload:</label>
+                                <input type="text" class="video-url-input" placeholder="Enter video URL" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff; margin-bottom: 0.5rem;">
+                                <input type="file" class="video-file-input" accept="video/*" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                            </div>
+                            <div style="margin-bottom: 1rem;">
+                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Message (optional):</label>
+                                <textarea class="video-message-input" placeholder="Add a message" rows="3" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff; resize: vertical;"></textarea>
+                            </div>
+                        </div>
+                    ` : redemption.allowCustomUserString ? `
+                        <div style="margin-top: 1rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Custom Message:</label>
+                            <input type="text" class="custom-string-input" placeholder="Enter your message" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                        </div>
+                    ` : ''}
+                    <button class="redeem-btn" data-redemption-id="${redemption.id}" ${!canAfford ? 'disabled' : ''} style="width: 100%; padding: 0.75rem; background: ${canAfford ? '#c084fc' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${canAfford ? '#c084fc' : 'rgba(192,132,252,0.3)'}; border-radius: 8px; color: #fff; font-weight: 600; cursor: ${canAfford ? 'pointer' : 'not-allowed'}; margin-top: 1rem; opacity: ${canAfford ? '1' : '0.5'};">
+                        ${canAfford ? 'Redeem' : 'Not Enough Points'}
+                    </button>
+                `;
                 
-                // Check tribe membership and free videos
-                const viewerUserDoc = await getDoc(doc(db, 'users', currentViewerUserId));
-                let remainingFreeVideos = 0;
-                
-                if (viewerUserDoc.exists()) {
-                    const viewerData = viewerUserDoc.data();
-                    const tribeMemberships = viewerData.tribeMemberships || {};
-                    const membership = tribeMemberships[currentUserId];
+                // Handle custom video form toggle
+                if (redemption.id === 'custom-video') {
+                    const redeemBtn = card.querySelector('.redeem-btn');
+                    const form = card.querySelector(`#customVideoForm-${redemption.id}`);
+                    let formVisible = false;
                     
-                    if (membership) {
-                        isTribeMember = true;
-                        // Check free videos used this month
-                        const freeVideosUsed = membership.freeVideosUsedThisMonth || 0;
-                        const monthlyFreeVideos = userPageConfig?.monthlyTribeVideos || 5;
-                        remainingFreeVideos = Math.max(0, monthlyFreeVideos - freeVideosUsed);
-                    }
+                    redeemBtn.onclick = () => {
+                        if (!canAfford) return;
+                        if (!formVisible) {
+                            form.style.display = 'block';
+                            formVisible = true;
+                            redeemBtn.textContent = 'Create Custom Video';
+                            
+                            // Load avatars if enabled
+                            if (userPageConfig?.allowAvatarDisplay) {
+                                loadAvatarsForRedemption(redemption.id);
+                            }
+                        } else {
+                            handleRedemption(redemption, card);
+                        }
+                    };
+                } else {
+                    const redeemBtn = card.querySelector('.redeem-btn');
+                    redeemBtn.onclick = () => {
+                        if (!canAfford) return;
+                        handleRedemption(redemption, card);
+                    };
                 }
                 
-                // Total credits = balance credits + remaining free videos - free videos already used
-                videoCredits = creditsFromBalance + remainingFreeVideos - freeVideosCount;
-                videoCredits = Math.max(0, videoCredits); // Don't go negative
-
-                // Display credits
-                document.getElementById('videoCreditsCount').textContent = videoCredits;
-                document.getElementById('videoCreditsSection').style.display = 'block';
+                container.appendChild(card);
+            });
+            
+            document.getElementById('redemptionsSection').style.display = 'block';
+        }
+        
+        // Handle redemption
+        async function handleRedemption(redemption, cardElement) {
+            if (!currentViewerUserId) {
+                alert('Please sign in to redeem');
+                return;
+            }
+            
+            const userPoints = await calculateUserPoints();
+            // Use a small epsilon for floating point comparison to handle precision issues
+            const epsilon = 0.01;
+            if (userPoints + epsilon < redemption.creditCost) {
+                alert('Not enough points!');
+                return;
+            }
+            
+            let customString = null;
+            let videoUrl = null;
+            let videoFile = null;
+            let message = null;
+            let avatarId = null;
+            
+            if (redemption.id === 'custom-video') {
+                const urlInput = cardElement.querySelector('.video-url-input');
+                const fileInput = cardElement.querySelector('.video-file-input');
+                const messageInput = cardElement.querySelector('.video-message-input');
+                const avatarCard = cardElement.querySelector('.avatar-card.selected');
+                
+                videoUrl = urlInput?.value.trim() || null;
+                videoFile = fileInput?.files[0] || null;
+                message = messageInput?.value.trim() || null;
+                avatarId = avatarCard?.dataset.avatarId || null;
+                
+                if (!videoUrl && !videoFile) {
+                    alert('Please provide a video URL or upload a video file');
+                    return;
+                }
+            } else if (redemption.allowCustomUserString) {
+                const customInput = cardElement.querySelector('.custom-string-input');
+                customString = customInput?.value.trim() || null;
+            }
+            
+            const btn = cardElement.querySelector('.redeem-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${config.api.baseUrl}/api/redemptions/redeem`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userId: currentUserId,
+                        viewerId: currentViewerUserId,
+                        redemptionId: redemption.id,
+                        redemptionName: redemption.name,
+                        creditCost: redemption.creditCost,
+                        customString: customString,
+                        videoUrl: videoUrl,
+                        message: message,
+                        avatarId: avatarId
+                    })
+                });
+                
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to redeem');
+                }
+                
+                alert('Redemption successful!');
+                
+                // Reload points and redemptions
+                await checkSubscriptionAndLoadCredits();
+                if (userPageConfig?.redemptions) {
+                    await loadAvailableRedemptions(userPageConfig.redemptions);
+                }
+                
+                // Reset form if custom video
+                if (redemption.id === 'custom-video') {
+                    const form = cardElement.querySelector(`#customVideoForm-${redemption.id}`);
+                    if (form) {
+                        form.style.display = 'none';
+                        const urlInput = cardElement.querySelector('.video-url-input');
+                        const fileInput = cardElement.querySelector('.video-file-input');
+                        const messageInput = cardElement.querySelector('.video-message-input');
+                        if (urlInput) urlInput.value = '';
+                        if (fileInput) fileInput.value = '';
+                        if (messageInput) messageInput.value = '';
+                    }
+                    btn.textContent = 'Redeem';
+                }
             } catch (error) {
-                console.error('Error loading video credits:', error);
+                console.error('Error redeeming:', error);
+                alert('Failed to redeem: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // Load avatars for redemption
+        async function loadAvatarsForRedemption(redemptionId) {
+            if (!userPageConfig?.allowAvatarDisplay || !currentUserId) return;
+            
+            try {
+                const { db, collection, getDocs } = await import('/src/firebase.js');
+                const avatarsRef = collection(db, 'users', currentUserId, 'heygenAvatarGroups');
+                const avatarsSnapshot = await getDocs(avatarsRef);
+                
+                const avatarsGrid = document.getElementById(`avatarsGrid-${redemptionId}`);
+                if (!avatarsGrid) return;
+                
+                avatarsGrid.innerHTML = '';
+                
+                avatarsSnapshot.forEach(doc => {
+                    const avatarData = doc.data();
+                    const avatarCard = document.createElement('div');
+                    avatarCard.className = 'avatar-card';
+                    avatarCard.dataset.avatarId = doc.id;
+                    avatarCard.style.cssText = 'cursor: pointer; padding: 0.5rem; border: 2px solid transparent; border-radius: 8px; text-align: center; transition: all 0.3s ease;';
+                    
+                    avatarCard.innerHTML = `
+                        <div style="width: 100px; height: 100px; background: rgba(255,255,255,0.1); border-radius: 8px; margin: 0 auto 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 2rem;">
+                            ${avatarData.avatar_group_name || 'Avatar'}
+                        </div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">${avatarData.avatar_group_name || 'Avatar'}</div>
+                    `;
+                    
+                    avatarCard.onclick = () => {
+                        document.querySelectorAll(`#avatarsGrid-${redemptionId} .avatar-card`).forEach(card => {
+                            card.classList.remove('selected');
+                            card.style.borderColor = 'transparent';
+                        });
+                        avatarCard.classList.add('selected');
+                        avatarCard.style.borderColor = '#c084fc';
+                    };
+                    
+                    avatarsGrid.appendChild(avatarCard);
+                });
+            } catch (error) {
+                console.error('Error loading avatars for redemption:', error);
             }
         }
 
@@ -1086,111 +1281,6 @@
             // This function is kept for compatibility
         }
 
-        let selectedAvatarId = null;
-
-        // Handle custom video creation
-        document.getElementById('createCustomVideoBtn').addEventListener('click', async () => {
-            if (!currentViewerUserId) {
-                alert('Please sign in to create a custom video');
-                return;
-            }
-
-            const videoUrl = document.getElementById('videoUrlInput').value.trim();
-            const videoFile = document.getElementById('videoFileInput').files[0];
-            const message = document.getElementById('videoMessageInput').value.trim();
-
-            if (!videoUrl && !videoFile) {
-                alert('Please provide a video URL or upload a video file');
-                return;
-            }
-
-            const btn = document.getElementById('createCustomVideoBtn');
-            btn.disabled = true;
-            btn.textContent = 'Processing...';
-
-            try {
-                // If user has credits, create video directly
-                // Otherwise, create payment session
-                if (videoCredits > 0) {
-                    await createCustomVideo(videoUrl, videoFile, message, selectedAvatarId, false);
-                } else {
-                    // Create payment session
-                    const response = await fetch(`${config.api.baseUrl}/api/custom-videos/create-checkout`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                    body: JSON.stringify({
-                        userId: currentUserId,
-                        viewerId: currentViewerUserId,
-                        videoUrl: videoUrl || (videoFile ? 'UPLOAD_PENDING' : ''),
-                        message: message,
-                        avatarId: selectedAvatarId,
-                        amount: userPageConfig.customVideoPrice,
-                        successUrl: `${window.location.origin}${window.location.pathname}?video=success`,
-                        cancelUrl: `${window.location.origin}${window.location.pathname}?video=cancelled`
-                    })
-                    });
-
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Failed to create payment session');
-                    }
-
-                    // Redirect to Stripe checkout
-                    window.location.href = data.url;
-                }
-            } catch (error) {
-                console.error('Error creating custom video:', error);
-                alert('Failed to create custom video: ' + error.message);
-                btn.disabled = false;
-                btn.textContent = 'Create Custom Video';
-            }
-        });
-
-        async function createCustomVideo(videoUrl, videoFile, message, avatarId, paid) {
-            // Handle file upload if needed
-            let finalVideoUrl = videoUrl;
-            if (videoFile && !videoUrl) {
-                // TODO: Upload video file to storage and get URL
-                // For now, we'll need to handle this on the backend
-                alert('Video file upload is not yet implemented. Please provide a video URL.');
-                return;
-            }
-
-            const response = await fetch(`${config.api.baseUrl}/api/custom-videos/create`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    userId: currentUserId,
-                    viewerId: currentViewerUserId,
-                    videoUrl: finalVideoUrl,
-                    message: message,
-                    avatarId: avatarId,
-                    paid: paid
-                })
-            });
-
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to create custom video');
-            }
-
-            alert('Custom video created successfully! It will play on stream soon.');
-            // Reset form
-            document.getElementById('videoUrlInput').value = '';
-            document.getElementById('videoFileInput').value = '';
-            document.getElementById('videoMessageInput').value = '';
-            selectedAvatarId = null;
-            document.querySelectorAll('.avatar-card').forEach(card => {
-                card.style.borderColor = 'transparent';
-            });
-            
-            // Reload credits
-            await checkSubscriptionAndLoadCredits();
-        }
 
         // Check for donation/video success/cancel
         const urlParams = new URLSearchParams(window.location.search);

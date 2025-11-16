@@ -49,6 +49,9 @@ service cloud.firestore {
         // Allow public read access for custom video events (for overlay)
         allow read: if eventType == 'custom-video';
         
+        // Allow public read access for redemption events (for overlay)
+        allow read: if eventType == 'redemption';
+        
         // Event alerts subcollection
         match /alerts/{alertId} {
           allow read, write: if isOwner(userId);
@@ -61,6 +64,9 @@ service cloud.firestore {
           
           // Allow public read access for custom video event alerts (for overlay)
           allow read: if eventType == 'custom-video';
+          
+          // Allow public read access for redemption event alerts (for overlay)
+          allow read: if eventType == 'redemption';
         }
       }
 
@@ -176,6 +182,31 @@ service cloud.firestore {
         (resource.data.userId == request.auth.uid || resource.data.viewerId == request.auth.uid);
       allow write: if false; // Only server can write custom videos
     }
+    
+    // Redemptions collection - redemption instances (when users redeem points)
+    match /redemptions/{redemptionId} {
+      // Streamers can read all redemptions for their channel
+      allow read: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+      
+      // Viewers can read their own redemptions
+      allow read: if isAuthenticated() && 
+        resource.data.viewerId == request.auth.uid;
+      
+      // Streamers can update redemptions (e.g., dismiss them)
+      allow update: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+      
+      // Only server can create redemptions (via API endpoint)
+      // This ensures proper validation and point deduction
+      allow create: if false; // Only server can create redemptions
+      allow delete: if false; // Only server can delete redemptions
+    }
+    
+    // Note: Redemption types (configuration) are stored in users/{userId}/userPageConfig.redemptions
+    // These are already protected by the users collection rules:
+    // - Only the streamer (owner) can write to their userPageConfig
+    // - Public read access allows viewers to read redemption types to display available redemptions
     
     // System deployment events - allow public read access for overlay refresh
     match /_system/deployments/events/{eventId} {

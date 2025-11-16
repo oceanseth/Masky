@@ -198,31 +198,37 @@ export function renderProjectsManager(container) {
                 }
                 
                 // For HeyGen videos, check if we have a cached URL that's still valid
-                if (project.heygenVideoId && project.heygenVideoUrl && project.heygenVideoUrlExpiresAt) {
-                    const parseExpiryTimestamp = (value) => {
-                        if (!value) return null;
-                        if (typeof value === 'string') {
-                            const parsed = Date.parse(value);
-                            return Number.isNaN(parsed) ? null : parsed;
+                if (project.heygenVideoId) {
+                    // If we have a cached URL with expiry, check if it's still valid
+                    if (project.heygenVideoUrl && project.heygenVideoUrlExpiresAt) {
+                        const parseExpiryTimestamp = (value) => {
+                            if (!value) return null;
+                            if (typeof value === 'string') {
+                                const parsed = Date.parse(value);
+                                return Number.isNaN(parsed) ? null : parsed;
+                            }
+                            if (typeof value === 'number') {
+                                return value;
+                            }
+                            if (value?.toDate) {
+                                return value.toDate().getTime();
+                            }
+                            return null;
+                        };
+                        
+                        const expiryTimestamp = parseExpiryTimestamp(project.heygenVideoUrlExpiresAt);
+                        if (expiryTimestamp && expiryTimestamp - expiryBufferMs > now) {
+                            // Cached URL is still valid
+                            return { ...project, videoUrl: project.heygenVideoUrl };
                         }
-                        if (typeof value === 'number') {
-                            return value;
-                        }
-                        if (value?.toDate) {
-                            return value.toDate().getTime();
-                        }
-                        return null;
-                    };
-                    
-                    const expiryTimestamp = parseExpiryTimestamp(project.heygenVideoUrlExpiresAt);
-                    if (expiryTimestamp && expiryTimestamp - expiryBufferMs > now) {
-                        // Cached URL is still valid
-                        return { ...project, videoUrl: project.heygenVideoUrl };
                     }
+                    
+                    // Has heygenVideoId but no valid cached URL - need to fetch fresh one
+                    return { ...project, _needsFreshUrl: true };
                 }
                 
-                // No valid cached URL, will need to fetch fresh one
-                return { ...project, _needsFreshUrl: true };
+                // No heygenVideoId and no videoUrl - return as-is
+                return { ...project };
             });
             
             // Check if any projects need fresh URLs

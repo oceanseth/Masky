@@ -352,6 +352,10 @@ class ProjectWizard {
                                         <button class="btn btn-primary" id="recordNewBtn" onclick="projectWizard.startNewRecording()">
                                             <span class="record-icon">🎤</span> Record New Voice
                                         </button>
+                                        <button class="btn btn-secondary" id="uploadAudioBtn" onclick="projectWizard.startAudioUpload()">
+                                            <span class="upload-icon">📁</span> Upload Audio File
+                                        </button>
+                                        <input type="file" id="audioFileInput" accept="audio/*" style="display: none;" onchange="projectWizard.handleAudioFileSelect(event)">
                                     </div>
                                 </div>
 
@@ -1463,6 +1467,11 @@ class ProjectWizard {
     }
 
     async saveVoice() {
+        // Check if this is an uploaded file or a recording
+        if (this.recordingState && this.recordingState.isUploaded) {
+            return this.saveUploadedVoice();
+        }
+
         if (!this.recordingState || !this.recordingState.audioBlob) {
             alert('No recording to save. Please record a voice first.');
             return;
@@ -1558,6 +1567,221 @@ class ProjectWizard {
         }
     }
 
+    /**
+     * Start audio file upload by triggering file input
+     */
+    startAudioUpload() {
+        const audioFileInput = document.getElementById('audioFileInput');
+        if (audioFileInput) {
+            audioFileInput.click();
+        }
+    }
+
+    /**
+     * Handle audio file selection
+     */
+    async handleAudioFileSelect(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        // Validate file type
+        if (!file.type.startsWith('audio/')) {
+            alert('Please select an audio file.');
+            event.target.value = ''; // Reset input
+            return;
+        }
+
+        // Hide voice selection and show recorder view (we'll reuse the audio preview UI)
+        const voiceSelection = document.getElementById('voiceSelection');
+        const selectedVoice = document.getElementById('selectedVoice');
+        const voiceRecorder = document.getElementById('voiceRecorder');
+        
+        if (voiceSelection) voiceSelection.style.display = 'none';
+        if (selectedVoice) selectedVoice.style.display = 'none';
+        if (voiceRecorder) voiceRecorder.style.display = 'block';
+
+        // Hide recording controls
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const recordingStatus = document.getElementById('recordingStatus');
+        
+        if (recordBtn) recordBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (recordingStatus) {
+            recordingStatus.textContent = 'Audio file selected. Enter a name and save.';
+        }
+
+        // Create audio blob from file
+        const audioBlob = file;
+        
+        // Get audio duration
+        let duration = 0;
+        try {
+            const audio = new Audio();
+            audio.src = URL.createObjectURL(audioBlob);
+            await new Promise((resolve, reject) => {
+                audio.onloadedmetadata = () => {
+                    duration = audio.duration;
+                    URL.revokeObjectURL(audio.src);
+                    resolve();
+                };
+                audio.onerror = reject;
+            });
+        } catch (error) {
+            console.warn('Could not determine audio duration:', error);
+        }
+
+        // Initialize recording state (reusing the same structure for consistency)
+        this.recordingState = {
+            isRecording: false,
+            mediaRecorder: null,
+            audioChunks: [],
+            audioBlob: audioBlob,
+            duration: duration,
+            isUploaded: true // Flag to indicate this is an uploaded file, not a recording
+        };
+
+        // Show audio preview
+        const audioPreview = document.getElementById('audioPreview');
+        const recordedAudio = document.getElementById('recordedAudio');
+        const voiceNameInput = document.getElementById('voiceName');
+        
+        if (audioPreview && recordedAudio) {
+            recordedAudio.src = URL.createObjectURL(audioBlob);
+            audioPreview.style.display = 'block';
+            
+            // Ensure voice name input exists and is visible
+            if (voiceNameInput) {
+                voiceNameInput.value = ''; // Clear any previous value
+                voiceNameInput.placeholder = 'e.g., Thank You Voice';
+            } else {
+                // Create the voice naming input if it doesn't exist
+                const voiceNamingDiv = document.createElement('div');
+                voiceNamingDiv.className = 'voice-naming';
+                voiceNamingDiv.innerHTML = `
+                    <label for="voiceName">Name your voice:</label>
+                    <input type="text" id="voiceName" placeholder="e.g., Thank You Voice" maxlength="50">
+                `;
+                
+                const voiceActions = audioPreview.querySelector('.voice-actions');
+                if (voiceActions) {
+                    audioPreview.insertBefore(voiceNamingDiv, voiceActions);
+                }
+            }
+        }
+
+        // Reset file input for potential re-upload
+        event.target.value = '';
+    }
+
+    /**
+     * Save uploaded voice file
+     */
+    async saveUploadedVoice() {
+        if (!this.recordingState || !this.recordingState.audioBlob) {
+            alert('No audio file to save. Please select a file first.');
+            return;
+        }
+
+        const voiceNameInput = document.getElementById('voiceName');
+        if (!voiceNameInput) {
+            alert('Voice name input not found. Please try again.');
+            return;
+        }
+        
+        const voiceName = voiceNameInput.value.trim();
+        if (!voiceName) {
+            alert('Please enter a name for your voice.');
+            return;
+        }
+
+        if (this.voiceSaveInProgress) {
+            console.warn('Voice save already in progress, ignoring duplicate request.');
+            return;
+        }
+
+        this.voiceSaveInProgress = true;
+        this.setVoiceSavingState(true);
+
+        try {
+            const user = getCurrentUser();
+            if (!user) throw new Error('User not authenticated');
+
+            const idToken = await user.getIdToken();
+            const formData = new FormData();
+            
+            // Get file extension from the blob
+            const audioBlob = this.recordingState.audioBlob;
+            let fileExtension = 'mp3'; // Default
+            if (audioBlob.type) {
+                if (audioBlob.type.includes('wav')) {
+                    fileExtension = 'wav';
+                } else if (audioBlob.type.includes('mp3')) {
+                    fileExtension = 'mp3';
+                } else if (audioBlob.type.includes('mpeg')) {
+                    fileExtension = 'mp3';
+                } else if (audioBlob.type.includes('ogg')) {
+                    fileExtension = 'ogg';
+                } else if (audioBlob.type.includes('webm')) {
+                    fileExtension = 'webm';
+                } else if (audioBlob.type.includes('m4a')) {
+                    fileExtension = 'm4a';
+                } else if (audioBlob.type.includes('aac')) {
+                    fileExtension = 'aac';
+                }
+            }
+            
+            formData.append('voice', audioBlob, `voice.${fileExtension}`);
+            formData.append('name', voiceName);
+            formData.append('duration', Math.round(this.recordingState.duration || 0));
+
+            const response = await fetch(`${config.api.baseUrl}/api/upload-voice`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Update project data with the new voice
+                this.projectData.voiceUrl = result.voiceUrl;
+                this.projectData.voiceId = result.voiceId;
+                this.projectData.voiceName = result.name;
+                this.dirtyFlags.voice = true;
+
+                // Reload voices list to include the new voice
+                await this.loadUserVoices();
+
+                // Show success and go to selected voice view
+                const newVoice = {
+                    id: result.voiceId,
+                    name: result.name,
+                    url: result.voiceUrl,
+                    duration: result.duration || this.recordingState.duration || 0
+                };
+                this.showSelectedVoice(newVoice);
+                this.validateStep2();
+
+                // Show success message
+                alert(`Voice "${result.name}" saved successfully!`);
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save voice');
+            }
+        } catch (error) {
+            console.error('Error saving uploaded voice:', error);
+            alert('Error saving voice: ' + error.message);
+        } finally {
+            this.voiceSaveInProgress = false;
+            this.setVoiceSavingState(false);
+        }
+    }
+
     retryRecording() {
         const audioPreview = document.getElementById('audioPreview');
         const recordBtn = document.getElementById('recordBtn');
@@ -1574,6 +1798,23 @@ class ProjectWizard {
         }
         
         this.projectData.voiceFile = null;
+        
+        // If this was an uploaded file, go back to voice selection
+        if (this.recordingState && this.recordingState.isUploaded) {
+            const voiceSelection = document.getElementById('voiceSelection');
+            const voiceRecorder = document.getElementById('voiceRecorder');
+            
+            if (voiceRecorder) voiceRecorder.style.display = 'none';
+            if (voiceSelection) voiceSelection.style.display = 'block';
+            
+            // Reset recording state
+            this.recordingState = {
+                isRecording: false,
+                mediaRecorder: null,
+                audioChunks: [],
+                audioBlob: null
+            };
+        }
     }
 
     setVoiceSavingState(isSaving) {
@@ -2206,6 +2447,59 @@ class ProjectWizard {
                             connectionError.style.display = 'block';
                             const errorMessage = document.querySelector('.error-message');
                             if (errorMessage && errorData.botAuthUrl) {
+                                const authorizeButton = document.createElement('button');
+                                authorizeButton.className = 'btn btn-primary';
+                                authorizeButton.style.marginTop = '1rem';
+                                authorizeButton.textContent = 'Authorize Bot Account';
+                                
+                                // Capture reference to this instance
+                                const wizard = this;
+                                
+                                authorizeButton.onclick = () => {
+                                    // Open in popup like regular OAuth flow
+                                    const popup = window.open(
+                                        errorData.botAuthUrl,
+                                        'twitch_bot_oauth',
+                                        'width=500,height=600,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no'
+                                    );
+                                    
+                                    if (!popup) {
+                                        alert('Popup blocked. Please allow popups for this site and try again.');
+                                        return;
+                                    }
+                                    
+                                    // Listen for OAuth success/error messages from popup
+                                    const messageHandler = (event) => {
+                                        // Only accept messages from same origin
+                                        if (event.origin !== window.location.origin && 
+                                            !event.origin.includes('localhost') && 
+                                            !event.origin.includes('masky.ai')) {
+                                            return;
+                                        }
+                                        
+                                        if (event.data.type === 'TWITCH_OAUTH_SUCCESS') {
+                                            window.removeEventListener('message', messageHandler);
+                                            popup.close();
+                                            // Retry the connection after successful bot authorization
+                                            wizard.connectToTwitch();
+                                        } else if (event.data.type === 'TWITCH_OAUTH_ERROR') {
+                                            window.removeEventListener('message', messageHandler);
+                                            console.error('Bot authorization failed:', event.data.error);
+                                            alert('Bot authorization failed: ' + event.data.error);
+                                        }
+                                    };
+                                    
+                                    window.addEventListener('message', messageHandler);
+                                    
+                                    // Clean up if popup is closed manually
+                                    const checkClosed = setInterval(() => {
+                                        if (popup.closed) {
+                                            clearInterval(checkClosed);
+                                            window.removeEventListener('message', messageHandler);
+                                        }
+                                    }, 500);
+                                };
+                                
                                 errorMessage.innerHTML = `
                                     <p><strong>${errorData.error}</strong></p>
                                     <p>${errorData.message}</p>
@@ -2214,11 +2508,9 @@ class ProjectWizard {
                                         <ol style="text-align: left; margin: 0.5rem 0;">
                                             ${errorData.instructions?.map(inst => `<li>${inst}</li>`).join('') || ''}
                                         </ol>
-                                        <a href="${errorData.botAuthUrl}" target="_blank" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">
-                                            Authorize Bot Account
-                                        </a>
                                     </div>
                                 `;
+                                errorMessage.appendChild(authorizeButton);
                             } else if (errorMessage) {
                                 errorMessage.textContent = errorData.message || errorData.error;
                             }
@@ -3078,6 +3370,12 @@ class ProjectWizard {
     cancelRecording() {
         const voiceRecorder = document.getElementById('voiceRecorder');
         const voiceSelection = document.getElementById('voiceSelection');
+        const audioPreview = document.getElementById('audioPreview');
+        
+        // Hide audio preview if visible
+        if (audioPreview) {
+            audioPreview.style.display = 'none';
+        }
         
         if (voiceRecorder) voiceRecorder.style.display = 'none';
         
@@ -4366,6 +4664,18 @@ window.saveVoice = function() {
 window.retryRecording = function() {
     if (window.projectWizard) {
         window.projectWizard.retryRecording();
+    }
+};
+
+window.startAudioUpload = function() {
+    if (window.projectWizard) {
+        window.projectWizard.startAudioUpload();
+    }
+};
+
+window.handleAudioFileSelect = function(event) {
+    if (window.projectWizard) {
+        window.projectWizard.handleAudioFileSelect(event);
     }
 };
 

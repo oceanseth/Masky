@@ -4251,56 +4251,111 @@ async function joinTribe(event) {
             };
         }
 
-        // Calculate current balance (donations - spent on paid videos)
-        const donationsSnapshot = await db.collection('donations')
-            .where('userId', '==', userId)
-            .where('viewerId', '==', viewerId)
-            .get();
+        // Determine if viewer is a Twitch subscriber of this creator
+        let isSubscriber = false;
+        try {
+            // Get creator auth record to read Twitch custom claims
+            const creatorAuthRecord = await admin.auth().getUser(userId);
+            const creatorClaims = creatorAuthRecord.customClaims || {};
+            const creatorAccessToken = creatorClaims.twitchAccessToken || null;
+            const creatorTwitchId = creatorClaims.twitchId || null;
 
-        let totalDonated = 0;
-        donationsSnapshot.forEach(doc => {
-            const donation = doc.data();
-            totalDonated += donation.amount || 0;
-        });
+            // Get viewer Twitch ID from decoded token/custom claims
+            const viewerAuthRecord = await admin.auth().getUser(viewerId);
+            const viewerClaims = viewerAuthRecord.customClaims || {};
+            const viewerTwitchId = viewerClaims.twitchId || null;
 
-        const customVideoPrice = userPageConfig.customVideoPrice || 5;
-        const paidVideosSnapshot = await db.collection('customVideos')
-            .where('userId', '==', userId)
-            .where('viewerId', '==', viewerId)
-            .where('paid', '==', true)
-            .get();
+            if (creatorAccessToken && creatorTwitchId && viewerTwitchId) {
+                // Use broadcaster token to check if viewer is subscribed to broadcaster
+                await twitchInitializer.initialize();
+                const { clientId } = twitchInitializer.getCredentials();
 
-        const totalSpent = paidVideosSnapshot.size * customVideoPrice;
-        const balance = totalDonated - totalSpent;
+                const url = new URL('https://api.twitch.tv/helix/subscriptions');
+                url.searchParams.set('broadcaster_id', creatorTwitchId);
+                url.searchParams.set('user_id', viewerTwitchId);
 
-        // Check if balance is sufficient
-        if (balance < tribeJoinCost) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ 
-                    error: 'Insufficient balance',
-                    balance: balance,
-                    required: tribeJoinCost
-                })
-            };
+                const resp = await fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${creatorAccessToken}`,
+                        'Client-Id': clientId
+                    }
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    // If data array has at least one entry, the viewer is subscribed
+                    isSubscriber = Array.isArray(data.data) && data.data.length > 0;
+                } else {
+                    // If unauthorized/forbidden or other error, treat as not a subscriber (non-blocking)
+                    // This preserves normal paid-join behavior when scopes are missing
+                    isSubscriber = false;
+                }
+            }
+        } catch (subErr) {
+            // Fail-safe: any error in subscription check should not break join flow; proceed as non-subscriber
+            console.warn('Twitch subscription check failed; proceeding without free join', {
+                error: subErr?.message
+            });
+            isSubscriber = false;
         }
 
-        // Deduct the cost by creating a "paid" custom video entry (this represents the cost)
-        // Actually, we should track this differently - let's create a "tribeJoin" entry in customVideos
-        // Or better: create a donation with negative amount? No, let's track it as a paid video
-        // Actually, the simplest is to create a paid custom video entry with a special flag
-        const joinCostVideoData = {
-            userId: userId,
-            viewerId: viewerId,
-            videoUrl: null,
-            message: 'Tribe Join Fee',
-            avatarId: null,
-            paid: true,
-            isTribeJoin: true, // Special flag to indicate this is a tribe join fee
-            status: 'completed',
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        await db.collection('customVideos').add(joinCostVideoData);
+        // If NOT a subscriber, enforce balance >= join cost; subscribers join free
+        let shouldChargeForJoin = !isSubscriber;
+
+        // Calculate current balance (donations - spent on paid videos) only if needed
+        let balance = 0;
+        if (shouldChargeForJoin) {
+            const donationsSnapshot = await db.collection('donations')
+                .where('userId', '==', userId)
+                .where('viewerId', '==', viewerId)
+                .get();
+
+            let totalDonated = 0;
+            donationsSnapshot.forEach(doc => {
+                const donation = doc.data();
+                totalDonated += donation.amount || 0;
+            });
+
+            const customVideoPrice = userPageConfig.customVideoPrice || 5;
+            const paidVideosSnapshot = await db.collection('customVideos')
+                .where('userId', '==', userId)
+                .where('viewerId', '==', viewerId)
+                .where('paid', '==', true)
+                .get();
+
+            const totalSpent = paidVideosSnapshot.size * customVideoPrice;
+            balance = totalDonated - totalSpent;
+
+            // Check if balance is sufficient
+            if (balance < tribeJoinCost) {
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({ 
+                        error: 'Insufficient balance',
+                        balance: balance,
+                        required: tribeJoinCost
+                    })
+                };
+            }
+        }
+
+        // Charge only if not a subscriber
+        if (shouldChargeForJoin) {
+            // Deduct the cost by creating a "paid" custom video entry (this represents the cost)
+            const joinCostVideoData = {
+                userId: userId,
+                viewerId: viewerId,
+                videoUrl: null,
+                message: 'Tribe Join Fee',
+                avatarId: null,
+                paid: true,
+                isTribeJoin: true, // Special flag to indicate this is a tribe join fee
+                status: 'completed',
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            await db.collection('customVideos').add(joinCostVideoData);
+        }
 
         // Add viewer to tribe
         const now = new Date();
@@ -4317,13 +4372,14 @@ async function joinTribe(event) {
             }
         }, { merge: true });
 
-        console.log('User joined tribe:', { userId, viewerId, tribeJoinCost });
+        console.log('User joined tribe:', { userId, viewerId, tribeJoinCost, isSubscriber });
 
         return {
             statusCode: 200,
             body: JSON.stringify({ 
                 success: true,
-                message: 'Successfully joined tribe'
+                message: 'Successfully joined tribe',
+                isSubscriber
             })
         };
 

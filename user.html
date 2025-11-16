@@ -1007,18 +1007,26 @@
                     </div>
                     ${redemption.id === 'custom-video' ? `
                         <div id="customVideoForm-${redemption.id}" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(192,132,252,0.3);">
-                            ${userPageConfig?.allowAvatarDisplay ? `
-                            <div id="avatarSelectionSection-${redemption.id}" style="margin-bottom: 1rem;">
-                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Select Avatar:</label>
-                                <div id="avatarsGrid-${redemption.id}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-                                    <!-- Avatars will be loaded here -->
-                                </div>
-                            </div>
-                            ` : ''}
+                            
                             <div style="margin-bottom: 1rem;">
-                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Video URL or Upload:</label>
-                                <input type="text" class="video-url-input" placeholder="Enter video URL" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff; margin-bottom: 0.5rem;">
-                                <input type="file" class="video-file-input" accept="video/*" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                                <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Video Source:</label>
+                                <div class="video-source-selector" style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
+                                    <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <input type="radio" name="videoSource-${redemption.id}" value="url" class="video-source-radio" checked>
+                                        <span>URL</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <input type="radio" name="videoSource-${redemption.id}" value="upload" class="video-source-radio">
+                                        <span>Upload file</span>
+                                    </label>
+                                </div>
+                                <div class="video-url-wrapper">
+                                    <input type="text" class="video-url-input" placeholder="Enter video URL" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                                </div>
+                                <div class="video-file-wrapper" style="display: none; margin-top: 0.5rem;">
+                                    <input type="file" class="video-file-input" accept="video/*" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                                    <small style="display:block; color: rgba(255,255,255,0.6); margin-top: 0.25rem;">Max size 250MB</small>
+                                </div>
                             </div>
                             <div style="margin-bottom: 1rem;">
                                 <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Message (optional):</label>
@@ -1049,10 +1057,25 @@
                             formVisible = true;
                             redeemBtn.textContent = 'Create Custom Video';
                             
-                            // Load avatars if enabled
-                            if (userPageConfig?.allowAvatarDisplay) {
-                                loadAvatarsForRedemption(redemption.id);
-                            }
+                            // Wire up source selector toggling
+                            const urlWrapper = card.querySelector('.video-url-wrapper');
+                            const fileWrapper = card.querySelector('.video-file-wrapper');
+                            const urlInput = card.querySelector('.video-url-input');
+                            const fileInput = card.querySelector('.video-file-input');
+                            card.querySelectorAll('.video-source-radio').forEach(r => {
+                                r.addEventListener('change', () => {
+                                    const val = card.querySelector('.video-source-radio:checked')?.value || 'url';
+                                    if (val === 'url') {
+                                        urlWrapper.style.display = '';
+                                        fileWrapper.style.display = 'none';
+                                        if (fileInput) fileInput.value = '';
+                                    } else {
+                                        urlWrapper.style.display = 'none';
+                                        fileWrapper.style.display = '';
+                                        if (urlInput) urlInput.value = '';
+                                    }
+                                });
+                            });
                         } else {
                             handleRedemption(redemption, card);
                         }
@@ -1096,16 +1119,41 @@
                 const urlInput = cardElement.querySelector('.video-url-input');
                 const fileInput = cardElement.querySelector('.video-file-input');
                 const messageInput = cardElement.querySelector('.video-message-input');
-                const avatarCard = cardElement.querySelector('.avatar-card.selected');
                 
                 videoUrl = urlInput?.value.trim() || null;
                 videoFile = fileInput?.files[0] || null;
                 message = messageInput?.value.trim() || null;
-                avatarId = avatarCard?.dataset.avatarId || null;
                 
-                if (!videoUrl && !videoFile) {
-                    alert('Please provide a video URL or upload a video file');
-                    return;
+                // Enforce only active source is required
+                const selectedSource = cardElement.querySelector('.video-source-radio:checked')?.value || 'url';
+                if (selectedSource === 'url') {
+                    if (!videoUrl) {
+                        alert('Please provide a video URL');
+                        return;
+                    }
+                    const sanitized = sanitizeVideoUrl(videoUrl);
+                    if (!sanitized) {
+                        alert('The video URL appears invalid or unsafe. Please use an http(s) URL.');
+                        return;
+                    }
+                    videoUrl = sanitized;
+                } else {
+                    if (!videoFile) {
+                        alert('Please upload a video file');
+                        return;
+                    }
+                    const maxBytes = 250 * 1024 * 1024;
+                    if (videoFile.size > maxBytes) {
+                        alert('Video is too large. Please upload a file under 250MB.');
+                        return;
+                    }
+                    try {
+                        videoUrl = await uploadViewerVideoAndGetUrl(currentUserId, currentViewerUserId, videoFile);
+                    } catch (e) {
+                        console.error('Upload failed:', e);
+                        alert('Failed to upload video. Please try again.');
+                        return;
+                    }
                 }
             } else if (redemption.allowCustomUserString) {
                 const customInput = cardElement.querySelector('.custom-string-input');
@@ -1131,8 +1179,7 @@
                         creditCost: redemption.creditCost,
                         customString: customString,
                         videoUrl: videoUrl,
-                        message: message,
-                        avatarId: avatarId
+                        message: message
                     })
                 });
                 
@@ -1171,48 +1218,50 @@
             }
         }
         
-        // Load avatars for redemption
-        async function loadAvatarsForRedemption(redemptionId) {
-            if (!userPageConfig?.allowAvatarDisplay || !currentUserId) return;
-            
+        // Simple URL sanitizer for video URLs
+        function sanitizeVideoUrl(raw) {
             try {
-                const { db, collection, getDocs } = await import('/src/firebase.js');
-                const avatarsRef = collection(db, 'users', currentUserId, 'heygenAvatarGroups');
-                const avatarsSnapshot = await getDocs(avatarsRef);
-                
-                const avatarsGrid = document.getElementById(`avatarsGrid-${redemptionId}`);
-                if (!avatarsGrid) return;
-                
-                avatarsGrid.innerHTML = '';
-                
-                avatarsSnapshot.forEach(doc => {
-                    const avatarData = doc.data();
-                    const avatarCard = document.createElement('div');
-                    avatarCard.className = 'avatar-card';
-                    avatarCard.dataset.avatarId = doc.id;
-                    avatarCard.style.cssText = 'cursor: pointer; padding: 0.5rem; border: 2px solid transparent; border-radius: 8px; text-align: center; transition: all 0.3s ease;';
-                    
-                    avatarCard.innerHTML = `
-                        <div style="width: 100px; height: 100px; background: rgba(255,255,255,0.1); border-radius: 8px; margin: 0 auto 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 2rem;">
-                            ${avatarData.avatar_group_name || 'Avatar'}
-                        </div>
-                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">${avatarData.avatar_group_name || 'Avatar'}</div>
-                    `;
-                    
-                    avatarCard.onclick = () => {
-                        document.querySelectorAll(`#avatarsGrid-${redemptionId} .avatar-card`).forEach(card => {
-                            card.classList.remove('selected');
-                            card.style.borderColor = 'transparent';
-                        });
-                        avatarCard.classList.add('selected');
-                        avatarCard.style.borderColor = '#c084fc';
-                    };
-                    
-                    avatarsGrid.appendChild(avatarCard);
-                });
-            } catch (error) {
-                console.error('Error loading avatars for redemption:', error);
+                const trimmed = String(raw).trim();
+                const url = new URL(trimmed);
+                const protocol = url.protocol.toLowerCase();
+                if (protocol !== 'http:' && protocol !== 'https:') {
+                    return null;
+                }
+                // Prevent javascript/data and strip control characters
+                return trimmed.replace(/[\u0000-\u001F\u007F]/g, '');
+            } catch {
+                return null;
             }
+        }
+
+        async function uploadViewerVideoAndGetUrl(userId, viewerId, file) {
+            const { storage, db, collection, addDoc } = await import('/src/firebase.js');
+            const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+            const safeName = String(file.name || 'video')
+                .replace(/[^\w.\-]+/g, '_')
+                .slice(0, 100);
+            const path = `uploads/${userId}/${viewerId}/${Date.now()}-${safeName}`;
+            const storageRef = ref(storage, path);
+            await uploadBytes(storageRef, file, {
+                contentType: file.type || 'video/mp4',
+                cacheControl: 'public,max-age=31536000,immutable'
+            });
+            const url = await getDownloadURL(storageRef);
+            try {
+                const uploadsCol = collection(db, 'users', userId, 'uploads');
+                await addDoc(uploadsCol, {
+                    viewerId: viewerId,
+                    path: path,
+                    url: url,
+                    fileName: file.name || safeName,
+                    size: file.size || null,
+                    type: file.type || null,
+                    createdAt: new Date()
+                });
+            } catch (e) {
+                console.warn('Failed to record upload doc (non-blocking):', e);
+            }
+            return url;
         }
 
         // Load avatars for display (public, no auth required)
@@ -1409,19 +1458,6 @@
             }
 
             try {
-                // Calculate current balance
-                const totalDonated = await calculateTotalDonated();
-                const totalSpent = await calculateTotalSpent();
-                const balance = totalDonated - totalSpent;
-
-                // Get tribe join cost from config
-                const tribeJoinCost = userPageConfig?.tribeJoinCost || 10;
-
-                if (balance < tribeJoinCost) {
-                    alert(`You need at least $${tribeJoinCost} in credits to join the tribe. Your current balance is $${balance.toFixed(2)}.`);
-                    return;
-                }
-
                 // Disable button while processing
                 const joinTribeBtn = document.getElementById('joinTribeBtn');
                 if (joinTribeBtn) {
@@ -1437,7 +1473,8 @@
                 }
 
                 const idToken = await user.getIdToken();
-                const response = await fetch('/api/tribe/join', {
+                const { config } = await import('/src/config.js');
+                const response = await fetch(`${config.api.baseUrl}/api/tribe/join`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1451,11 +1488,18 @@
                 const result = await response.json();
 
                 if (!response.ok) {
+                    // If server indicates insufficient balance, show a friendly message with details
+                    if (result?.error === 'Insufficient balance' && typeof result?.required !== 'undefined') {
+                        const req = Number(result.required);
+                        const bal = typeof result.balance === 'number' ? result.balance : NaN;
+                        const balDisplay = isNaN(bal) ? '' : ` Your current balance is $${bal.toFixed(2)}.`;
+                        throw new Error(`You need at least $${req} in credits to join the tribe.${balDisplay}`);
+                    }
                     throw new Error(result.error || 'Failed to join tribe');
                 }
 
                 // Success - reload tribe members list
-                alert('Successfully joined the tribe!');
+                alert(result.isSubscriber ? 'Joined the tribe for free as a subscriber!' : 'Successfully joined the tribe!');
                 await loadTribeMembers();
                 
                 // Reload credits to reflect the spent amount

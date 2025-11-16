@@ -54,6 +54,19 @@ service firebase.storage {
       allow read, write: if isAuthenticated() && 
         request.auth.uid == projectId.split('_')[1]; // Extract userId from projectId format
     }
+
+    // Viewer uploads to a streamer's namespace
+    // Path: uploads/{userId}/{viewerId}/{fileName}
+    // - Authenticated viewers can write only to their own viewerId folder
+    // - Streamers can read/delete within their userId namespace
+    match /uploads/{userId}/{viewerId}/{fileName} {
+      allow write: if isAuthenticated() &&
+        sanitize(viewerId) == sanitize(request.auth.uid);
+
+      allow read, delete: if isAuthenticated() &&
+        (sanitize(userId) == sanitize(request.auth.uid) ||
+         sanitize(viewerId) == sanitize(request.auth.uid));
+    }
     
     // Deny all other access
     match /{allPaths=**} {

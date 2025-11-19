@@ -17,6 +17,7 @@
     "publishDeploymentEvent": "node scripts/publish-deployment-event.js",
     "test:bits-cheer": "node scripts/test-bits-cheer.js",
     "terraform:init": "cd terraform && terraform init",
+    "terraform:import": "powershell -ExecutionPolicy Bypass -File scripts\\import-existing-resources.ps1",
     "terraform:plan": "cd terraform && terraform plan -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
     "terraform:apply": "cd terraform && terraform apply -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
     "terraform:destroy": "cd terraform && terraform destroy -var=\"stage=production\" -var=\"aws_region=us-east-1\"",

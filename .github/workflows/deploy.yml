@@ -31,22 +31,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.0
-
-      - name: Package Lambda
-        run: npm run lambda:package
-
-      - name: Terraform Init
-        run: terraform init
-        working-directory: terraform
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve -var="stage=production" -var="aws_region=us-east-1"
-        working-directory: terraform
-
       - name: Sync files to S3
         run: |
           aws s3 sync dist/ s3://masky.net --delete

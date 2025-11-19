@@ -12,12 +12,13 @@ terraform {
     }
   }
   
-  backend "s3" {
-    # Configure backend in terraform/backend.tfvars
-    # bucket = "your-terraform-state-bucket"
-    # key    = "masky/terraform.tfstate"
-    # region = "us-east-1"
-  }
+  # Backend configuration (optional)
+  # Uncomment and configure if you want to use remote state in S3
+  # backend "s3" {
+  #   bucket = "your-terraform-state-bucket"
+  #   key    = "masky/terraform.tfstate"
+  #   region = "us-east-1"
+  # }
 }
 
 provider "aws" {
@@ -86,9 +87,11 @@ resource "aws_lambda_function" "api" {
   timeout         = 30
   memory_size     = 512
 
+  # Lambda reads secrets from SSM Parameter Store at runtime
+  # No environment variables needed - Lambda has IAM permissions to read SSM
   environment {
     variables = {
-      FIREBASE_CONFIG = data.aws_ssm_parameter.firebase_config.value
+      STAGE = var.stage
     }
   }
 

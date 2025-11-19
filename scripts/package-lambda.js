@@ -85,9 +85,19 @@ execSync('npm install --production', {
 });
 
 // Remove old zip if it exists
+// On Windows, the file might be locked, so we catch the error and continue
+// PowerShell's -Force flag will overwrite it anyway
 if (fs.existsSync(outputZip)) {
-  fs.unlinkSync(outputZip);
-  console.log('   Removed old package');
+  try {
+    fs.unlinkSync(outputZip);
+    console.log('   Removed old package');
+  } catch (error) {
+    if (error.code === 'EBUSY' || error.code === 'EPERM') {
+      console.log('   ⚠️  Old package file is locked (will be overwritten)');
+    } else {
+      throw error;
+    }
+  }
 }
 
 // Create zip file

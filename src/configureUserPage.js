@@ -24,7 +24,10 @@ export async function renderUserPageConfig(container) {
     root.innerHTML = `
         <div class="user-page-config" style="margin: 20px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h3 class="section-title" style="margin: 0;">User Page Configuration</h3>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button id="closeUserPageConfig" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">← Back</button>
+                    <h3 class="section-title" style="margin: 0;">User Page Configuration</h3>
+                </div>
                 <button class="btn btn-secondary" id="saveUserPageConfig" style="padding: 0.5rem 1rem;">Save Settings</button>
             </div>
             
@@ -116,6 +119,23 @@ export async function renderUserPageConfig(container) {
     const saveBtn = root.querySelector('#saveUserPageConfig');
     if (saveBtn) {
         saveBtn.onclick = saveUserPageConfig;
+    }
+    
+    // Wire up close button
+    const closeBtn = root.querySelector('#closeUserPageConfig');
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            // Check if we're on user.html page
+            if (typeof window.showUserContent === 'function') {
+                window.showUserContent();
+            } else {
+                // Fallback: try to hide config and show user content directly
+                const configContainer = document.getElementById('userPageConfigContainer');
+                const userContent = document.getElementById('userContent');
+                if (configContainer) configContainer.style.display = 'none';
+                if (userContent) userContent.style.display = 'block';
+            }
+        };
     }
     
     // Wire up add new redemption button

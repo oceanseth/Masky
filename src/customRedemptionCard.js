@@ -48,6 +48,12 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
             </label>
         </div>
         
+        <div class="config-item custom-string-description-container" style="margin-bottom: 1rem; display: ${redemption.allowCustomUserString ? 'block' : 'none'};">
+            <label style="display: block; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">Custom String Description</label>
+            <input type="text" class="redemption-custom-string-description" value="${redemption.customStringDescription || ''}" placeholder="e.g., Enter your message or URL" ${isCustomVideo ? 'readonly' : ''} style="width: 100%; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
+            <small style="color: rgba(255,255,255,0.6); display: block; margin-top: 0.25rem;">This text will appear as a label above the input field when users redeem this item</small>
+        </div>
+        
         <div class="config-item" style="margin-bottom: 1rem;">
             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: ${isCustomVideo ? 'default' : 'pointer'};">
                 <input type="checkbox" class="redemption-show-in-queue" ${redemption.showInQueue !== false ? 'checked' : ''} ${isCustomVideo ? 'disabled' : ''} style="width: 18px; height: 18px; cursor: ${isCustomVideo ? 'default' : 'pointer'};">
@@ -82,6 +88,15 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
         }
     }
     
+    // Wire up checkbox to show/hide custom string description field
+    const allowCustomStringCheckbox = card.querySelector('.redemption-allow-custom-string');
+    const customStringDescContainer = card.querySelector('.custom-string-description-container');
+    if (allowCustomStringCheckbox && customStringDescContainer) {
+        allowCustomStringCheckbox.addEventListener('change', () => {
+            customStringDescContainer.style.display = allowCustomStringCheckbox.checked ? 'block' : 'none';
+        });
+    }
+    
     // Wire up input change handlers
     const inputs = card.querySelectorAll('input, textarea');
     inputs.forEach(input => {
@@ -92,6 +107,7 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
                 description: card.querySelector('.redemption-description')?.value || redemption.description,
                 creditCost: parseFloat(card.querySelector('.redemption-credit-cost')?.value) || redemption.creditCost,
                 allowCustomUserString: card.querySelector('.redemption-allow-custom-string')?.checked || false,
+                customStringDescription: card.querySelector('.redemption-custom-string-description')?.value || '',
                 showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false), // Always true for custom video
             };
             
@@ -182,7 +198,7 @@ export async function renderRedemptionQueue(container, userId) {
                                 <div style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">
                                     ${redemption.displayName || 'Anonymous'}${redemption.twitchUsername ? ` (@${redemption.twitchUsername})` : ''}
                                 </div>
-                                ${redemption.customString ? `<div style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${redemption.customString}"</div>` : ''}
+                                ${redemption.customString ? `<div style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${escapeCustomString(redemption.customString)}"</div>` : ''}
                             </div>
                             <div style="display: flex; gap: 0.5rem; margin-left: 1rem;">
                                 ${redemption.redemptionId === 'custom-video' && redemption.videoId ? `<button class="approve-redemption-btn" data-user-id="${userId}" data-viewer-id="${redemption.viewerId || ''}" data-video-id="${redemption.videoId}" data-viewer-name="${redemption.displayName || 'Anonymous'}" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Approve</button>` : ''}
@@ -329,12 +345,13 @@ export async function renderRedemptionQueue(container, userId) {
                 const streamerId = btn.dataset.userId;
                 const viewerId = btn.dataset.viewerId || null;
                 const viewerName = btn.dataset.viewerName || 'Anonymous';
+                const redemptionId = btn.closest('.redemption-queue-item')?.dataset.redemptionId;
                 if (!videoId || !streamerId) {
                     alert('Missing data to approve this custom video');
                     return;
                 }
                 try {
-                    const { db, doc, collection, addDoc, getDoc } = await import('./firebase.js');
+                    const { db, doc, collection, addDoc, getDoc, updateDoc } = await import('./firebase.js');
                     // Fetch video to get URL and optional message
                     const videoDoc = await getDoc(doc(db, 'customVideos', videoId));
                     if (!videoDoc.exists()) {
@@ -347,6 +364,7 @@ export async function renderRedemptionQueue(container, userId) {
                         alert('The stored video URL appears invalid or unsafe.');
                         return;
                     }
+                    // Publish event to overlay (this will trigger playback on twitchevent.html)
                     const alertsRef = collection(db, 'users', streamerId, 'events', 'custom-video', 'alerts');
                     await addDoc(alertsRef, {
                         type: 'custom-video',
@@ -357,6 +375,33 @@ export async function renderRedemptionQueue(container, userId) {
                         viewerId: viewerId,
                         timestamp: new Date()
                     });
+                    
+                    // Mark redemption as approved and dismissed
+                    if (redemptionId) {
+                        const redemptionRef = doc(db, 'redemptions', redemptionId);
+                        await updateDoc(redemptionRef, {
+                            dismissed: true,
+                            approved: true,
+                            approvedAt: new Date()
+                        });
+                    }
+                    
+                    // Remove from UI
+                    const queueItem = container.querySelector(`[data-redemption-id="${redemptionId}"]`);
+                    if (queueItem) {
+                        queueItem.remove();
+                    }
+                    
+                    // If queue is empty, show empty state
+                    const queueList = container.querySelector('.redemption-queue-list');
+                    if (queueList && queueList.querySelectorAll('.redemption-queue-item').length === 0) {
+                        queueList.innerHTML = `
+                            <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">
+                                No pending redemptions
+                            </div>
+                        `;
+                    }
+                    
                     // Optional: give quick UI feedback
                     alert('Approved! The video will play on the overlay.');
                 } catch (e) {
@@ -389,5 +434,54 @@ function sanitizeVideoUrl(raw) {
     } catch {
         return null;
     }
+}
+
+/**
+ * Escape HTML and JavaScript while allowing URLs
+ * URLs are converted to clickable links, but HTML tags and JavaScript are escaped
+ */
+function escapeCustomString(str) {
+    if (!str) return '';
+    
+    // First, escape HTML entities to prevent XSS
+    const div = document.createElement('div');
+    div.textContent = str;
+    let escaped = div.innerHTML;
+    
+    // Now, detect URLs and convert them to safe links
+    // Match URLs (http://, https://, or www.)
+    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+|www\.[^\s<>"{}|\\^`\[\]]+)/gi;
+    
+    escaped = escaped.replace(urlRegex, (match) => {
+        // Ensure URL starts with http:// or https://
+        let url = match;
+        if (match.toLowerCase().startsWith('www.')) {
+            url = 'https://' + match;
+        }
+        
+        // Validate URL is safe (only http/https)
+        try {
+            const urlObj = new URL(url);
+            if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+                return match; // Return original if not http/https
+            }
+            
+            // Return as a safe link (text is already escaped, URL is validated)
+            return `<a href="${escapeHtmlAttribute(url)}" target="_blank" rel="noopener noreferrer" style="color: #c084fc; text-decoration: underline;">${match}</a>`;
+        } catch {
+            return match; // Return original if URL parsing fails
+        }
+    });
+    
+    return escaped;
+}
+
+/**
+ * Escape HTML attributes to prevent XSS
+ */
+function escapeHtmlAttribute(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
 }
 

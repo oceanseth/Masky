@@ -1,9 +1,6 @@
-# SSM Parameter for Firebase config
-data "aws_ssm_parameter" "firebase_config" {
-  name = "/masky/${var.stage}/firebase_config"
-}
-
 # Archive Lambda package
+# Note: Lambda reads Firebase config directly from SSM at runtime
+# No need to fetch it here in Terraform
 # Note: The lambda-package.zip should be created by running npm run lambda:package
 # This data source reads the pre-built zip file
 data "archive_file" "lambda_zip" {

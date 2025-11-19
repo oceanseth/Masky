@@ -10,10 +10,6 @@ variable "stage" {
   default     = "prod"
 }
 
-variable "s3_webmail_bucket" {
-  description = "S3 bucket name for webmail"
-  type        = string
-}
 
 variable "lambda_package_path" {
   description = "Path to the Lambda deployment package"

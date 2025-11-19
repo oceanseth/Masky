@@ -4592,22 +4592,8 @@ async function redeemPoints(event) {
 
             const videoRef = await db.collection('customVideos').add(customVideoData);
 
-            // Publish custom video event to user's events collection for stream overlay
-            const customVideoEventData = {
-                type: 'custom-video',
-                videoId: videoRef.id,
-                videoUrl: videoUrl,
-                message: message || null,
-                avatarId: avatarId || null,
-                viewerName: viewerData.displayName || 'Anonymous',
-                viewerId: viewerId,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            };
-
-            await db.collection('users').doc(userId)
-                .collection('events').doc('custom-video')
-                .collection('alerts').add(customVideoEventData);
-
+            // Store videoId in redemption record for approval later
+            // Do NOT publish event immediately - it will be published when streamer approves
             redemptionData.videoId = videoRef.id;
         }
 

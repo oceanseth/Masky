@@ -332,7 +332,6 @@ async function loadUserUrl() {
 
     const userUrlText = document.getElementById('userUrlText');
     const copyUserUrlBtn = document.getElementById('copyUserUrlBtn');
-    const configureUserPageLink = document.getElementById('configureUserPageLink');
 
     if (twitchUsername) {
       // Use masky.ai for production, or current origin for localhost
@@ -362,13 +361,6 @@ async function loadUserUrl() {
         };
       }
 
-      // Configure user page link
-      if (configureUserPageLink) {
-        configureUserPageLink.onclick = (e) => {
-          e.preventDefault();
-          showUserPageConfig();
-        };
-      }
     } else {
       // Show section but indicate username not set
       userUrlText.textContent = 'Not set - Sign in with Twitch to get your user page URL';

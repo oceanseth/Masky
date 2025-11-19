@@ -17,11 +17,12 @@
     "publishDeploymentEvent": "node scripts/publish-deployment-event.js",
     "test:bits-cheer": "node scripts/test-bits-cheer.js",
     "terraform:init": "cd terraform && terraform init",
-    "terraform:plan": "cd terraform && terraform plan",
-    "terraform:apply": "cd terraform && terraform apply",
-    "terraform:destroy": "cd terraform && terraform destroy",
+    "terraform:plan": "cd terraform && terraform plan -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
+    "terraform:apply": "cd terraform && terraform apply -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
+    "terraform:destroy": "cd terraform && terraform destroy -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
     "lambda:package": "node scripts/package-lambda.js",
-    "deploy": "npm run lambda:package && npm run terraform:apply"
+    "deploy": "npm run lambda:package && npm run terraform:init && npm run terraform:apply",
+    "deploy:plan": "npm run lambda:package && npm run terraform:init && npm run terraform:plan"
   },
   "repository": {
     "type": "git",

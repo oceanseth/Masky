@@ -12,6 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/styles/main.css">
     <link rel="stylesheet" href="/src/styles/navigation.css">
+    <link rel="stylesheet" href="/src/styles/dashboard.css">
     <style>
         html, body {
             max-width: 100vw;
@@ -32,12 +33,21 @@
         }
 
         .user-header {
-            text-align: center;
+            display: flex;
+            align-items: flex-start;
+            gap: 2rem;
             margin-bottom: 3rem;
             padding: 2rem;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(192, 132, 252, 0.3);
             border-radius: 16px;
+        }
+
+        .user-header-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
         }
 
         .user-avatar {
@@ -46,8 +56,7 @@
             border-radius: 50%;
             object-fit: cover;
             border: 3px solid rgba(192, 132, 252, 0.5);
-            margin: 0 auto 1rem;
-            display: block;
+            margin-bottom: 1rem;
         }
 
         .user-name {
@@ -56,23 +65,31 @@
             font-weight: 700;
             color: #c084fc;
             margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .user-header-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
         }
 
         .donate-section {
-            margin: 2rem 0;
-            padding: 2rem;
+            margin: 0;
+            padding: 1.5rem;
             background: rgba(192, 132, 252, 0.1);
             border: 1px solid rgba(192, 132, 252, 0.3);
-            border-radius: 16px;
+            border-radius: 12px;
             text-align: center;
         }
 
         .donate-title {
             font-family: 'Orbitron', sans-serif;
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: #c084fc;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .donate-amounts {
@@ -142,60 +159,6 @@
             cursor: not-allowed;
         }
 
-        .projects-section {
-            margin-top: 3rem;
-        }
-
-        .section-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2rem;
-            font-weight: 700;
-            color: #c084fc;
-            margin-bottom: 1.5rem;
-        }
-
-        .projects-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .project-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(192, 132, 252, 0.3);
-            border-radius: 12px;
-            padding: 1.5rem;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .project-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(192, 132, 252, 0.3);
-        }
-
-        .project-name {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.3rem;
-            font-weight: 600;
-            color: #c084fc;
-            margin-bottom: 0.5rem;
-        }
-
-        .project-type {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-
-        .project-details {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 0.9rem;
-            line-height: 1.6;
-        }
-
-        .project-detail-item {
-            margin-bottom: 0.5rem;
-        }
 
         .loading-state {
             text-align: center;
@@ -263,11 +226,15 @@
             .user-container {
                 padding: 100px 1rem 2rem;
             }
+            .user-header {
+                flex-direction: column;
+                align-items: center;
+            }
+            .user-header-right {
+                width: 100%;
+            }
             .user-name {
                 font-size: 2rem;
-            }
-            .projects-grid {
-                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -295,12 +262,53 @@
             <p>The user you're looking for doesn't exist or hasn't set up their profile yet.</p>
         </div>
 
+        <!-- User Page Config Section (hidden by default) -->
+        <div id="userPageConfigContainer" style="display: none;"></div>
+
         <div id="userContent" style="display: none;">
             <div class="user-header">
-                <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
-                <h1 id="userName" class="user-name"></h1>
-                <div id="ownerControls" style="display: none; margin-top: 1rem;">
-                    <button class="donate-btn" id="configureUserPageBtn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">Configure User Page</button>
+                <div class="user-header-left">
+                    <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
+                    <h1 id="userName" class="user-name"></h1>
+                    <div id="ownerControls" style="display: none; margin-top: 1rem;">
+                        <button class="donate-btn" id="configureUserPageBtn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">Configure User Page</button>
+                    </div>
+                </div>
+                <div class="user-header-right">
+                    <!-- Credits Display -->
+                    <div id="pointsSection" class="donate-section" style="display: none; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
+                        <h2 class="donate-title" style="color: #3b82f6;">Your Credits</h2>
+                        <div style="text-align: center; margin: 0.5rem 0;">
+                            <div style="font-size: 2.5rem; font-weight: bold; color: #3b82f6;" id="pointsCount">0</div>
+                            <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem; font-size: 0.9rem;">Credits available for redemptions</p>
+                        </div>
+                    </div>
+
+                    <!-- Donation Section -->
+                    <div class="donate-section">
+                        <h2 class="donate-title">Buy Credits</h2>
+                        <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem; font-size: 0.95rem;">
+                            Support this creator and earn credits! You'll receive 1 credit for every dollar donated. Credits can be used for redemptions in their channel. VoiceCert Inc. (our parent company) will handle the payment processing.
+                        </p>
+                        <div class="donate-amounts">
+                            <button class="donate-amount-btn" data-amount="5">$5</button>
+                            <button class="donate-amount-btn" data-amount="10">$10</button>
+                            <button class="donate-amount-btn" data-amount="25">$25</button>
+                            <button class="donate-amount-btn" data-amount="50">$50</button>
+                            <button class="donate-amount-btn" data-amount="100">$100</button>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <input 
+                                type="number" 
+                                id="customAmount" 
+                                class="donate-custom-input" 
+                                placeholder="Custom amount"
+                                min="1"
+                                step="0.01"
+                            >
+                        </div>
+                        <button id="donateBtn" class="donate-btn">Buy Credits</button>
+                    </div>
                 </div>
             </div>
 
@@ -330,70 +338,24 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- User Page Config Section (hidden by default) -->
-            <div id="userPageConfigContainer" style="display: none;"></div>
-
-            <div class="donate-section">
-                <h2 class="donate-title">Support This Creator</h2>
-                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem;">
-                    Make a donation to support this creator and trigger a special alert on their stream! You will receive 1 masky credit for use on masky redemptons in their channel for every dollar donated. VoiceCert Inc. (our parent company) will handle the payment processing.
-                </p>
-                <div class="donate-amounts">
-                    <button class="donate-amount-btn" data-amount="5">$5</button>
-                    <button class="donate-amount-btn" data-amount="10">$10</button>
-                    <button class="donate-amount-btn" data-amount="25">$25</button>
-                    <button class="donate-amount-btn" data-amount="50">$50</button>
-                    <button class="donate-amount-btn" data-amount="100">$100</button>
-                </div>
-                <div style="margin-top: 1rem;">
-                    <input 
-                        type="number" 
-                        id="customAmount" 
-                        class="donate-custom-input" 
-                        placeholder="Custom amount"
-                        min="1"
-                        step="0.01"
-                    >
-                </div>
-                <button id="donateBtn" class="donate-btn">Donate Now</button>
-            </div>
 
             <!-- Twitch Login Section (if not logged in) -->
             <div id="twitchLoginSection" class="donate-section" style="display: none; margin-top: 2rem;">
                 <h2 class="donate-title">Sign in with Twitch</h2>
                 <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem;">
-                    Sign in to check your subscription status and video credits
+                    Sign in to check your subscription status and credits
                 </p>
                 <button id="twitchLoginBtn" class="donate-btn" style="background: #9146FF;">Sign in with Twitch</button>
-            </div>
-
-            <!-- Points/Credits Display -->
-            <div id="pointsSection" class="donate-section" style="display: none; margin-top: 2rem; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
-                <h2 class="donate-title" style="color: #3b82f6;">Your Points</h2>
-                <div style="text-align: center; margin: 1rem 0;">
-                    <div style="font-size: 3rem; font-weight: bold; color: #3b82f6;" id="pointsCount">0</div>
-                    <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem;">Points available for redemptions</p>
-                </div>
             </div>
 
             <!-- Available Redemptions Section -->
             <div id="redemptionsSection" class="donate-section" style="display: none; margin-top: 2rem;">
                 <h2 class="donate-title">Available Redemptions</h2>
                 <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1.5rem;">
-                    Spend your points on these redemptions!
+                    Spend your credits on these redemptions!
                 </p>
                 <div id="redemptionsList" style="display: grid; gap: 1rem;">
                     <!-- Redemptions will be loaded here -->
-                </div>
-            </div>
-
-            <div class="projects-section">
-                <h2 class="section-title">Active Projects</h2>
-                <div id="projectsGrid" class="projects-grid">
-                    <div class="loading-state">
-                        <p>Loading projects...</p>
-                    </div>
                 </div>
             </div>
         </div>
@@ -449,7 +411,6 @@
     <script type="module">
         import { renderHeader } from '/src/header.js';
         import { config } from '/src/config.js';
-        import { getEventTypeLabel } from '/src/eventTypeLabels.js';
 
         // Render header
         renderHeader('#header-container', { showMembershipLink: false });
@@ -542,7 +503,7 @@
                 console.error('Donation error:', error);
                 alert('Failed to process donation: ' + error.message);
                 btn.disabled = false;
-                btn.textContent = 'Donate Now';
+                btn.textContent = 'Buy Credits';
             }
         });
 
@@ -595,7 +556,10 @@
 
                 // Update UI based on config
                 if (!userPageConfig.enableDonations) {
-                    document.querySelector('.donate-section').style.display = 'none';
+                    const donateSection = document.querySelector('.user-header-right .donate-section');
+                    if (donateSection) {
+                        donateSection.style.display = 'none';
+                    }
                 }
 
             // Check if viewer is logged in (this will also load points)
@@ -625,30 +589,6 @@
                 // Load user stats (tribe, avatars, donors)
                 loadUserStats();
 
-                // Load projects for this user
-                const projectsRef = collection(db, 'projects');
-                const projectsQuery = query(
-                    projectsRef,
-                    where('userId', '==', currentUserId),
-                    where('isActive', '==', true)
-                );
-                const projectsSnapshot = await getDocs(projectsQuery);
-                
-                const projects = projectsSnapshot.docs.map(doc => ({
-                    projectId: doc.id,
-                    ...doc.data()
-                }));
-
-                if (projects.length > 0) {
-                    renderProjects(projects);
-                } else {
-                    document.getElementById('projectsGrid').innerHTML = `
-                        <div class="empty-state" style="grid-column: 1 / -1;">
-                            <p>No active projects yet</p>
-                        </div>
-                    `;
-                }
-
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('userContent').style.display = 'block';
             } catch (error) {
@@ -658,41 +598,6 @@
             }
         }
 
-        function renderProjects(projects) {
-            const grid = document.getElementById('projectsGrid');
-            grid.innerHTML = '';
-
-            projects.forEach(project => {
-                const card = document.createElement('div');
-                card.className = 'project-card';
-
-                let details = [];
-                if (project.eventType) {
-                    const platform = project.platform || project.provider || 'twitch';
-                    const eventTypeLabel = getEventTypeLabel(project.eventType, platform);
-                    details.push(`<div class="project-detail-item"><strong>Event Type:</strong> ${eventTypeLabel}</div>`);
-                }
-                if (project.commandTrigger) {
-                    details.push(`<div class="project-detail-item"><strong>Chat Command:</strong> !${project.commandTrigger}</div>`);
-                }
-                if (project.channelPointsMinimumCost !== null && project.channelPointsMinimumCost !== undefined) {
-                    details.push(`<div class="project-detail-item"><strong>Channel Points:</strong> ${project.channelPointsMinimumCost} minimum</div>`);
-                }
-                if (project.channelPointsRewardTitle) {
-                    details.push(`<div class="project-detail-item"><strong>Reward Title:</strong> ${project.channelPointsRewardTitle}</div>`);
-                }
-
-                card.innerHTML = `
-                    <div class="project-name">${project.projectName || 'Unnamed Project'}</div>
-                    <div class="project-type">${project.projectType || 'generate'}</div>
-                    <div class="project-details">
-                        ${details.join('')}
-                    </div>
-                `;
-
-                grid.appendChild(card);
-            });
-        }
 
         // Check if viewer is authenticated
         async function checkViewerAuth() {
@@ -1003,7 +908,7 @@
                         </div>
                         <div style="text-align: right;">
                             <div style="color: #c084fc; font-size: 1.5rem; font-weight: bold;">${redemption.creditCost}</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">points</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">credits</div>
                         </div>
                     </div>
                     ${redemption.id === 'custom-video' ? `
@@ -1036,12 +941,12 @@
                         </div>
                     ` : redemption.allowCustomUserString ? `
                         <div style="margin-top: 1rem;">
-                            <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">Custom Message:</label>
-                            <input type="text" class="custom-string-input" placeholder="Enter your message" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: rgba(255, 255, 255, 0.8);">${escapeHtml(redemption.customStringDescription || 'Custom Message:')}</label>
+                            <input type="text" class="custom-string-input" placeholder="${escapeHtmlAttribute(redemption.customStringDescription || 'Enter your message')}" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 8px; color: #fff;">
                         </div>
                     ` : ''}
                     <button class="redeem-btn" data-redemption-id="${redemption.id}" ${!canAfford ? 'disabled' : ''} style="width: 100%; padding: 0.75rem; background: ${canAfford ? '#c084fc' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${canAfford ? '#c084fc' : 'rgba(192,132,252,0.3)'}; border-radius: 8px; color: #fff; font-weight: 600; cursor: ${canAfford ? 'pointer' : 'not-allowed'}; margin-top: 1rem; opacity: ${canAfford ? '1' : '0.5'};">
-                        ${canAfford ? 'Redeem' : 'Not Enough Points'}
+                        ${canAfford ? 'Redeem' : 'Not Enough Credits'}
                     </button>
                 `;
                 
@@ -1106,7 +1011,7 @@
             // Use a small epsilon for floating point comparison to handle precision issues
             const epsilon = 0.01;
             if (userPoints + epsilon < redemption.creditCost) {
-                alert('Not enough points!');
+                alert('Not enough credits!');
                 return;
             }
             
@@ -1233,6 +1138,22 @@
             } catch {
                 return null;
             }
+        }
+
+        // Escape HTML entities for text content
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Escape HTML attributes
+        function escapeHtmlAttribute(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
         }
 
         async function uploadViewerVideoAndGetUrl(userId, viewerId, file) {

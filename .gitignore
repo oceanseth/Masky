@@ -61,3 +61,7 @@ tmp/
 temp/
 *.tmp
 
+
+# VCMail generated files
+.vcmail-terraform
+vcmail-lambda-package

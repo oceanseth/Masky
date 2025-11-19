@@ -1330,6 +1330,8 @@
             const wiz = document.getElementById('projectWizard');
             const recent = document.getElementById('recentProjects');
             const membershipSection = document.getElementById('membershipSection');
+            const userPageConfigContainer = document.getElementById('userPageConfigContainer');
+            const userPageConfig = document.getElementById('userPageConfig');
             
             if (avatars) avatars.remove();
             if (wiz) wiz.style.display = 'none';
@@ -1337,6 +1339,8 @@
             if (landing) landing.style.display = 'none';
             if (dashboard) dashboard.style.display = 'none';
             if (about) about.style.display = 'none';
+            if (userPageConfigContainer) userPageConfigContainer.style.display = 'none';
+            if (userPageConfig) userPageConfig.style.display = 'none';
             if (membershipSection) membershipSection.style.display = 'block';
             
             // Scroll to top for a clean view

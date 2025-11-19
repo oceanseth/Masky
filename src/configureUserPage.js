@@ -1,6 +1,6 @@
 import { getCurrentUser, onAuthChange } from './firebase.js';
 import { db, collection, doc, getDoc, setDoc, query, where, getDocs } from './firebase.js';
-import { config } from './config.js';
+import { config as appConfig } from './config.js';
 import { renderRedemptionCard, renderRedemptionQueue } from './customRedemptionCard.js';
 
 /**
@@ -69,6 +69,16 @@ export async function renderUserPageConfig(container) {
                     <input type="number" id="tribeJoinCost" min="0" step="0.01" value="10" style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
                 </div>
                 <div class="config-item" style="margin-bottom: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">
+                        <span>Bits to Points Amount</span>
+                        <span style="position: relative; display: inline-block;">
+                            <span style="color: rgba(255,255,255,0.6); cursor: help;">❓</span>
+                            <span class="bits-to-points-tooltip" style="visibility: hidden; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); color: #fff; padding: 0.5rem; border-radius: 6px; white-space: normal; font-size: 0.875rem; margin-bottom: 0.5rem; z-index: 1000; width: 250px;">When a user redeems bits of this amount, they will get masky credits to use on your page equal to bits/100. Set to 0 to disable.</span>
+                        </span>
+                    </label>
+                    <input type="number" id="bitsToPointsAmount" min="0" step="1" value="100" style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
+                </div>
+                <div class="config-item" style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">Monthly Videos for Tribe Members</label>
                     <input type="number" id="monthlyTribeVideos" min="0" step="1" value="5" style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
                 </div>
@@ -84,6 +94,23 @@ export async function renderUserPageConfig(container) {
 
     // Load existing config
     await loadUserPageConfig();
+
+    // Wire up tooltip for bits to points amount
+    const bitsTooltipTrigger = root.querySelector('.bits-to-points-tooltip');
+    if (bitsTooltipTrigger) {
+        const trigger = bitsTooltipTrigger.previousElementSibling;
+        trigger.addEventListener('mouseenter', () => {
+            bitsTooltipTrigger.style.visibility = 'visible';
+        });
+        trigger.addEventListener('mouseleave', () => {
+            bitsTooltipTrigger.style.visibility = 'hidden';
+        });
+        // Also handle touch events for mobile
+        trigger.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            bitsTooltipTrigger.style.visibility = bitsTooltipTrigger.style.visibility === 'visible' ? 'hidden' : 'visible';
+        });
+    }
 
     // Wire up save button
     const saveBtn = root.querySelector('#saveUserPageConfig');
@@ -134,6 +161,7 @@ async function loadUserPageConfig() {
             document.getElementById('tribeName').placeholder = defaultTribeName;
             
             document.getElementById('tribeJoinCost').value = config.tribeJoinCost || 10;
+            document.getElementById('bitsToPointsAmount').value = config.bitsToPointsAmount || 100;
             document.getElementById('monthlyTribeVideos').value = config.monthlyTribeVideos || 5;
             document.getElementById('subscribersJoinTribeFree').checked = config.subscribersJoinTribeFree === true;
             
@@ -273,12 +301,15 @@ async function saveUserPageConfig() {
                 return r;
             });
             
+            const bitsToPointsAmount = parseInt(document.getElementById('bitsToPointsAmount').value) || 100;
+            
             const config = {
                 enableDonations: document.getElementById('enableDonations').checked,
                 customVideoPrice: customVideoPrice, // Keep for backward compatibility
                 redemptions: redemptionsToSave, // Store all redemptions (with showInQueue forced to true for custom video)
                 tribeName: tribeNameInput || defaultTribeName,
                 tribeJoinCost: parseFloat(document.getElementById('tribeJoinCost').value) || 10,
+                bitsToPointsAmount: bitsToPointsAmount,
                 monthlyTribeVideos: parseInt(document.getElementById('monthlyTribeVideos').value) || 5,
                 subscribersJoinTribeFree: document.getElementById('subscribersJoinTribeFree').checked,
                 updatedAt: new Date()
@@ -288,6 +319,69 @@ async function saveUserPageConfig() {
         await setDoc(userDocRef, {
             userPageConfig: config
         }, { merge: true });
+
+        // If bitsToPointsAmount > 0, ensure EventSub subscription for channel.cheer exists
+        if (bitsToPointsAmount > 0) {
+            try {
+                const idToken = await user.getIdToken();
+                const twitchId = user.uid.replace('twitch:', '');
+                
+                const response = await fetch(`${appConfig.api.baseUrl}/api/twitch-eventsub`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        type: 'channel.cheer',
+                        version: '1',
+                        condition: {
+                            broadcaster_user_id: twitchId
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error('Failed to create bits EventSub subscription:', errorData);
+                    
+                    // Show user-friendly error message
+                    if (errorData.code === 'TWITCH_SCOPES_MISSING') {
+                        const errorMsg = document.createElement('div');
+                        errorMsg.innerHTML = `
+                            <div style="position: fixed; top: 20px; right: 20px; background: #ef4444; color: white; padding: 1rem; border-radius: 8px; z-index: 10000; max-width: 400px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                                <strong>Twitch Permission Required</strong><br>
+                                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                                    To enable bits-to-credits conversion, you need to grant the <code>bits:read</code> permission. 
+                                    Please reconnect your Twitch account to grant this permission.
+                                </p>
+                                <button onclick="window.location.reload()" style="margin-top: 0.5rem; padding: 0.5rem 1rem; background: white; color: #ef4444; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                                    Reconnect Twitch
+                                </button>
+                            </div>
+                        `;
+                        document.body.appendChild(errorMsg);
+                        setTimeout(() => errorMsg.remove(), 10000);
+                    } else {
+                        // Generic error message
+                        const errorMsg = document.createElement('div');
+                        errorMsg.textContent = `Warning: Could not create Twitch EventSub subscription. Bits-to-credits may not work. Error: ${errorData.error || 'Unknown error'}`;
+                        errorMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #f59e0b; color: white; padding: 1rem; border-radius: 8px; z-index: 10000; max-width: 400px;';
+                        document.body.appendChild(errorMsg);
+                        setTimeout(() => errorMsg.remove(), 5000);
+                    }
+                } else {
+                    // Success - EventSub created
+                    const successData = await response.json().catch(() => ({}));
+                    if (successData.subscription) {
+                        console.log('✅ Bits EventSub subscription created:', successData.subscription.id);
+                    }
+                }
+            } catch (error) {
+                console.error('Error creating bits EventSub subscription:', error);
+                // Don't fail the save, just log the error
+            }
+        }
 
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
@@ -333,6 +427,7 @@ export async function getUserPageConfig(userId) {
                 }],
                 tribeName: '',
                 tribeJoinCost: 10,
+                bitsToPointsAmount: 100,
                 monthlyTribeVideos: 5,
                 subscribersJoinTribeFree: false
             };

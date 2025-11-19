@@ -52,6 +52,9 @@ dist/
 build/
 *.zip
 
+# Lambda package (generated)
+lambda-package
+
 # Testing
 coverage/
 .nyc_output/

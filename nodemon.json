@@ -1,0 +1,8 @@
+{
+  "watch": ["server", "api", "utils"],
+  "ext": "js",
+  "ignore": ["node_modules", "dist", "lambda-package"],
+  "delay": 500,
+  "verbose": true
+}
+

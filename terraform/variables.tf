@@ -1,0 +1,23 @@
+variable "aws_region" {
+  description = "AWS region for resources"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "stage" {
+  description = "Deployment stage (prod, dev, etc.)"
+  type        = string
+  default     = "prod"
+}
+
+variable "s3_webmail_bucket" {
+  description = "S3 bucket name for webmail"
+  type        = string
+}
+
+variable "lambda_package_path" {
+  description = "Path to the Lambda deployment package"
+  type        = string
+  default     = "../lambda-package.zip"
+}
+

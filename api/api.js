@@ -445,7 +445,7 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Origin': requestOrigin === '*' ? '*' : requestOrigin,
         'Vary': 'Origin',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,Cache-Control,Accept,Origin',
         'Access-Control-Allow-Credentials': requestOrigin !== '*' ? 'true' : 'false',
         'Access-Control-Max-Age': '86400'
     };
@@ -575,7 +575,7 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            // For HeyGen videos, check if we have a cached URL that's still valid
+            // For HeyGen videos, check if we have a persisted videoUrl (for completed videos)
             const heygenVideoId = projectData.heygenVideoId;
             if (!heygenVideoId) {
                 return {
@@ -584,6 +584,45 @@ exports.handler = async (event, context) => {
                     body: JSON.stringify({ error: 'No video found for this project' })
                 };
             }
+            
+            // Check for force refresh parameter
+            const url = new URL(event.rawUrl || `${event.headers.origin || 'http://localhost:3001'}${path}${event.rawQueryString ? ('?' + event.rawQueryString) : ''}`);
+            const forceRefresh = url.searchParams.get('refresh') === 'true' || event.queryStringParameters?.refresh === 'true';
+            
+            // Helper to check if URL is a signed/expiring URL
+            const isSignedUrl = (url) => {
+                if (!url) return false;
+                try {
+                    const urlObj = new URL(url);
+                    return urlObj.searchParams.has('Expires') || urlObj.searchParams.has('Signature') || urlObj.searchParams.has('Key-Pair-Id');
+                } catch {
+                    return url.includes('Expires=') || url.includes('Signature=') || url.includes('Key-Pair-Id=');
+                }
+            };
+            
+            // If HeyGen video is completed and has a persisted videoUrl, check if we should use it
+            // Only use persisted URL if it's NOT a signed URL (signed URLs expire and need fresh fetch)
+            // OR if force refresh is requested, always fetch fresh
+            if (!forceRefresh && projectData.videoUrl && projectData.heygenVideoReady && !isSignedUrl(projectData.videoUrl)) {
+                // Persisted direct URL (not signed) - safe to return
+                return {
+                    statusCode: 200,
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        videoUrl: projectData.videoUrl,
+                        type: 'heygen',
+                        expiresAt: null,
+                        status: projectData.heygenStatus || projectData.heygenLastStatus || 'completed',
+                        cached: false // Not cached, but persisted
+                    })
+                };
+            }
+            
+            // If we have a persisted signed URL but force refresh or it might be expired, fetch fresh
+            // (Signed URLs should always be fetched fresh from HeyGen)
 
             const normalizeExpiry = (value) => {
                 if (!value) return null;
@@ -674,9 +713,19 @@ exports.handler = async (event, context) => {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
             
-            // Only update videoUrl if status is completed
+            // Only update videoUrl if status is completed AND it's not a signed URL
+            // (Signed URLs expire, so we shouldn't persist them - always fetch fresh)
             if (videoStatus === 'completed') {
                 updateData.heygenVideoReady = true;
+                // Only persist direct URLs (not signed URLs) to videoUrl
+                // Signed URLs should always be fetched fresh from HeyGen
+                if (!isSignedUrl(resolvedUrl)) {
+                    updateData.videoUrl = resolvedUrl; // Persist direct URL for fast loading on refresh
+                } else {
+                    // If it's a signed URL, clear any existing persisted videoUrl
+                    // (We'll always fetch fresh signed URLs)
+                    updateData.videoUrl = admin.firestore.FieldValue.delete();
+                }
             }
             
             await projectRef.update(updateData).catch(err => {
@@ -1060,9 +1109,28 @@ exports.handler = async (event, context) => {
                                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                                 };
                                 
-                                // Only update videoUrl if status is completed
+                                // Only update videoUrl if status is completed AND it's not a signed URL
+                                // (Signed URLs expire, so we shouldn't persist them - always fetch fresh)
                                 if (status === 'completed') {
                                     updateData.heygenVideoReady = true;
+                                    // Only persist direct URLs (not signed URLs) to videoUrl
+                                    // Signed URLs should always be fetched fresh from HeyGen
+                                    const isSigned = (url) => {
+                                        if (!url) return false;
+                                        try {
+                                            const urlObj = new URL(url);
+                                            return urlObj.searchParams.has('Expires') || urlObj.searchParams.has('Signature') || urlObj.searchParams.has('Key-Pair-Id');
+                                        } catch {
+                                            return url.includes('Expires=') || url.includes('Signature=') || url.includes('Key-Pair-Id=');
+                                        }
+                                    };
+                                    if (!isSigned(resolvedUrl)) {
+                                        updateData.videoUrl = resolvedUrl; // Persist direct URL for fast loading on refresh
+                                    } else {
+                                        // If it's a signed URL, clear any existing persisted videoUrl
+                                        // (We'll always fetch fresh signed URLs)
+                                        updateData.videoUrl = admin.firestore.FieldValue.delete();
+                                    }
                                 }
                                 
                                 await projectRef.update(updateData).catch(err => {

@@ -55,25 +55,31 @@ export async function renderAvatarCarousel(containerSelector, userId) {
             // Add each asset as an avatar image
             assetsSnapshot.forEach(assetDoc => {
                 const assetData = assetDoc.data();
-                const imageUrl = assetData.url;
+                // Prefer cachedAvatarUrl, fallback to url
+                const imageUrl = assetData.cachedAvatarUrl || assetData.url;
                 
                 if (imageUrl) {
                     avatars.push({
                         id: `${groupId}_${assetDoc.id}`,
                         groupId: groupId,
+                        assetId: assetDoc.id,
                         name: groupData.displayName || 'Avatar',
-                        imageUrl: imageUrl
+                        imageUrl: imageUrl,
+                        heygenAvatarUrl: assetData.heygenAvatarUrl || null // Store for refresh if needed
                     });
                 }
             });
             
             // If no assets found but group has avatarUrl, use that as fallback
             if (assetsSnapshot.empty && groupData.avatarUrl) {
+                // Prefer cachedAvatarUrl, fallback to avatarUrl
+                const groupImageUrl = groupData.cachedAvatarUrl || groupData.avatarUrl;
                 avatars.push({
                     id: groupId,
                     groupId: groupId,
                     name: groupData.displayName || 'Avatar',
-                    imageUrl: groupData.avatarUrl
+                    imageUrl: groupImageUrl,
+                    heygenAvatarUrl: groupData.heygenAvatarUrl || null // Store for refresh if needed
                 });
             }
         }
@@ -97,13 +103,70 @@ export async function renderAvatarCarousel(containerSelector, userId) {
                     <img 
                         class="avatar-carousel-image" 
                         data-avatar-index="${index}"
+                        data-group-id="${avatar.groupId}"
+                        data-asset-id="${avatar.assetId || ''}"
+                        data-heygen-url="${avatar.heygenAvatarUrl || ''}"
                         src="${avatar.imageUrl}" 
                         alt="${avatar.name}"
                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: ${index === 0 ? 1 : 0}; transition: opacity 2s ease-in-out;"
+                        onerror="handleAvatarImageError(this)"
                     />
                 `).join('')}
             </div>
         `;
+        
+        // Add error handler function to window for avatar image failures
+        window.handleAvatarImageError = async function(img) {
+            const groupId = img.dataset.groupId;
+            const assetId = img.dataset.assetId;
+            const heygenUrl = img.dataset.heygenUrl;
+            
+            // Only try to refresh if we have a HeyGen URL
+            if (!heygenUrl || !heygenUrl.includes('heygen')) {
+                console.warn('[AvatarCarousel] Image failed to load and no HeyGen URL available for refresh');
+                return;
+            }
+            
+            console.log('[AvatarCarousel] Avatar image failed to load, attempting refresh...', { groupId, assetId });
+            
+            try {
+                const { getCurrentUser } = await import('./firebase.js');
+                const user = getCurrentUser();
+                if (!user) {
+                    console.warn('[AvatarCarousel] User not authenticated, cannot refresh avatar');
+                    return;
+                }
+                
+                const idToken = await user.getIdToken();
+                const { config } = await import('./config.js');
+                const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
+                const endpoint = trimmedBase ? `${trimmedBase}/api/avatars/refresh` : '/api/avatars/refresh';
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({
+                        groupDocId: groupId,
+                        assetId: assetId || undefined
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.cachedUrl) {
+                        console.log('[AvatarCarousel] Avatar refreshed, updating image source:', data.cachedUrl);
+                        img.src = data.cachedUrl;
+                    }
+                } else {
+                    console.warn('[AvatarCarousel] Failed to refresh avatar:', response.status);
+                }
+            } catch (error) {
+                console.error('[AvatarCarousel] Error refreshing avatar:', error);
+            }
+        };
 
         // Start carousel animation
         startCarousel(avatars.length, 3000); // Change every 3 seconds

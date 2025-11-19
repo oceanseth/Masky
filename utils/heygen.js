@@ -1129,6 +1129,92 @@ async function getFileUrlFromStorageUrl(storageUrl, admin) {
 }
 
 /**
+ * Download an image from a URL and upload it to Firebase Storage
+ * Returns the Firebase Storage public URL
+ */
+async function cacheAvatarImageToStorage(imageUrl, userId, admin, filename = null) {
+    try {
+        // Check if URL is already a Firebase Storage URL - if so, return it
+        if (imageUrl.includes('firebasestorage.googleapis.com') || imageUrl.includes('storage.googleapis.com')) {
+            console.log('[cacheAvatarImageToStorage] URL is already a Firebase Storage URL, returning as-is');
+            return imageUrl;
+        }
+
+        console.log('[cacheAvatarImageToStorage] Downloading image from URL:', imageUrl);
+        
+        // Download the image
+        let imageBuffer;
+        let contentType = 'image/jpeg'; // default
+        await new Promise((resolve, reject) => {
+            https.get(imageUrl, (res) => {
+                if (res.statusCode !== 200) {
+                    reject(new Error(`Failed to download image: ${res.statusCode}`));
+                    return;
+                }
+                contentType = res.headers['content-type'] || 'image/jpeg';
+                const chunks = [];
+                res.on('data', chunk => chunks.push(chunk));
+                res.on('end', () => {
+                    imageBuffer = Buffer.concat(chunks);
+                    resolve();
+                });
+                res.on('error', reject);
+            }).on('error', reject);
+        });
+
+        console.log('[cacheAvatarImageToStorage] Image downloaded, size:', imageBuffer.length, 'bytes, content-type:', contentType);
+
+        // Determine file extension from content type or URL
+        let extension = 'jpg';
+        if (contentType.includes('png')) {
+            extension = 'png';
+        } else if (contentType.includes('webp')) {
+            extension = 'webp';
+        } else if (contentType.includes('gif')) {
+            extension = 'gif';
+        } else {
+            // Try to extract from URL
+            const urlMatch = imageUrl.match(/\.([a-z0-9]+)(?:\?|$)/i);
+            if (urlMatch) {
+                extension = urlMatch[1].toLowerCase();
+            }
+        }
+
+        // Generate storage path
+        const timestamp = Date.now();
+        const storageFilename = filename || `avatar_${timestamp}.${extension}`;
+        const storagePath = `users/${userId}/avatars/cached/${storageFilename}`;
+
+        // Upload to Firebase Storage
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(storagePath);
+        
+        await file.save(imageBuffer, {
+            metadata: {
+                contentType: contentType,
+                cacheControl: 'public, max-age=31536000, immutable'
+            }
+        });
+
+        console.log('[cacheAvatarImageToStorage] Image uploaded to Firebase Storage:', storagePath);
+
+        // Make the file publicly accessible
+        await file.makePublic();
+
+        // Get the public URL
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+        
+        console.log('[cacheAvatarImageToStorage] Cached avatar image URL:', publicUrl);
+        return publicUrl;
+    } catch (err) {
+        console.error('[cacheAvatarImageToStorage] Error caching avatar image:', err);
+        // Return original URL if caching fails
+        console.warn('[cacheAvatarImageToStorage] Falling back to original URL:', imageUrl);
+        return imageUrl;
+    }
+}
+
+/**
  * Initialize HeyGen avatar group
  */
 async function handleHeygenAvatarGroupInit(event, headers) {
@@ -1289,10 +1375,27 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
             const fileUrl = await getFileUrlFromStorageUrl(imageUrlToUse, admin);
             avatarGroupId = await heygenClient.createPhotoAvatarGroup(groupName, fileUrl);
             console.log('[handleHeygenAvatarGroupAddLook] Created HeyGen avatar group:', avatarGroupId);
-            await groupRef.update({
+            
+            // Update group with avatar_group_id and ensure cached URL is set
+            const groupUpdateData = {
                 avatar_group_id: avatarGroupId,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            };
+            
+            // If image is already in Firebase Storage, mark it as cached
+            const isFirebaseStorageUrl = imageUrlToUse && (
+                imageUrlToUse.includes('firebasestorage.googleapis.com') || 
+                imageUrlToUse.includes('storage.googleapis.com')
+            );
+            
+            if (isFirebaseStorageUrl) {
+                groupUpdateData.cachedAvatarUrl = imageUrlToUse;
+                if (!groupData.avatarUrl) {
+                    groupUpdateData.avatarUrl = imageUrlToUse;
+                }
+            }
+            
+            await groupRef.update(groupUpdateData);
             // Image is already added during group creation, so we're done
             console.log('[handleHeygenAvatarGroupAddLook] Image already added during group creation');
         } else {
@@ -1310,10 +1413,27 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
                 // Use server-side Firebase Admin to get the file directly
                 const fileUrl = await getFileUrlFromStorageUrl(imageUrlToUse, admin);
                 avatarGroupId = await heygenClient.createPhotoAvatarGroup(groupName, fileUrl);
-                await groupRef.update({
+                
+                // Update group with avatar_group_id and ensure cached URL is set
+                const groupUpdateData = {
                     avatar_group_id: avatarGroupId,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                
+                // If image is already in Firebase Storage, mark it as cached
+                const isFirebaseStorageUrl = imageUrlToUse && (
+                    imageUrlToUse.includes('firebasestorage.googleapis.com') || 
+                    imageUrlToUse.includes('storage.googleapis.com')
+                );
+                
+                if (isFirebaseStorageUrl) {
+                    groupUpdateData.cachedAvatarUrl = imageUrlToUse;
+                    if (!groupData.avatarUrl) {
+                        groupUpdateData.avatarUrl = imageUrlToUse;
+                    }
+                }
+                
+                await groupRef.update(groupUpdateData);
                 console.log('[handleHeygenAvatarGroupAddLook] Created replacement HeyGen avatar group:', avatarGroupId);
                 // Image is already added during group creation, so we're done
                 console.log('[handleHeygenAvatarGroupAddLook] Image already added during replacement group creation');
@@ -1341,17 +1461,61 @@ async function handleHeygenAvatarGroupAddLook(event, headers) {
                     photoAvatarId = photoAvatar.id;
                     console.log('[handleHeygenAvatarGroupAddLook] Got HeyGen photo avatar ID:', photoAvatarId);
                     
-                    // Save the HeyGen photo avatar ID to the Firestore asset document
+                    // Cache the avatar image to Firebase Storage if it's a HeyGen URL
+                    let cachedAvatarUrl = imageUrlToUse;
+                    const isHeyGenUrl = imageUrlToUse && (
+                        imageUrlToUse.includes('heygen.com') || 
+                        imageUrlToUse.includes('heygen.io') ||
+                        imageUrlToUse.includes('cdn.heygen')
+                    );
+                    
+                    if (isHeyGenUrl) {
+                        try {
+                            console.log('[handleHeygenAvatarGroupAddLook] Caching HeyGen avatar image to Firebase Storage...');
+                            cachedAvatarUrl = await cacheAvatarImageToStorage(imageUrlToUse, userId, admin, `avatar_${assetId || Date.now()}.jpg`);
+                            console.log('[handleHeygenAvatarGroupAddLook] Avatar image cached:', cachedAvatarUrl);
+                        } catch (cacheErr) {
+                            console.warn('[handleHeygenAvatarGroupAddLook] Failed to cache avatar image, using original URL:', cacheErr.message);
+                            // Continue with original URL if caching fails
+                        }
+                    }
+                    
+                    // Save the HeyGen photo avatar ID and cached URL to the Firestore asset document
                     if (assetId && photoAvatarId) {
                         const assetsRef = db.collection('users').doc(userId)
                             .collection('heygenAvatarGroups').doc(groupDocId)
                             .collection('assets');
-                        await assetsRef.doc(assetId).update({
+                        const updateData = {
                             heygenPhotoAvatarId: photoAvatarId,
                             heygenStatus: photoAvatar.status || 'pending',
                             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                        console.log('[handleHeygenAvatarGroupAddLook] Saved HeyGen photo avatar ID to Firestore asset:', assetId);
+                        };
+                        
+                        // If we cached the image, update the URL to use our cached version
+                        if (cachedAvatarUrl !== imageUrlToUse) {
+                            updateData.url = cachedAvatarUrl;
+                            updateData.cachedAvatarUrl = cachedAvatarUrl;
+                            updateData.heygenAvatarUrl = imageUrlToUse; // Store original HeyGen URL for reference
+                        }
+                        
+                        await assetsRef.doc(assetId).update(updateData);
+                        console.log('[handleHeygenAvatarGroupAddLook] Saved HeyGen photo avatar ID and cached URL to Firestore asset:', assetId);
+                    }
+                    
+                    // Also update the group's avatarUrl if this is the primary asset
+                    if (cachedAvatarUrl !== imageUrlToUse) {
+                        const groupUpdateData = {
+                            cachedAvatarUrl: cachedAvatarUrl,
+                            heygenAvatarUrl: imageUrlToUse,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        };
+                        // Only update avatarUrl if group doesn't have one or if this is explicitly the primary
+                        const currentGroupData = groupDoc.data();
+                        if (!currentGroupData.avatarUrl || currentGroupData.avatarUrl === imageUrlToUse) {
+                            groupUpdateData.avatarUrl = cachedAvatarUrl;
+                        }
+                        await groupRef.update(groupUpdateData);
+                        console.log('[handleHeygenAvatarGroupAddLook] Updated group with cached avatar URL');
                     }
                 }
             } catch (addErr) {
@@ -1991,6 +2155,150 @@ async function handleHeygenAvatarGroupDelete(event, headers) {
 }
 
 /**
+ * Refresh avatar image URL - download from HeyGen URL and cache to Firebase Storage
+ */
+async function handleAvatarRefresh(event, headers) {
+    try {
+        const { userId, admin } = await verifyTokenAndGetUserId(event);
+        const body = parseEventBody(event);
+        const { groupDocId, assetId } = body;
+
+        if (!groupDocId) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ error: 'groupDocId is required' })
+            };
+        }
+
+        const db = admin.firestore();
+        const groupRef = db.collection('users').doc(userId).collection('heygenAvatarGroups').doc(groupDocId);
+        const groupDoc = await groupRef.get();
+
+        if (!groupDoc.exists) {
+            return {
+                statusCode: 404,
+                headers,
+                body: JSON.stringify({ error: 'Avatar group not found' })
+            };
+        }
+
+        const groupData = groupDoc.data();
+        let imageUrlToRefresh = null;
+        let assetDocId = assetId;
+
+        // If assetId is provided, refresh that specific asset
+        if (assetId) {
+            const assetsRef = db.collection('users').doc(userId)
+                .collection('heygenAvatarGroups').doc(groupDocId)
+                .collection('assets');
+            const assetDoc = await assetsRef.doc(assetId).get();
+            
+            if (!assetDoc.exists) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Asset not found' })
+                };
+            }
+            
+            const assetData = assetDoc.data();
+            // Prefer heygenAvatarUrl if it exists (original HeyGen URL), otherwise use url
+            imageUrlToRefresh = assetData.heygenAvatarUrl || assetData.url;
+        } else {
+            // Refresh the group's avatarUrl
+            imageUrlToRefresh = groupData.heygenAvatarUrl || groupData.avatarUrl;
+        }
+
+        if (!imageUrlToRefresh) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ error: 'No HeyGen URL found to refresh' })
+            };
+        }
+
+        // Check if it's actually a HeyGen URL
+        const isHeyGenUrl = imageUrlToRefresh && (
+            imageUrlToRefresh.includes('heygen.com') || 
+            imageUrlToRefresh.includes('heygen.io') ||
+            imageUrlToRefresh.includes('cdn.heygen')
+        );
+
+        if (!isHeyGenUrl) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ 
+                    error: 'URL is not a HeyGen URL',
+                    message: 'Only HeyGen URLs can be refreshed'
+                })
+            };
+        }
+
+        console.log('[handleAvatarRefresh] Refreshing avatar image from HeyGen URL:', imageUrlToRefresh);
+
+        // Download and cache the image
+        const cachedUrl = await cacheAvatarImageToStorage(
+            imageUrlToRefresh, 
+            userId, 
+            admin, 
+            assetDocId ? `avatar_${assetDocId}_${Date.now()}.jpg` : `avatar_group_${groupDocId}_${Date.now()}.jpg`
+        );
+
+        // Update Firestore with the cached URL
+        if (assetDocId) {
+            // Update asset document
+            const assetsRef = db.collection('users').doc(userId)
+                .collection('heygenAvatarGroups').doc(groupDocId)
+                .collection('assets');
+            await assetsRef.doc(assetDocId).update({
+                url: cachedUrl,
+                cachedAvatarUrl: cachedUrl,
+                heygenAvatarUrl: imageUrlToRefresh, // Keep original for reference
+                refreshedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log('[handleAvatarRefresh] Updated asset with cached URL:', assetDocId);
+        } else {
+            // Update group document
+            await groupRef.update({
+                avatarUrl: cachedUrl,
+                cachedAvatarUrl: cachedUrl,
+                heygenAvatarUrl: imageUrlToRefresh, // Keep original for reference
+                refreshedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log('[handleAvatarRefresh] Updated group with cached URL');
+        }
+
+        return {
+            statusCode: 200,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                success: true,
+                cachedUrl: cachedUrl,
+                originalUrl: imageUrlToRefresh,
+                message: 'Avatar image refreshed and cached successfully'
+            })
+        };
+    } catch (err) {
+        console.error('[handleAvatarRefresh] Error:', err);
+        return {
+            statusCode: err.message.includes('Unauthorized') ? 401 : 500,
+            headers,
+            body: JSON.stringify({
+                error: 'Failed to refresh avatar image',
+                message: err.message
+            })
+        };
+    }
+}
+
+/**
  * Claim an existing HeyGen avatar group by ID
  * Creates a Firestore document and syncs assets from HeyGen
  */
@@ -2106,7 +2414,8 @@ module.exports = Object.assign(heygenClient, {
     handleHeygenAvatarGroupRemoveLook,
     handleHeygenAvatarGroupSync,
     handleHeygenAvatarGroupDelete,
-    handleHeygenAvatarGroupClaim
+    handleHeygenAvatarGroupClaim,
+    handleAvatarRefresh
 });
 
 

@@ -35,7 +35,8 @@ const {
     handleHeygenAvatarGroupRemoveLook,
     handleHeygenAvatarGroupSync,
     handleHeygenAvatarGroupDelete,
-    handleHeygenAvatarGroupClaim
+    handleHeygenAvatarGroupClaim,
+    handleAvatarRefresh
 } = require('../utils/heygen');
 const { parseMultipartData } = require('./multipartParser');
 
@@ -1232,6 +1233,11 @@ exports.handler = async (event, context) => {
     // HeyGen: add look to avatar group
     if (path.includes('/heygen/avatar-group/add-look') && method === 'POST') {
         return await handleHeygenAvatarGroupAddLook(event, headers);
+    }
+
+    // Avatar refresh endpoint
+    if (path.includes('/avatars/refresh') && method === 'POST') {
+        return await handleAvatarRefresh(event, headers);
     }
 
     // HeyGen: remove look from avatar group

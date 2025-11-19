@@ -44,7 +44,7 @@ jobs:
         working-directory: terraform
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="stage=production" -var="aws_region=us-east-1" -var="s3_webmail_bucket=${{ secrets.S3_WEBMAIL_BUCKET }}"
+        run: terraform apply -auto-approve -var="stage=production" -var="aws_region=us-east-1"
         working-directory: terraform
 
       - name: Sync files to S3

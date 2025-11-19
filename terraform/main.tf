@@ -67,35 +67,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Resource = [
           "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/masky/${var.stage}/*"
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ses:SendEmail",
-          "ses:SendRawEmail"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:PutObjectAcl"
-        ]
-        Resource = [
-          "${aws_s3_bucket.webmail_bucket.arn}/*",
-          "${aws_s3_bucket.mail_inbox.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.webmail_bucket.arn
-        ]
       }
     ]
   })
@@ -103,15 +74,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
 
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
-
-# S3 buckets (if they don't exist, create them)
-resource "aws_s3_bucket" "webmail_bucket" {
-  bucket = var.s3_webmail_bucket
-}
-
-resource "aws_s3_bucket" "mail_inbox" {
-  bucket = "masky-mail-inbox"
-}
 
 # Lambda function
 resource "aws_lambda_function" "api" {
@@ -207,42 +169,6 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
-}
-
-# Lambda permission for SES
-resource "aws_lambda_permission" "ses" {
-  statement_id  = "AllowExecutionFromSES"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.api.function_name
-  principal     = "ses.amazonaws.com"
-  source_arn    = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:receipt-rule-set/masky-incoming-email:receipt-rule/masky-email-rule"
-}
-
-# S3 Bucket Policy for SES
-resource "aws_s3_bucket_policy" "mail_inbox_policy" {
-  bucket = aws_s3_bucket.mail_inbox.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowSESToWrite"
-        Effect = "Allow"
-        Principal = {
-          Service = "ses.amazonaws.com"
-        }
-        Action = [
-          "s3:PutObject"
-        ]
-        Resource = "${aws_s3_bucket.mail_inbox.arn}/*"
-        Condition = {
-          StringEquals = {
-            "aws:Referer" = data.aws_caller_identity.current.account_id
-          }
-        }
-      }
-    ]
-  })
 }
 
 # Outputs

@@ -355,12 +355,16 @@ function initializeMobileMenu() {
             const about = document.getElementById('aboutSection');
             const membershipSection = document.getElementById('membershipSection');
             const projectsManager = document.getElementById('projectsManager');
+            const userPageConfigContainer = document.getElementById('userPageConfigContainer');
+            const userPageConfig = document.getElementById('userPageConfig');
             const dashboard = document.getElementById('dashboard');
             if (wiz) wiz.style.display = 'none';
             if (recent) recent.style.display = 'none';
             if (about) about.style.display = 'none';
             if (membershipSection) membershipSection.style.display = 'none';
             if (projectsManager) projectsManager.remove();
+            if (userPageConfigContainer) userPageConfigContainer.style.display = 'none';
+            if (userPageConfig) userPageConfig.style.display = 'none';
             if (dashboard) dashboard.style.display = 'block';
             // Render avatar manager
             renderAvatars('#dashboard .dashboard-container');
@@ -388,6 +392,8 @@ function initializeMobileMenu() {
             const avatars = document.getElementById('avatarsManager');
             const about = document.getElementById('aboutSection');
             const membershipSection = document.getElementById('membershipSection');
+            const userPageConfigContainer = document.getElementById('userPageConfigContainer');
+            const userPageConfig = document.getElementById('userPageConfig');
             const dashboard = document.getElementById('dashboard');
             console.log('[Header] toggling views', { hasWiz: !!wiz, hasRecent: !!recent, hasAvatars: !!avatars, hasAbout: !!about, hasDashboard: !!dashboard });
             if (wiz) wiz.style.display = 'none';
@@ -395,6 +401,8 @@ function initializeMobileMenu() {
             if (avatars) avatars.remove();
             if (about) about.style.display = 'none';
             if (membershipSection) membershipSection.style.display = 'none';
+            if (userPageConfigContainer) userPageConfigContainer.style.display = 'none';
+            if (userPageConfig) userPageConfig.style.display = 'none';
             if (dashboard) dashboard.style.display = 'block';
             // Render projects manager
             console.log('[Header] calling renderProjectsManager on selector #dashboard .dashboard-container');
@@ -421,12 +429,16 @@ function initializeMobileMenu() {
         const wiz = document.getElementById('projectWizard');
         const recent = document.getElementById('recentProjects');
         const membershipSection = document.getElementById('membershipSection');
+        const userPageConfigContainer = document.getElementById('userPageConfigContainer');
+        const userPageConfig = document.getElementById('userPageConfig');
         if (avatars) avatars.remove();
         if (wiz) wiz.style.display = 'none';
         if (recent) recent.style.display = 'none';
         if (landing) landing.style.display = 'none';
         if (dashboard) dashboard.style.display = 'none';
         if (membershipSection) membershipSection.style.display = 'none';
+        if (userPageConfigContainer) userPageConfigContainer.style.display = 'none';
+        if (userPageConfig) userPageConfig.style.display = 'none';
         if (about) about.style.display = 'block';
         // Scroll to top for a clean view
         window.scrollTo({ top: 0, behavior: 'smooth' });

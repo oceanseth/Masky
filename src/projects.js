@@ -197,8 +197,13 @@ export function renderProjectsManager(container) {
                     return { ...project };
                 }
                 
-                // For HeyGen videos, check if we have a cached URL that's still valid
+                // For HeyGen videos, check if we have a persisted videoUrl (for completed videos)
                 if (project.heygenVideoId) {
+                    // If video is completed and has a persisted videoUrl, use it directly
+                    if (project.videoUrl && project.heygenVideoReady) {
+                        return { ...project };
+                    }
+                    
                     // If we have a cached URL with expiry, check if it's still valid
                     if (project.heygenVideoUrl && project.heygenVideoUrlExpiresAt) {
                         const parseExpiryTimestamp = (value) => {

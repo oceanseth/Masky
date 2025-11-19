@@ -94,14 +94,17 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete)
     
     // Function to fetch fresh video URL from API
     let isRefreshingUrl = false;
-    async function refreshVideoUrl() {
+    async function refreshVideoUrl(forceRefresh = true) {
         if (isRefreshingUrl || !project.projectId) return null;
         
         isRefreshingUrl = true;
         try {
             const { config } = await import('./config.js');
             const trimmedBase = (config?.api?.baseUrl || '').replace(/\/$/, '');
-            const endpoint = trimmedBase ? `${trimmedBase}/api/projects/${project.projectId}/video-url` : `/api/projects/${project.projectId}/video-url`;
+            // Add refresh=true parameter to force API to fetch fresh URL from HeyGen
+            const endpoint = trimmedBase 
+                ? `${trimmedBase}/api/projects/${project.projectId}/video-url${forceRefresh ? '?refresh=true' : ''}` 
+                : `/api/projects/${project.projectId}/video-url${forceRefresh ? '?refresh=true' : ''}`;
             
             const response = await fetch(endpoint, {
                 method: 'GET',
@@ -152,6 +155,8 @@ export function bindProjectCard(card, project, onEdit, onToggleStatus, onDelete)
                 if (freshUrl && freshUrl !== videoEl.src) {
                     console.log('[ProjectCard] Retrying with fresh URL:', freshUrl);
                     videoEl.src = freshUrl;
+                    // Update the project object so it's in sync
+                    project.videoUrl = freshUrl;
                     videoEl.load(); // Reload the video with new URL
                     return; // Don't show error yet, let it try to load
                 }

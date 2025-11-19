@@ -1,0 +1,5 @@
+aws_region         = "us-east-1"
+stage              = "prod"
+s3_webmail_bucket  = "your-webmail-bucket-name"
+lambda_package_path = "../lambda-package.zip"
+

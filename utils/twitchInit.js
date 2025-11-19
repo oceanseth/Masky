@@ -595,11 +595,250 @@ class TwitchInitializer {
   // Handle Twitch webhook events
   async handleWebhook(event) {
     try {
+      // Check if this is localhost (for testing)
+      const isLocalhost = process.env.IS_OFFLINE === 'true' || process.env.STAGE === 'local';
+      
       // Verify webhook signature
       const signature = event.headers['twitch-eventsub-message-signature'] || event.headers['Twitch-Eventsub-Message-Signature'];
       const messageId = event.headers['twitch-eventsub-message-id'] || event.headers['Twitch-Eventsub-Message-Id'];
       const messageTimestamp = event.headers['twitch-eventsub-message-timestamp'] || event.headers['Twitch-Eventsub-Message-Timestamp'];
       const messageType = event.headers['twitch-eventsub-message-type'] || event.headers['Twitch-Eventsub-Message-Type'];
+
+      // On localhost, allow test events without signature verification
+      if (isLocalhost && event.headers['x-test-event'] === 'true') {
+        try {
+          console.log('[LOCALHOST TEST MODE] Bypassing signature verification for test event');
+          console.log('[TEST] Event body type:', typeof event.body);
+          console.log('[TEST] Event body:', event.body?.substring(0, 200));
+          
+          // Use provided headers or generate defaults for test events
+          const testMessageId = messageId || `test-${Date.now()}`;
+          const testMessageTimestamp = messageTimestamp || new Date().toISOString();
+          const testMessageType = messageType || 'notification';
+          
+          // Continue with test event processing
+          let notification;
+          try {
+            // Handle both string and already-parsed body
+            if (typeof event.body === 'string') {
+              notification = JSON.parse(event.body);
+            } else {
+              notification = event.body;
+            }
+            console.log('[TEST] Parsed notification:', JSON.stringify(notification, null, 2));
+          } catch (err) {
+            console.error('[TEST] Error parsing notification:', err);
+            return {
+              statusCode: 400,
+              body: JSON.stringify({ error: 'Invalid JSON in event body', details: err.message })
+            };
+          }
+          
+          const eventData = notification.event;
+          const subscription = notification.subscription || {
+            type: 'channel.cheer',
+            condition: { broadcaster_user_id: eventData.broadcaster_user_id }
+          };
+          
+          console.log('[TEST] Event data:', JSON.stringify(eventData, null, 2));
+          console.log('[TEST] Subscription:', JSON.stringify(subscription, null, 2));
+
+          const firebaseInitializer = require('./firebaseInit');
+          await firebaseInitializer.initialize();
+          const admin = require('firebase-admin');
+          const db = admin.firestore();
+
+          const broadcasterId = eventData.broadcaster_user_id || subscription.condition.broadcaster_user_id;
+          
+          if (!broadcasterId) {
+            console.error('No broadcaster ID found in test event data');
+            return {
+              statusCode: 400,
+              body: JSON.stringify({ error: 'Missing broadcaster ID' })
+            };
+          }
+
+          const userId = `twitch:${broadcasterId}`;
+          const subscriptionKey = `twitch_${subscription.type}`;
+          
+          console.log(`[TEST] Processing cheer event for broadcaster: ${userId}`);
+          
+          // Process the event (same logic as below)
+          if (subscription.type === 'channel.cheer') {
+            console.log(`[TEST] Processing channel.cheer event`);
+            
+            // Handle bits redemption for credits (same logic as production)
+            const bitsAmount = eventData.bits || 0;
+            const userWhoCheeredId = eventData.user_id || null;
+            const userWhoCheeredName = eventData.user_name || eventData.user_login || 'Anonymous';
+            
+            console.log(`[TEST] Cheer event details:`, {
+              bitsAmount,
+              userWhoCheeredId,
+              userWhoCheeredName,
+              broadcasterId: userId
+            });
+            
+            const userDoc = await db.collection('users').doc(userId).get();
+            if (!userDoc.exists) {
+              console.log(`[TEST] ⚠️  Broadcaster user document not found: ${userId}`);
+              console.log(`[TEST]   The broadcaster must have an account on the platform first.`);
+              return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                  received: true, 
+                  test: true,
+                  message: 'Test event processed successfully',
+                  warning: `Broadcaster user document not found: ${userId}. The broadcaster must have an account first.`
+                })
+              };
+            }
+            
+            console.log(`[TEST] Broadcaster user document exists`);
+            
+            const userData = userDoc.data();
+            const userPageConfig = userData.userPageConfig || {};
+            // Default to 100 if not configured
+            const bitsToPointsAmount = userPageConfig.bitsToPointsAmount || 100;
+            
+            console.log(`[TEST] Broadcaster config:`, {
+              bitsToPointsAmount,
+              hasUserPageConfig: !!userData.userPageConfig,
+              configuredValue: userPageConfig.bitsToPointsAmount
+            });
+            
+            if (bitsAmount < bitsToPointsAmount) {
+              console.log(`[TEST] ⚠️  Bits amount (${bitsAmount}) is less than bitsToPointsAmount (${bitsToPointsAmount})`);
+              return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                  received: true, 
+                  test: true,
+                  message: 'Test event processed successfully',
+                  warning: `Bits amount (${bitsAmount}) is less than configured minimum (${bitsToPointsAmount}).`
+                })
+              };
+            }
+            
+            console.log(`[TEST] Bits amount check passed: ${bitsAmount} >= ${bitsToPointsAmount}`);
+            console.log(`[TEST] Entering donation creation block...`);
+            
+            if (bitsToPointsAmount > 0 && bitsAmount >= bitsToPointsAmount) {
+                console.log(`[TEST] Inside donation creation block`);
+                const creditsAmount = bitsAmount / 100;
+                console.log(`[TEST] Credits amount: ${creditsAmount}`);
+                
+                let viewerId = null;
+                if (userWhoCheeredId) {
+                  console.log(`[TEST] userWhoCheeredId exists: ${userWhoCheeredId}`);
+                  const viewerTwitchId = `twitch:${userWhoCheeredId}`;
+                  console.log(`[TEST] Checking viewer document: ${viewerTwitchId}`);
+                  
+                  const viewerDoc = await db.collection('users').doc(viewerTwitchId).get();
+                  
+                  if (!viewerDoc.exists) {
+                    console.log(`[TEST] Viewer document does not exist, creating...`);
+                    try {
+                      await db.collection('users').doc(viewerTwitchId).set({
+                        twitchId: userWhoCheeredId,
+                        twitchUsername: userWhoCheeredName.toLowerCase(),
+                        displayName: userWhoCheeredName,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                      }, { merge: true });
+                      console.log(`[TEST] ✅ Created pending user document for Twitch user ${userWhoCheeredId}`);
+                    } catch (err) {
+                      console.error(`[TEST] ❌ Error creating pending user document:`, err);
+                      throw err; // Re-throw to see the error
+                    }
+                  } else {
+                    console.log(`[TEST] Viewer document already exists`);
+                  }
+                  
+                  viewerId = viewerTwitchId;
+                  console.log(`[TEST] viewerId set to: ${viewerId}`);
+                } else {
+                  console.log(`[TEST] ⚠️  userWhoCheeredId is null or undefined`);
+                }
+                
+                if (viewerId) {
+                  console.log(`[TEST] Creating donation record...`);
+                  const donationData = {
+                    userId: userId,
+                    viewerId: viewerId,
+                    amount: creditsAmount,
+                    bitsAmount: bitsAmount,
+                    currency: 'usd',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    processed: true,
+                    source: 'bits_redemption',
+                    test: true // Mark as test event
+                  };
+                  
+                  console.log(`[TEST] Donation data:`, donationData);
+                  
+                  try {
+                    const donationRef = await db.collection('donations').add(donationData);
+                    console.log(`[TEST] ✅ Bits redemption credited: ${userWhoCheeredName} (${viewerId}) received ${creditsAmount} credits for ${bitsAmount} bits`);
+                    console.log(`[TEST] ✅ Donation record created in Firestore with ID: ${donationRef.id}`);
+                    
+                    return {
+                      statusCode: 200,
+                      body: JSON.stringify({ 
+                        received: true, 
+                        test: true,
+                        message: 'Test event processed successfully',
+                        donationCreated: true,
+                        donationId: donationRef.id,
+                        donationData: {
+                          viewerId,
+                          creditsAmount,
+                          bitsAmount
+                        }
+                      })
+                    };
+                  } catch (err) {
+                    console.error(`[TEST] ❌ Error creating donation record:`, err);
+                    throw err; // Re-throw to see the error
+                  }
+                } else {
+                  console.log(`[TEST] ⚠️  No viewerId available, skipping donation creation`);
+                  console.log(`[TEST]   userWhoCheeredId was: ${userWhoCheeredId}`);
+                }
+              } else {
+                console.log(`[TEST] ⚠️  Not entering donation creation block`);
+                console.log(`[TEST]   bitsToPointsAmount: ${bitsToPointsAmount}`);
+                console.log(`[TEST]   bitsAmount: ${bitsAmount}`);
+                console.log(`[TEST]   Condition check: bitsToPointsAmount > 0 && bitsAmount >= bitsToPointsAmount`);
+              }
+          } else {
+            console.log(`[TEST] ⚠️  Subscription type is not channel.cheer: ${subscription.type}`);
+          }
+
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+              received: true, 
+              test: true,
+              message: 'Test event processed successfully',
+              warning: 'Donation was not created - check logs for details'
+            })
+          };
+        } catch (error) {
+          console.error('[TEST] ❌ Error processing test event:', error);
+          console.error('[TEST] Error stack:', error.stack);
+          return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+              received: true, 
+              test: true,
+              error: 'Error processing test event',
+              message: error.message,
+              stack: error.stack
+            })
+          };
+        }
+      }
 
       if (!signature || !messageId || !messageTimestamp || !messageType) {
         return {
@@ -768,9 +1007,71 @@ class TwitchInitializer {
                   projectId: projectId
                 })
               };
-            } else {
-              // Handle other event types (follows, subscriptions, etc.)
-              // Find all active projects for this user and event type
+            } else if (subscription.type === 'channel.cheer') {
+              // Handle bits redemption for credits
+              const bitsAmount = eventData.bits || 0;
+              const userWhoCheeredId = eventData.user_id || null;
+              const userWhoCheeredName = eventData.user_name || eventData.user_login || 'Anonymous';
+              
+              // Get user's bitsToPointsAmount setting
+              const userDoc = await db.collection('users').doc(userId).get();
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                const userPageConfig = userData.userPageConfig || {};
+                // Default to 100 if not configured
+                const bitsToPointsAmount = userPageConfig.bitsToPointsAmount || 100;
+                
+                // Only process if bitsToPointsAmount is set and bits amount matches
+                if (bitsToPointsAmount > 0 && bitsAmount >= bitsToPointsAmount) {
+                  // Calculate credits: bits/100
+                  const creditsAmount = bitsAmount / 100;
+                  
+                  // Find or create viewer account
+                  let viewerId = null;
+                  if (userWhoCheeredId) {
+                    const viewerTwitchId = `twitch:${userWhoCheeredId}`;
+                    const viewerDoc = await db.collection('users').doc(viewerTwitchId).get();
+                    
+                    if (!viewerDoc.exists) {
+                      // User doesn't have an account yet - create a minimal user document
+                      // This will allow credits to be stored and available when they connect/login
+                      try {
+                        await db.collection('users').doc(viewerTwitchId).set({
+                          twitchId: userWhoCheeredId,
+                          twitchUsername: userWhoCheeredName.toLowerCase(),
+                          displayName: userWhoCheeredName,
+                          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                        console.log(`Created pending user document for Twitch user ${userWhoCheeredId}`);
+                      } catch (err) {
+                        console.error('Error creating pending user document:', err);
+                      }
+                    }
+                    
+                    viewerId = viewerTwitchId;
+                  }
+                  
+                  // Create donation record (credits will be available when user connects/login)
+                  if (viewerId) {
+                    const donationData = {
+                      userId: userId,
+                      viewerId: viewerId,
+                      amount: creditsAmount,
+                      bitsAmount: bitsAmount,
+                      currency: 'usd',
+                      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                      processed: true,
+                      source: 'bits_redemption'
+                    };
+                    
+                    await db.collection('donations').add(donationData);
+                    console.log(`Bits redemption credited: ${userWhoCheeredName} (${viewerId}) received ${creditsAmount} credits for ${bitsAmount} bits`);
+                  }
+                }
+              }
+              
+              // Continue with normal event processing (for projects/alerts)
               const projectsSnapshot = await db.collection('projects')
                 .where('userId', '==', userId)
                 .where('platform', '==', 'twitch')

@@ -36,6 +36,14 @@ export default defineConfig(({ mode }) => {
       middlewareMode: false,
       fs: {
         strict: false
+      },
+      // Proxy API requests to local API server
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          secure: false
+        }
       }
     },
     // Copy locale files to dist after build

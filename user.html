@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/src/styles/main.css">
     <link rel="stylesheet" href="/src/styles/navigation.css">
     <link rel="stylesheet" href="/src/styles/dashboard.css">
+    <link rel="stylesheet" href="/src/styles/modal.css">
     <style>
         html, body {
             max-width: 100vw;
@@ -361,6 +362,27 @@
         </div>
     </div>
 
+    <!-- Donation Login Warning Modal -->
+    <div class="modal" id="donationLoginModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeDonationModal()">×</button>
+            <h2 class="modal-title">Not Logged In</h2>
+            <p class="modal-subtitle" style="margin-bottom: 2rem;">
+                You are not currently logged in. If you proceed without logging in, you won't receive credit for this donation.
+            </p>
+            <div class="auth-providers">
+                <button class="provider-btn twitch" id="modalTwitchLoginBtn" style="background: linear-gradient(135deg, rgba(145, 70, 255, 0.3), rgba(100, 65, 165, 0.3));">
+                    <span>🎮</span> Login with Twitch
+                </button>
+            </div>
+            <div style="margin-top: 1.5rem;">
+                <button class="donate-btn" id="modalContinueBtn" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(192, 132, 252, 0.3);">
+                    Continue Without Login
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- About Page (hidden by default) -->
     <section id="aboutSection" style="display: none;">
         <div class="about-container">
@@ -434,6 +456,7 @@
         let videoCredits = 0;
         let isSubscriber = false;
         let isTribeMember = false;
+        let pendingDonationAmount = null; // Store donation amount when user needs to login
 
         // Initialize donation buttons
         document.querySelectorAll('.donate-amount-btn').forEach(btn => {
@@ -461,8 +484,9 @@
             }
         });
 
-        document.getElementById('donateBtn').addEventListener('click', async () => {
-            if (!selectedAmount || selectedAmount < 1) {
+        // Function to proceed with donation (called after login or if user continues without login)
+        async function proceedWithDonation(amount) {
+            if (!amount || amount < 1) {
                 alert('Please select or enter a donation amount');
                 return;
             }
@@ -485,7 +509,7 @@
                     body: JSON.stringify({
                         userId: currentUserId,
                         viewerId: currentViewerUserId || null, // Can be null for anonymous donations
-                        amount: selectedAmount,
+                        amount: amount,
                         successUrl: `${window.location.origin}${window.location.pathname}?donation=success`,
                         cancelUrl: `${window.location.origin}${window.location.pathname}?donation=cancelled`
                     })
@@ -505,6 +529,48 @@
                 btn.disabled = false;
                 btn.textContent = 'Buy Credits';
             }
+        }
+
+        // Function to show donation login modal
+        function showDonationLoginModal() {
+            const modal = document.getElementById('donationLoginModal');
+            if (modal) {
+                modal.classList.add('active');
+                document.body.classList.add('modal-open');
+            }
+        }
+
+        // Function to close donation modal
+        window.closeDonationModal = function() {
+            const modal = document.getElementById('donationLoginModal');
+            if (modal) {
+                modal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+            }
+            pendingDonationAmount = null;
+        };
+
+        document.getElementById('donateBtn').addEventListener('click', async () => {
+            if (!selectedAmount || selectedAmount < 1) {
+                alert('Please select or enter a donation amount');
+                return;
+            }
+
+            if (!currentUserId) {
+                alert('User information not loaded');
+                return;
+            }
+
+            // Check if user is logged in
+            if (!currentViewerUserId) {
+                // User is not logged in - show modal
+                pendingDonationAmount = selectedAmount;
+                showDonationLoginModal();
+                return;
+            }
+
+            // User is logged in - proceed directly
+            await proceedWithDonation(selectedAmount);
         });
 
         // Load user data
@@ -599,10 +665,11 @@
         }
 
 
-        // Check if viewer is authenticated
+            // Check if viewer is authenticated
         async function checkViewerAuth() {
             try {
                 const { getCurrentUser, onAuthChange, signInWithTwitch } = await import('/src/firebase.js');
+                const { setTwitchFinishedLogin } = await import('/src/twitch.js');
                 const user = getCurrentUser();
                 
                 if (user) {
@@ -634,6 +701,7 @@
                             }
                         };
                     }
+                    
                 }
 
                 // Listen for auth changes
@@ -647,6 +715,13 @@
                             await loadAvailableRedemptions(userPageConfig.redemptions);
                         }
                         updateHeaderWithUserProfile(user);
+                        
+                        // If there's a pending donation, proceed with it
+                        if (pendingDonationAmount) {
+                            closeDonationModal();
+                            await proceedWithDonation(pendingDonationAmount);
+                            pendingDonationAmount = null;
+                        }
                     } else {
                         currentViewerUserId = null;
                         document.getElementById('twitchLoginSection').style.display = 'block';
@@ -1268,8 +1343,45 @@
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
+        // Set up modal buttons
+        function setupDonationModal() {
+            const modalTwitchLoginBtn = document.getElementById('modalTwitchLoginBtn');
+            const modalContinueBtn = document.getElementById('modalContinueBtn');
+            
+            if (modalTwitchLoginBtn) {
+                modalTwitchLoginBtn.onclick = async () => {
+                    try {
+                        const { signInWithTwitch } = await import('/src/firebase.js');
+                        // Set callback to proceed with donation after login
+                        const { setTwitchFinishedLogin } = await import('/src/twitch.js');
+                        setTwitchFinishedLogin(async () => {
+                            // This will be called after login completes
+                            // The onAuthChange handler will handle proceeding with donation
+                        });
+                        await signInWithTwitch();
+                    } catch (error) {
+                        console.error('Twitch login error:', error);
+                        alert('Failed to sign in with Twitch. Please try again.');
+                    }
+                };
+            }
+            
+            if (modalContinueBtn) {
+                modalContinueBtn.onclick = async () => {
+                    closeDonationModal();
+                    if (pendingDonationAmount) {
+                        await proceedWithDonation(pendingDonationAmount);
+                        pendingDonationAmount = null;
+                    }
+                };
+            }
+        }
+
         // Load user data on page load
         loadUserData();
+        
+        // Set up modal buttons after a short delay to ensure DOM is ready
+        setTimeout(setupDonationModal, 100);
 
         // Load tribe members, avatar carousel, and top donors
         async function loadUserStats() {

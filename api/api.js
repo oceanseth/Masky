@@ -1622,7 +1622,31 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // Create donation checkout session
+    // Create donation payment intent (for Payment Element)
+    if (path.includes('/donations/create-payment-intent') && method === 'POST') {
+        const response = await createDonationPaymentIntent(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Get Stripe publishable key
+    if (path.includes('/donations/publishable-key') && method === 'GET') {
+        const response = await getStripePublishableKey(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    // Create donation checkout session (legacy - kept for backward compatibility)
     if (path.includes('/donations/create') && method === 'POST') {
         const response = await createDonationCheckoutSession(event);
         return {
@@ -4004,6 +4028,259 @@ async function createDonationCheckoutSession(event) {
 }
 
 /**
+ * Get Stripe publishable key
+ * Note: Publishable keys should be stored separately in SSM or env vars
+ * This function tries to get it from SSM first, then falls back to deriving from secret key (not recommended)
+ */
+async function getStripePublishableKey(event) {
+    try {
+        const AWS = require('aws-sdk');
+        const ssm = new AWS.SSM();
+        const stage = process.env.STAGE || 'production';
+        
+        // First, try to get publishable key directly from SSM
+        try {
+            const publishableKeyResult = await ssm.getParameter({
+                Name: `/masky/${stage}/stripe_publishable_key`,
+                WithDecryption: true
+            }).promise();
+            
+            if (publishableKeyResult?.Parameter?.Value) {
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify({ 
+                        publishableKey: publishableKeyResult.Parameter.Value
+                    })
+                };
+            }
+        } catch (ssmError) {
+            // Publishable key not in SSM, continue to fallback
+            console.log('Publishable key not found in SSM, trying fallback method');
+        }
+        
+        // Fallback: Try to get from environment variable
+        if (process.env.STRIPE_PUBLISHABLE_KEY) {
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY
+                })
+            };
+        }
+        
+        // Last resort: Try to derive from secret key (not recommended, but works for testing)
+        // This assumes the keys follow Stripe's naming convention
+        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+        
+        if (!stripeSecretKey) {
+            // Try SSM for secret key
+            try {
+                const secretKeyResult = await ssm.getParameter({
+                    Name: `/masky/${stage}/stripe_secret_key`,
+                    WithDecryption: true
+                }).promise();
+                
+                if (secretKeyResult?.Parameter?.Value) {
+                    const secretKey = secretKeyResult.Parameter.Value;
+                    // Derive publishable key (this is a fallback - keys should be stored separately)
+                    // Match the pattern: sk_test_... or sk_live_... and convert to pk_test_... or pk_live_...
+                    const publishableKey = secretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
+                    
+                    return {
+                        statusCode: 200,
+                        body: JSON.stringify({ 
+                            publishableKey: publishableKey
+                        })
+                    };
+                }
+            } catch (ssmError) {
+                console.error('Error loading secret key from SSM:', ssmError);
+            }
+        } else {
+            // Derive from env var secret key
+            const publishableKey = stripeSecretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ 
+                    publishableKey: publishableKey
+                })
+            };
+        }
+        
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Stripe publishable key not found. Please store STRIPE_PUBLISHABLE_KEY in SSM or environment variables.' })
+        };
+    } catch (error) {
+        console.error('Error getting Stripe publishable key:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to get Stripe publishable key',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
+ * Create donation payment intent (for Payment Element)
+ */
+async function createDonationPaymentIntent(event) {
+    try {
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { userId, amount, viewerId } = body;
+
+        if (!userId) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Missing userId' })
+            };
+        }
+
+        if (!amount || amount < 1) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Invalid donation amount' })
+            };
+        }
+
+        // Initialize Stripe
+        const { stripe } = await stripeInitializer.initialize();
+
+        // Initialize Firebase
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+
+        // Get user data
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return {
+                statusCode: 404,
+                body: JSON.stringify({ error: 'User not found' })
+            };
+        }
+
+        const userData = userDoc.data();
+        
+        // Get broadcaster name (prefer twitchUsername, fallback to displayName)
+        const broadcasterName = userData.twitchUsername || userData.displayName || 'Creator';
+
+        // Calculate amount with Stripe processing fees
+        // Stripe fee: 2.9% + $0.30 per transaction
+        const stripeFeeRate = 0.029; // 2.9%
+        const stripeFixedFee = 0.30; // $0.30
+        const amountWithFees = (amount + stripeFixedFee) / (1 - stripeFeeRate);
+        const amountToCharge = Math.ceil(amountWithFees * 100) / 100; // Round up to nearest cent
+        const actualFee = amountToCharge - amount;
+
+        // Create Payment Intent
+        // Payment Element automatically supports Apple Pay and Google Pay
+        // when enabled in Stripe Dashboard and domain is verified (for Apple Pay)
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(amountToCharge * 100), // Convert to cents
+            currency: 'usd',
+            // Enable automatic payment methods (includes Apple Pay, Google Pay when available)
+            // Payment Element will automatically detect and show these payment methods
+            automatic_payment_methods: {
+                enabled: true
+            },
+            metadata: {
+                type: 'donation',
+                userId: userId,
+                viewerId: viewerId || '',
+                amount: amount.toString(), // Original donation amount (what the creator receives)
+                amountCharged: amountToCharge.toFixed(2), // Amount charged to donor (includes fees)
+                stripeFee: actualFee.toFixed(2), // Stripe processing fee
+                broadcasterName: broadcasterName,
+                createdAt: new Date().toISOString()
+            },
+            description: `Donation to ${broadcasterName}`
+        });
+
+        // Get publishable key
+        let publishableKey;
+        
+        // Try to get publishable key from SSM first
+        const AWS = require('aws-sdk');
+        const ssm = new AWS.SSM();
+        const stage = process.env.STAGE || 'production';
+        
+        try {
+            const publishableKeyResult = await ssm.getParameter({
+                Name: `/masky/${stage}/stripe_publishable_key`,
+                WithDecryption: true
+            }).promise();
+            
+            if (publishableKeyResult?.Parameter?.Value) {
+                publishableKey = publishableKeyResult.Parameter.Value;
+            }
+        } catch (ssmError) {
+            // Publishable key not in SSM, try fallback
+            console.log('Publishable key not found in SSM, trying fallback');
+        }
+        
+        // Fallback: Try environment variable
+        if (!publishableKey && process.env.STRIPE_PUBLISHABLE_KEY) {
+            publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+        }
+        
+        // Last resort: Derive from secret key (not recommended)
+        if (!publishableKey) {
+            const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+            if (stripeSecretKey) {
+                publishableKey = stripeSecretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
+            } else {
+                try {
+                    const secretKeyResult = await ssm.getParameter({
+                        Name: `/masky/${stage}/stripe_secret_key`,
+                        WithDecryption: true
+                    }).promise();
+                    
+                    if (secretKeyResult?.Parameter?.Value) {
+                        publishableKey = secretKeyResult.Parameter.Value.replace(/^sk_(test|live)_/, 'pk_$1_');
+                    }
+                } catch (ssmError) {
+                    console.error('Error loading secret key from SSM:', ssmError);
+                }
+            }
+        }
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                clientSecret: paymentIntent.client_secret,
+                publishableKey: publishableKey || null,
+                amount: amountToCharge,
+                originalAmount: amount
+            })
+        };
+
+    } catch (error) {
+        console.error('Error creating donation payment intent:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: 'Failed to create donation payment intent',
+                message: error.message 
+            })
+        };
+    }
+}
+
+/**
  * Create custom video checkout session
  */
 async function createCustomVideoCheckoutSession(event) {
@@ -4754,6 +5031,74 @@ async function refundRedemption(event) {
 }
 
 /**
+ * Send a message to Twitch chat
+ * Uses Twitch Helix API to send chat messages
+ * @param {string} broadcasterId - The Twitch broadcaster user ID
+ * @param {string} accessToken - The broadcaster's Twitch access token (must have chat:edit scope)
+ * @param {string} message - The message to send
+ * @returns {Promise<Object>} Response from Twitch API
+ */
+async function sendTwitchChatMessage(broadcasterId, accessToken, message) {
+    try {
+        await twitchInitializer.initialize();
+        const { clientId } = twitchInitializer.getCredentials();
+        
+        // Twitch Helix API endpoint for sending chat messages
+        // Note: This endpoint requires the broadcaster to have chat:edit scope
+        // and the broadcaster_id must match the user associated with the access token
+        const response = await fetch('https://api.twitch.tv/helix/chat/messages', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Client-Id': clientId,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                broadcaster_id: broadcasterId,
+                sender_id: broadcasterId, // Moderator ID (same as broadcaster for self-messaging)
+                message: message
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { raw: errorText };
+            }
+            
+            // Log detailed error for debugging
+            console.error('Failed to send Twitch chat message:', {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorData,
+                broadcasterId: broadcasterId,
+                messageLength: message.length
+            });
+            
+            // If endpoint doesn't exist (404) or unauthorized (401/403), log but don't throw
+            // This allows donation processing to continue even if chat message fails
+            if (response.status === 404) {
+                console.warn('Twitch chat message endpoint not found. This might require using IRC or a different API.');
+            } else if (response.status === 401 || response.status === 403) {
+                console.warn('Twitch access token missing chat:edit scope or is invalid.');
+            }
+            
+            throw new Error(`Twitch API error: ${response.status} - ${errorData.message || errorData.error || errorText}`);
+        }
+
+        const data = await response.json();
+        console.log('Successfully sent Twitch chat message:', data);
+        return data;
+    } catch (error) {
+        console.error('Error sending Twitch chat message:', error);
+        throw error;
+    }
+}
+
+/**
  * Handle Stripe webhooks
  */
 async function handleStripeWebhook(event) {
@@ -4962,6 +5307,62 @@ async function handleStripeWebhook(event) {
                             await db.collection('users').doc(userId)
                                 .collection('events').doc('donation')
                                 .collection('alerts').add(donationEventData);
+
+                            // Send thank you message to Twitch chat if configured
+                            try {
+                                const userData = userDoc.data();
+                                const userPageConfig = userData.userPageConfig || {};
+                                const thankYouMessage = userPageConfig.donationThankYouMessage;
+                                
+                                if (thankYouMessage && thankYouMessage.trim()) {
+                                    // Get broadcaster's Twitch access token from custom claims
+                                    const userRecord = await admin.auth().getUser(userId);
+                                    const claims = userRecord.customClaims || {};
+                                    const twitchAccessToken = claims.twitchAccessToken;
+                                    const twitchId = claims.twitchId;
+                                    
+                                    if (twitchAccessToken && twitchId) {
+                                        // Try to get viewer's Twitch username if viewerId is available
+                                        let donorUsername = 'Anonymous';
+                                        if (viewerId) {
+                                            try {
+                                                const viewerDoc = await db.collection('users').doc(viewerId).get();
+                                                if (viewerDoc.exists) {
+                                                    const viewerData = viewerDoc.data();
+                                                    // Try to get Twitch username from viewer's data
+                                                    const viewerTwitchUsername = viewerData.twitchUsername || 
+                                                                                viewerData.displayName || 
+                                                                                session.customer_details?.name;
+                                                    if (viewerTwitchUsername) {
+                                                        donorUsername = viewerTwitchUsername.replace(/\s+/g, ''); // Remove spaces
+                                                    }
+                                                }
+                                            } catch (e) {
+                                                console.warn('Could not fetch viewer data for Twitch username:', e);
+                                            }
+                                        }
+                                        
+                                        // Fallback to Stripe customer name if no viewer username found
+                                        if (donorUsername === 'Anonymous' && session.customer_details?.name) {
+                                            donorUsername = session.customer_details.name.replace(/\s+/g, '');
+                                        }
+                                        
+                                        // Replace placeholders in message
+                                        const formattedMessage = thankYouMessage
+                                            .replace(/@username/g, `@${donorUsername}`)
+                                            .replace(/\$amount/g, `$${amount.toFixed(2)}`);
+                                        
+                                        // Send message to Twitch chat
+                                        await sendTwitchChatMessage(twitchId, twitchAccessToken, formattedMessage);
+                                        console.log('Sent donation thank you message to Twitch chat:', formattedMessage);
+                                    } else {
+                                        console.warn('Cannot send Twitch chat message: broadcaster Twitch token not found');
+                                    }
+                                }
+                            } catch (chatError) {
+                                // Don't fail the donation processing if chat message fails
+                                console.error('Error sending Twitch chat message for donation:', chatError);
+                            }
 
                             console.log('Donation processed:', { userId, amount, paymentIntentId });
                         }

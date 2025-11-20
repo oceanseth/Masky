@@ -1141,29 +1141,42 @@
                 const { db, collection, query, where, getDocs } = await import('/src/firebase.js');
                 
                 const donationsRef = collection(db, 'donations');
-                const donationsQuery = query(
+                
+                // Query all donations for this viewer (includes both streamer-specific and global)
+                const allViewerDonationsQuery = query(
                     donationsRef,
-                    where('userId', '==', currentUserId),
                     where('viewerId', '==', currentViewerUserId)
                 );
-                const donationsSnapshot = await getDocs(donationsQuery);
+                
+                const allDonationsSnapshot = await getDocs(allViewerDonationsQuery);
                 
                 let totalDonated = 0;
-                console.log('[calculateTotalDonated] Found', donationsSnapshot.size, 'donations');
-                donationsSnapshot.forEach(doc => {
+                
+                // Process donations: include streamer-specific (userId === currentUserId) and global (userId === null)
+                console.log('[calculateTotalDonated] Found', allDonationsSnapshot.size, 'total donations for viewer');
+                allDonationsSnapshot.forEach(doc => {
                     const donation = doc.data();
-                    console.log('[calculateTotalDonated] Donation:', {
-                        id: doc.id,
-                        amount: donation.amount,
-                        viewerId: donation.viewerId,
-                        userId: donation.userId
-                    });
-                    if (donation.viewerId === currentViewerUserId) {
-                        // Ensure amount is a number (handle potential string storage)
+                    const donationUserId = donation.userId;
+                    
+                    // Include if:
+                    // 1. Streamer-specific: userId matches current streamer
+                    // 2. Global: userId is null or undefined (usable on any streamer's page)
+                    const isStreamerSpecific = donationUserId === currentUserId;
+                    const isGlobal = donationUserId === null || donationUserId === undefined;
+                    
+                    if (isStreamerSpecific || isGlobal) {
+                        console.log('[calculateTotalDonated] Donation:', {
+                            id: doc.id,
+                            amount: donation.amount,
+                            viewerId: donation.viewerId,
+                            userId: donation.userId,
+                            type: isGlobal ? 'global' : 'streamer-specific'
+                        });
                         const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
                         totalDonated += amount || 0;
                     }
                 });
+                
                 console.log('[calculateTotalDonated] Total donated:', totalDonated);
                 return totalDonated;
             } catch (error) {

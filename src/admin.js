@@ -29,7 +29,10 @@ const elements = {
   userRowTemplate: document.getElementById('userRowTemplate'),
   userCount: document.getElementById('userCount'),
   searchInput: document.getElementById('searchInput'),
-  signOutButton: document.getElementById('signOutButton')
+  signOutButton: document.getElementById('signOutButton'),
+  giveCreditsCard: document.getElementById('giveCreditsCard'),
+  giveCreditsForm: document.getElementById('giveCreditsForm'),
+  giveCreditsStatus: document.getElementById('giveCreditsStatus')
 };
 
 const state = {
@@ -61,6 +64,9 @@ function showSignedOutView() {
   }
   if (elements.userListCard) {
     elements.userListCard.classList.add('hidden');
+  }
+  if (elements.giveCreditsCard) {
+    elements.giveCreditsCard.classList.add('hidden');
   }
   if (elements.signedOutActions) {
     elements.signedOutActions.classList.remove('hidden');
@@ -346,6 +352,7 @@ async function verifyAdmin(user) {
     if (!state.isAdmin) {
       setStatus('You are signed in, but not authorized for admin access.', { type: 'danger' });
       elements.userListCard?.classList.add('hidden');
+      elements.giveCreditsCard?.classList.add('hidden');
       unsubscribeFromTokens();
       hideSignedOutView();
       return;
@@ -353,6 +360,7 @@ async function verifyAdmin(user) {
 
     setStatus('Admin access granted.', { type: 'success' });
     elements.userListCard?.classList.remove('hidden');
+    elements.giveCreditsCard?.classList.remove('hidden');
     await subscribeToUserTokens();
   } catch (error) {
     console.error('Failed to verify admin access:', error);
@@ -360,12 +368,14 @@ async function verifyAdmin(user) {
       state.isAdmin = false;
       setStatus('You are signed in, but not authorized for admin access.', { type: 'danger' });
       elements.userListCard?.classList.add('hidden');
+      elements.giveCreditsCard?.classList.add('hidden');
       unsubscribeFromTokens();
       return;
     }
     state.isAdmin = false;
     setStatus(`Failed to verify admin access: ${error.message}`, { type: 'danger' });
     elements.userListCard?.classList.add('hidden');
+    elements.giveCreditsCard?.classList.add('hidden');
     unsubscribeFromTokens();
   }
 }
@@ -456,6 +466,7 @@ onAuthChange(async user => {
   if (!user) {
     setAdminDisplay(null, false);
     elements.userListCard?.classList.add('hidden');
+    elements.giveCreditsCard?.classList.add('hidden');
     showSignedOutView();
     return;
   }
@@ -464,6 +475,97 @@ onAuthChange(async user => {
   hideSignedOutView();
   await verifyAdmin(user);
 });
+
+async function giveCredits(event) {
+  event.preventDefault();
+  
+  if (!state.user || !state.isAdmin) {
+    alert('You must be signed in as an admin to give credits.');
+    return;
+  }
+
+  const form = event.target;
+  const formData = new FormData(form);
+  const twitchUsername = formData.get('twitchUsername')?.trim() || '';
+  const creditAmount = parseFloat(formData.get('creditAmount'));
+
+  // Validate credit amount
+  if (isNaN(creditAmount) || creditAmount < 0 || creditAmount > 100) {
+    showGiveCreditsStatus('Credit amount must be between 0 and 100', { type: 'danger' });
+    return;
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalText = submitButton.textContent;
+  
+  try {
+    submitButton.disabled = true;
+    submitButton.textContent = 'Giving Credits...';
+    showGiveCreditsStatus('Processing...', { type: 'info' });
+
+    const idToken = await state.user.getIdToken();
+    const response = await fetch(`${config.api.baseUrl}/api/admin/give-credits`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        twitchUsername: twitchUsername || null,
+        creditAmount: creditAmount
+      })
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to give credits.';
+      try {
+        const errorPayload = await response.json();
+        errorMessage = errorPayload.error || errorPayload.message || errorMessage;
+      } catch {
+        // ignore parse error
+      }
+      throw new Error(errorMessage);
+    }
+
+    const payload = await response.json();
+    const successMessage = twitchUsername 
+      ? `Successfully gave ${creditAmount} credits to ${twitchUsername}`
+      : `Successfully gave ${creditAmount} global masky credits`;
+    
+    showGiveCreditsStatus(successMessage, { type: 'success' });
+    form.reset();
+    
+    // Clear status after 5 seconds
+    setTimeout(() => {
+      hideGiveCreditsStatus();
+    }, 5000);
+  } catch (error) {
+    console.error('Failed to give credits:', error);
+    showGiveCreditsStatus(`Failed to give credits: ${error.message}`, { type: 'danger' });
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = originalText;
+  }
+}
+
+function showGiveCreditsStatus(message, { type = 'info' } = {}) {
+  if (!elements.giveCreditsStatus) return;
+  
+  elements.giveCreditsStatus.textContent = message;
+  elements.giveCreditsStatus.classList.remove('status-info', 'status-success', 'status-danger');
+  elements.giveCreditsStatus.classList.add(`status-${type}`);
+  elements.giveCreditsStatus.classList.remove('hidden');
+}
+
+function hideGiveCreditsStatus() {
+  if (elements.giveCreditsStatus) {
+    elements.giveCreditsStatus.classList.add('hidden');
+  }
+}
+
+if (elements.giveCreditsForm) {
+  elements.giveCreditsForm.addEventListener('submit', giveCredits);
+}
 
 window.handleSignOut = async function handleSignOut() {
   try {

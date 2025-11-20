@@ -9,6 +9,9 @@ class StripeInitializer {
     this.ssm = new AWS.SSM();
     this.stripe = null;
     this.webhookSecret = null;
+    // Publishable key - safe to expose, hardcoded for production
+    // For local development, can be overridden via STRIPE_PUBLISHABLE_KEY env var
+    this.publishableKey = process.env.STRIPE_PUBLISHABLE_KEY || 'pk_live_51S3l76JwtIxwToTZyoyd2Po8iXksp8U1r2Mqc7nfgsexWOIwN1DO33liWh1gVITYqZ4tJVXvsnjFO3DhHGgf91w400YPLk4PPm';
   }
 
   async initialize() {
@@ -76,6 +79,14 @@ class StripeInitializer {
       });
       throw new Error(`Stripe initialization failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Get Stripe publishable key
+   * Safe to expose - this is meant to be public
+   */
+  getPublishableKey() {
+    return this.publishableKey;
   }
 }
 

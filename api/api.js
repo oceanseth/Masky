@@ -165,6 +165,139 @@ const handleTwitchOAuth = async (event) => {
     }
 };
 
+const handleAdminGiveCredits = async (event) => {
+    try {
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized: missing bearer token' })
+            };
+        }
+
+        const idToken = authHeader.split(' ')[1];
+
+        // Parse request body
+        let body;
+        if (typeof event.body === 'string') {
+            let bodyString = event.body;
+            if (event.isBase64Encoded) {
+                bodyString = Buffer.from(event.body, 'base64').toString('utf-8');
+            }
+            body = JSON.parse(bodyString || '{}');
+        } else {
+            body = event.body || {};
+        }
+
+        const { twitchUsername, creditAmount } = body;
+
+        // Validate credit amount
+        if (typeof creditAmount !== 'number' || creditAmount < 0 || creditAmount > 100) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Credit amount must be a number between 0 and 100' })
+            };
+        }
+
+        await firebaseInitializer.initialize();
+        const admin = require('firebase-admin');
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const requesterUid = decoded.uid;
+
+        const db = admin.firestore();
+        const adminDocRef = db.collection('system').doc('adminData');
+        const adminDoc = await adminDocRef.get();
+
+        if (!adminDoc.exists) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Admin configuration not found' })
+            };
+        }
+
+        const adminUsers = Array.isArray(adminDoc.data().adminUsers) ? adminDoc.data().adminUsers : [];
+        if (!adminUsers.includes(requesterUid)) {
+            return {
+                statusCode: 403,
+                body: JSON.stringify({ error: 'Forbidden: user is not an admin' })
+            };
+        }
+
+        let viewerId = null;
+        let streamerId = null;
+
+        // If twitchUsername is provided, find the user and give streamer-specific credit
+        if (twitchUsername && twitchUsername.trim()) {
+            const usernameLower = twitchUsername.trim().toLowerCase();
+            
+            // Query user by twitchUsername
+            const usersRef = db.collection('users');
+            const userQuery = usersRef.where('twitchUsername', '==', usernameLower);
+            const userSnapshot = await userQuery.get();
+
+            if (userSnapshot.empty) {
+                return {
+                    statusCode: 404,
+                    body: JSON.stringify({ error: `User with Twitch username "${twitchUsername}" not found` })
+                };
+            }
+
+            const userDoc = userSnapshot.docs[0];
+            viewerId = userDoc.id;
+            streamerId = userDoc.id; // Credit for this specific streamer's page
+        } else {
+            // Global credit - username blank means global credit usable on any streamer's page
+            // Since no username provided, we'll use the admin's uid as the viewer
+            // (This allows admins to give themselves global credits for testing)
+            // Note: For giving global credits to other users, provide their username
+            viewerId = requesterUid;
+            streamerId = null; // null = global credit usable on any streamer's page
+        }
+
+        // Create donation record
+        // For global credits: userId = null, viewerId = user's id
+        // For streamer-specific: userId = streamerId, viewerId = user's id
+        const donationData = {
+            userId: streamerId, // null for global, streamerId for specific
+            viewerId: viewerId,
+            amount: creditAmount,
+            currency: 'usd',
+            adminGranted: true,
+            grantedBy: requesterUid,
+            grantedAt: admin.firestore.FieldValue.serverTimestamp(),
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: new Date().toISOString(),
+            processed: true
+        };
+
+        await db.collection('donations').add(donationData);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                message: twitchUsername 
+                    ? `Successfully gave ${creditAmount} credits to ${twitchUsername}`
+                    : `Successfully gave ${creditAmount} global masky credits`,
+                donation: {
+                    userId: streamerId,
+                    viewerId: viewerId,
+                    amount: creditAmount
+                }
+            })
+        };
+    } catch (error) {
+        console.error('Admin give credits error:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({
+                error: 'Failed to give credits',
+                message: error.message
+            })
+        };
+    }
+};
+
 const handleAdminImpersonate = async (event) => {
     try {
         const authHeader = event.headers?.Authorization || event.headers?.authorization;
@@ -490,6 +623,17 @@ exports.handler = async (event, context) => {
 
     if (path.includes('/admin/impersonate') && method === 'POST') {
         const response = await handleAdminImpersonate(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
+    if (path.includes('/admin/give-credits') && method === 'POST') {
+        const response = await handleAdminGiveCredits(event);
         return {
             ...response,
             headers: {
@@ -4029,87 +4173,26 @@ async function createDonationCheckoutSession(event) {
 
 /**
  * Get Stripe publishable key
- * Note: Publishable keys should be stored separately in SSM or env vars
- * This function tries to get it from SSM first, then falls back to deriving from secret key (not recommended)
+ * Gets the publishable key from stripeInitializer (hardcoded in stripeInit.js)
  */
 async function getStripePublishableKey(event) {
     try {
-        const AWS = require('aws-sdk');
-        const ssm = new AWS.SSM();
-        const stage = process.env.STAGE || 'production';
+        // Get publishable key from stripeInitializer
+        // This is hardcoded in stripeInit.js and safe to expose
+        const publishableKey = stripeInitializer.getPublishableKey();
         
-        // First, try to get publishable key directly from SSM
-        try {
-            const publishableKeyResult = await ssm.getParameter({
-                Name: `/masky/${stage}/stripe_publishable_key`,
-                WithDecryption: true
-            }).promise();
-            
-            if (publishableKeyResult?.Parameter?.Value) {
-                return {
-                    statusCode: 200,
-                    body: JSON.stringify({ 
-                        publishableKey: publishableKeyResult.Parameter.Value
-                    })
-                };
-            }
-        } catch (ssmError) {
-            // Publishable key not in SSM, continue to fallback
-            console.log('Publishable key not found in SSM, trying fallback method');
-        }
-        
-        // Fallback: Try to get from environment variable
-        if (process.env.STRIPE_PUBLISHABLE_KEY) {
+        if (!publishableKey) {
             return {
-                statusCode: 200,
-                body: JSON.stringify({ 
-                    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY
-                })
-            };
-        }
-        
-        // Last resort: Try to derive from secret key (not recommended, but works for testing)
-        // This assumes the keys follow Stripe's naming convention
-        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-        
-        if (!stripeSecretKey) {
-            // Try SSM for secret key
-            try {
-                const secretKeyResult = await ssm.getParameter({
-                    Name: `/masky/${stage}/stripe_secret_key`,
-                    WithDecryption: true
-                }).promise();
-                
-                if (secretKeyResult?.Parameter?.Value) {
-                    const secretKey = secretKeyResult.Parameter.Value;
-                    // Derive publishable key (this is a fallback - keys should be stored separately)
-                    // Match the pattern: sk_test_... or sk_live_... and convert to pk_test_... or pk_live_...
-                    const publishableKey = secretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
-                    
-                    return {
-                        statusCode: 200,
-                        body: JSON.stringify({ 
-                            publishableKey: publishableKey
-                        })
-                    };
-                }
-            } catch (ssmError) {
-                console.error('Error loading secret key from SSM:', ssmError);
-            }
-        } else {
-            // Derive from env var secret key
-            const publishableKey = stripeSecretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
-            return {
-                statusCode: 200,
-                body: JSON.stringify({ 
-                    publishableKey: publishableKey
-                })
+                statusCode: 500,
+                body: JSON.stringify({ error: 'Stripe publishable key not configured' })
             };
         }
         
         return {
-            statusCode: 500,
-            body: JSON.stringify({ error: 'Stripe publishable key not found. Please store STRIPE_PUBLISHABLE_KEY in SSM or environment variables.' })
+            statusCode: 200,
+            body: JSON.stringify({ 
+                publishableKey: publishableKey
+            })
         };
     } catch (error) {
         console.error('Error getting Stripe publishable key:', error);
@@ -4210,53 +4293,8 @@ async function createDonationPaymentIntent(event) {
             description: `Donation to ${broadcasterName}`
         });
 
-        // Get publishable key
-        let publishableKey;
-        
-        // Try to get publishable key from SSM first
-        const AWS = require('aws-sdk');
-        const ssm = new AWS.SSM();
-        const stage = process.env.STAGE || 'production';
-        
-        try {
-            const publishableKeyResult = await ssm.getParameter({
-                Name: `/masky/${stage}/stripe_publishable_key`,
-                WithDecryption: true
-            }).promise();
-            
-            if (publishableKeyResult?.Parameter?.Value) {
-                publishableKey = publishableKeyResult.Parameter.Value;
-            }
-        } catch (ssmError) {
-            // Publishable key not in SSM, try fallback
-            console.log('Publishable key not found in SSM, trying fallback');
-        }
-        
-        // Fallback: Try environment variable
-        if (!publishableKey && process.env.STRIPE_PUBLISHABLE_KEY) {
-            publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
-        }
-        
-        // Last resort: Derive from secret key (not recommended)
-        if (!publishableKey) {
-            const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-            if (stripeSecretKey) {
-                publishableKey = stripeSecretKey.replace(/^sk_(test|live)_/, 'pk_$1_');
-            } else {
-                try {
-                    const secretKeyResult = await ssm.getParameter({
-                        Name: `/masky/${stage}/stripe_secret_key`,
-                        WithDecryption: true
-                    }).promise();
-                    
-                    if (secretKeyResult?.Parameter?.Value) {
-                        publishableKey = secretKeyResult.Parameter.Value.replace(/^sk_(test|live)_/, 'pk_$1_');
-                    }
-                } catch (ssmError) {
-                    console.error('Error loading secret key from SSM:', ssmError);
-                }
-            }
-        }
+        // Get publishable key from stripeInitializer (hardcoded in stripeInit.js)
+        const publishableKey = stripeInitializer.getPublishableKey();
 
         return {
             statusCode: 200,
@@ -4655,17 +4693,22 @@ async function joinTribe(event) {
         let shouldChargeForJoin = !isSubscriber;
 
         // Calculate current balance (donations - spent on paid videos) only if needed
+        // Include both streamer-specific donations (userId === userId) and global donations (userId === null)
         let balance = 0;
         if (shouldChargeForJoin) {
             const donationsSnapshot = await db.collection('donations')
-                .where('userId', '==', userId)
                 .where('viewerId', '==', viewerId)
                 .get();
 
             let totalDonated = 0;
             donationsSnapshot.forEach(doc => {
                 const donation = doc.data();
-                totalDonated += donation.amount || 0;
+                const donationUserId = donation.userId;
+                // Include streamer-specific (userId === userId) or global (userId === null)
+                if (donationUserId === userId || donationUserId === null || donationUserId === undefined) {
+                    const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+                    totalDonated += amount || 0;
+                }
             });
 
             const customVideoPrice = userPageConfig.customVideoPrice || 5;
@@ -4797,18 +4840,21 @@ async function redeemPoints(event) {
         const viewerData = viewerDoc.data();
 
         // Calculate user's current points (donations - spent)
+        // Include both streamer-specific donations (userId === userId) and global donations (userId === null)
         const donationsRef = db.collection('donations');
-        const donationsQuery = donationsRef
-            .where('userId', '==', userId)
-            .where('viewerId', '==', viewerId);
-        const donationsSnapshot = await donationsQuery.get();
+        const allDonationsQuery = donationsRef.where('viewerId', '==', viewerId);
+        const donationsSnapshot = await allDonationsQuery.get();
         
         let totalDonated = 0;
         donationsSnapshot.forEach(doc => {
             const donation = doc.data();
-            // Ensure amount is a number (handle potential string storage)
-            const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
-            totalDonated += amount || 0;
+            const donationUserId = donation.userId;
+            // Include streamer-specific (userId === userId) or global (userId === null)
+            if (donationUserId === userId || donationUserId === null || donationUserId === undefined) {
+                // Ensure amount is a number (handle potential string storage)
+                const amount = typeof donation.amount === 'number' ? donation.amount : parseFloat(donation.amount || 0);
+                totalDonated += amount || 0;
+            }
         });
 
         // Get total spent on redemptions

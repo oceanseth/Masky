@@ -612,7 +612,10 @@
                 }
 
                 // Show payment modal with Stripe Payment Element
-                await showPaymentModal(data.clientSecret, data.amount, amount);
+                // API returns: amount (amountToCharge with fees), originalAmount (original donation amount)
+                const amountCharged = data.amount || amount;
+                const originalAmount = data.originalAmount || amount;
+                await showPaymentModal(data.clientSecret, amountCharged, originalAmount);
                 
                 btn.disabled = false;
                 btn.textContent = 'Buy Credits';
@@ -640,7 +643,10 @@
 
             // Update modal content
             const amountText = document.getElementById('paymentAmountText');
-            amountText.textContent = `Amount: $${amountCharged.toFixed(2)} ($${originalAmount.toFixed(2)} + fees)`;
+            // Ensure amounts are numbers and have valid values
+            const chargedAmount = typeof amountCharged === 'number' ? amountCharged : parseFloat(amountCharged) || 0;
+            const origAmount = typeof originalAmount === 'number' ? originalAmount : parseFloat(originalAmount) || 0;
+            amountText.textContent = `Amount: $${chargedAmount.toFixed(2)} ($${origAmount.toFixed(2)} + fees)`;
 
             // Show modal
             const modal = document.getElementById('paymentModal');

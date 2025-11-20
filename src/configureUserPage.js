@@ -39,6 +39,11 @@ export async function renderUserPageConfig(container) {
                         <span>Enable user donations</span>
                     </label>
                 </div>
+                <div class="config-item" style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">Donation Thank You Message</label>
+                    <textarea id="donationThankYouMessage" placeholder="Thank you @username for donating $amount, enjoy your masky credits, looking forward to seeing your redemptions" style="width: 100%; min-height: 80px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff; font-family: inherit; resize: vertical;"></textarea>
+                    <small style="color: rgba(255,255,255,0.6); display: block; margin-top: 0.25rem;">Use @username for the donor's name and $amount for the donation amount. Leave empty to disable chat messages.</small>
+                </div>
             </div>
 
             <div class="config-section" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
@@ -174,6 +179,7 @@ async function loadUserPageConfig() {
 
             // Set form values
             document.getElementById('enableDonations').checked = config.enableDonations !== false;
+            document.getElementById('donationThankYouMessage').value = config.donationThankYouMessage || '';
             
             // Set tribe name - if empty, use default with placeholder
             const defaultTribeName = `{streamer} subscribers`;
@@ -325,6 +331,7 @@ async function saveUserPageConfig() {
             
             const config = {
                 enableDonations: document.getElementById('enableDonations').checked,
+                donationThankYouMessage: document.getElementById('donationThankYouMessage').value.trim(),
                 customVideoPrice: customVideoPrice, // Keep for backward compatibility
                 redemptions: redemptionsToSave, // Store all redemptions (with showInQueue forced to true for custom video)
                 tribeName: tribeNameInput || defaultTribeName,
@@ -436,6 +443,7 @@ export async function getUserPageConfig(userId) {
             const userData = userDoc.data();
                 const defaultConfig = {
                 enableDonations: true,
+                donationThankYouMessage: '',
                 customVideoPrice: 5,
                 redemptions: [{
                     id: 'custom-video',

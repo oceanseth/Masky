@@ -238,6 +238,69 @@
                 font-size: 2rem;
             }
         }
+
+        /* Stripe Payment Element Styling */
+        #payment-element-container {
+            min-height: 200px;
+        }
+
+        /* Override Stripe's default styles to match brand */
+        #payment-element-container .Input,
+        #payment-element-container input {
+            background-color: rgba(0, 0, 0, 0.4) !important;
+            border: 2px solid rgba(192, 132, 252, 0.3) !important;
+            border-radius: 12px !important;
+            color: #ffffff !important;
+            padding: 12px 16px !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+        }
+
+        #payment-element-container .Input:focus,
+        #payment-element-container input:focus {
+            border-color: #c084fc !important;
+            box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.2) !important;
+            outline: none !important;
+        }
+
+        #payment-element-container .Input--invalid,
+        #payment-element-container input:invalid {
+            border-color: #ff6b6b !important;
+        }
+
+        #payment-element-container .Label,
+        #payment-element-container label {
+            color: rgba(255, 255, 255, 0.8) !important;
+            font-weight: 600 !important;
+            margin-bottom: 8px !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+        }
+
+        #payment-element-container .Tab {
+            border: 2px solid rgba(192, 132, 252, 0.3) !important;
+            border-radius: 12px !important;
+            background-color: rgba(0, 0, 0, 0.4) !important;
+            color: rgba(255, 255, 255, 0.8) !important;
+            padding: 12px 16px !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+        }
+
+        #payment-element-container .Tab--selected {
+            border-color: #c084fc !important;
+            background-color: rgba(192, 132, 252, 0.2) !important;
+            color: #ffffff !important;
+        }
+
+        #payment-element-container .Error,
+        #payment-element-container .ErrorMessage {
+            color: #ff6b6b !important;
+            font-size: 14px !important;
+            margin-top: 8px !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+        }
+
+        #payment-element-container .Icon {
+            color: rgba(255, 255, 255, 0.6) !important;
+        }
     </style>
 </head>
 <body>
@@ -383,6 +446,27 @@
         </div>
     </div>
 
+    <!-- Payment Modal with Stripe Payment Element -->
+    <div class="modal" id="paymentModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <button class="modal-close" onclick="closePaymentModal()">×</button>
+            <h2 class="modal-title">Complete Payment</h2>
+            <p class="modal-subtitle" id="paymentAmountText" style="margin-bottom: 2rem;">
+                <!-- Amount will be set dynamically -->
+            </p>
+            <div id="payment-element-container" style="margin-bottom: 2rem;">
+                <!-- Stripe Payment Element will be mounted here -->
+            </div>
+            <div id="payment-error" style="color: #ff6b6b; margin-bottom: 1rem; display: none;"></div>
+            <button id="submit-payment-btn" class="donate-btn" style="width: 100%;">
+                Pay Now
+            </button>
+            <button id="cancel-payment-btn" class="donate-btn" style="width: 100%; margin-top: 1rem; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(192, 132, 252, 0.3);">
+                Cancel
+            </button>
+        </div>
+    </div>
+
     <!-- About Page (hidden by default) -->
     <section id="aboutSection" style="display: none;">
         <div class="about-container">
@@ -430,6 +514,9 @@
         </div>
     </section>
 
+    <!-- Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+    
     <script type="module">
         import { renderHeader } from '/src/header.js';
         import { config } from '/src/config.js';
@@ -457,6 +544,10 @@
         let isSubscriber = false;
         let isTribeMember = false;
         let pendingDonationAmount = null; // Store donation amount when user needs to login
+        let stripe = null;
+        let paymentElement = null;
+        let stripeElements = null;
+        let currentPaymentIntentClientSecret = null;
 
         // Initialize donation buttons
         document.querySelectorAll('.donate-amount-btn').forEach(btn => {
@@ -501,7 +592,8 @@
             btn.textContent = 'Processing...';
 
             try {
-                const response = await fetch(`${config.api.baseUrl}/api/donations/create`, {
+                // Create Payment Intent
+                const response = await fetch(`${config.api.baseUrl}/api/donations/create-payment-intent`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -509,20 +601,21 @@
                     body: JSON.stringify({
                         userId: currentUserId,
                         viewerId: currentViewerUserId || null, // Can be null for anonymous donations
-                        amount: amount,
-                        successUrl: `${window.location.origin}${window.location.pathname}?donation=success`,
-                        cancelUrl: `${window.location.origin}${window.location.pathname}?donation=cancelled`
+                        amount: amount
                     })
                 });
 
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.error || 'Failed to create donation');
+                    throw new Error(data.error || 'Failed to create payment intent');
                 }
 
-                // Redirect to Stripe checkout
-                window.location.href = data.url;
+                // Show payment modal with Stripe Payment Element
+                await showPaymentModal(data.clientSecret, data.publishableKey, data.amount, amount);
+                
+                btn.disabled = false;
+                btn.textContent = 'Buy Credits';
             } catch (error) {
                 console.error('Donation error:', error);
                 alert('Failed to process donation: ' + error.message);
@@ -530,6 +623,203 @@
                 btn.textContent = 'Buy Credits';
             }
         }
+
+        // Show payment modal with Stripe Payment Element
+        async function showPaymentModal(clientSecret, publishableKey, amountCharged, originalAmount) {
+            // Initialize Stripe if not already initialized
+            if (!stripe && publishableKey) {
+                stripe = Stripe(publishableKey);
+            } else if (!stripe) {
+                // Fallback: try to get publishable key from API
+                try {
+                    const keyResponse = await fetch(`${config.api.baseUrl}/api/donations/publishable-key`);
+                    const keyData = await keyResponse.json();
+                    if (keyData.publishableKey) {
+                        stripe = Stripe(keyData.publishableKey);
+                    } else {
+                        throw new Error('Failed to get Stripe publishable key');
+                    }
+                } catch (error) {
+                    console.error('Error getting publishable key:', error);
+                    alert('Failed to initialize payment. Please try again.');
+                    return;
+                }
+            }
+
+            currentPaymentIntentClientSecret = clientSecret;
+
+            // Update modal content
+            const amountText = document.getElementById('paymentAmountText');
+            amountText.textContent = `Amount: $${amountCharged.toFixed(2)} ($${originalAmount.toFixed(2)} + fees)`;
+
+            // Show modal
+            const modal = document.getElementById('paymentModal');
+            modal.classList.add('active');
+            document.body.classList.add('modal-open');
+
+            // Create Elements instance
+            // Payment Element automatically shows Apple Pay and Google Pay buttons
+            // when enabled in Stripe Dashboard and domain is verified (Apple Pay)
+            stripeElements = stripe.elements({
+                clientSecret: clientSecret,
+                appearance: {
+                    theme: 'night',
+                    variables: {
+                        colorPrimary: '#c084fc',
+                        colorBackground: 'rgba(0, 0, 0, 0.4)',
+                        colorText: '#ffffff',
+                        colorDanger: '#ff6b6b',
+                        fontFamily: '"Inter", system-ui, sans-serif',
+                        spacingUnit: '4px',
+                        borderRadius: '12px'
+                    },
+                    rules: {
+                        '.Input': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                            border: '2px solid rgba(192, 132, 252, 0.3)',
+                            borderRadius: '12px',
+                            color: '#ffffff',
+                            padding: '12px 16px'
+                        },
+                        '.Input:focus': {
+                            borderColor: '#c084fc',
+                            boxShadow: '0 0 0 3px rgba(192, 132, 252, 0.2)'
+                        },
+                        '.Input--invalid': {
+                            borderColor: '#ff6b6b'
+                        },
+                        '.Label': {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            fontWeight: '600',
+                            marginBottom: '8px'
+                        },
+                        '.Tab': {
+                            border: '2px solid rgba(192, 132, 252, 0.3)',
+                            borderRadius: '12px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            padding: '12px 16px'
+                        },
+                        '.Tab--selected': {
+                            borderColor: '#c084fc',
+                            backgroundColor: 'rgba(192, 132, 252, 0.2)',
+                            color: '#ffffff'
+                        },
+                        '.Error': {
+                            color: '#ff6b6b',
+                            fontSize: '14px',
+                            marginTop: '8px'
+                        }
+                    }
+                }
+            });
+
+            // Mount Payment Element
+            // The Payment Element automatically detects and displays:
+            // - Apple Pay (if enabled in Stripe Dashboard and domain verified)
+            // - Google Pay (if enabled in Stripe Dashboard)
+            // - Card input fields
+            // All based on browser/device capabilities
+            const container = document.getElementById('payment-element-container');
+            container.innerHTML = ''; // Clear any existing content
+            
+            paymentElement = stripeElements.create('payment', {
+                // Payment Element automatically shows Apple Pay/Google Pay when available
+                // No additional configuration needed - Stripe handles detection
+            });
+            paymentElement.mount('#payment-element-container');
+
+            // Set up submit button
+            const submitBtn = document.getElementById('submit-payment-btn');
+            submitBtn.onclick = async () => {
+                await handlePaymentSubmit();
+            };
+
+            // Set up cancel button
+            const cancelBtn = document.getElementById('cancel-payment-btn');
+            cancelBtn.onclick = () => {
+                closePaymentModal();
+            };
+        }
+
+        // Handle payment submission
+        async function handlePaymentSubmit() {
+            if (!stripe || !stripeElements || !currentPaymentIntentClientSecret) {
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-payment-btn');
+            const errorDiv = document.getElementById('payment-error');
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+
+            try {
+                const { error } = await stripe.confirmPayment({
+                    elements: stripeElements,
+                    confirmParams: {
+                        return_url: `${window.location.origin}${window.location.pathname}?donation=success`
+                    },
+                    redirect: 'if_required'
+                });
+
+                if (error) {
+                    errorDiv.textContent = error.message || 'Payment failed. Please try again.';
+                    errorDiv.style.display = 'block';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Pay Now';
+                } else {
+                    // Payment succeeded
+                    closePaymentModal();
+                    alert('Thank you for your donation! The creator will be notified.');
+                    window.location.href = `${window.location.origin}${window.location.pathname}?donation=success`;
+                }
+            } catch (error) {
+                console.error('Payment error:', error);
+                errorDiv.textContent = error.message || 'Payment failed. Please try again.';
+                errorDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Pay Now';
+            }
+        }
+
+        // Close payment modal
+        window.closePaymentModal = function() {
+            const modal = document.getElementById('paymentModal');
+            if (modal) {
+                modal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+            }
+            
+            // Clean up Payment Element
+            if (paymentElement) {
+                try {
+                    paymentElement.unmount();
+                } catch (e) {
+                    // Element may already be unmounted
+                }
+                paymentElement = null;
+            }
+            
+            stripeElements = null;
+            currentPaymentIntentClientSecret = null;
+            
+            // Clear error message
+            const errorDiv = document.getElementById('payment-error');
+            if (errorDiv) {
+                errorDiv.style.display = 'none';
+                errorDiv.textContent = '';
+            }
+            
+            // Reset submit button
+            const submitBtn = document.getElementById('submit-payment-btn');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Pay Now';
+            }
+        };
 
         // Function to show donation login modal
         function showDonationLoginModal() {

@@ -612,7 +612,7 @@
                 }
 
                 // Show payment modal with Stripe Payment Element
-                await showPaymentModal(data.clientSecret, data.publishableKey, data.amount, amount);
+                await showPaymentModal(data.clientSecret, data.amount, amount);
                 
                 btn.disabled = false;
                 btn.textContent = 'Buy Credits';
@@ -625,25 +625,15 @@
         }
 
         // Show payment modal with Stripe Payment Element
-        async function showPaymentModal(clientSecret, publishableKey, amountCharged, originalAmount) {
+        async function showPaymentModal(clientSecret, amountCharged, originalAmount) {
             // Initialize Stripe if not already initialized
-            if (!stripe && publishableKey) {
-                stripe = Stripe(publishableKey);
-            } else if (!stripe) {
-                // Fallback: try to get publishable key from API
-                try {
-                    const keyResponse = await fetch(`${config.api.baseUrl}/api/donations/publishable-key`);
-                    const keyData = await keyResponse.json();
-                    if (keyData.publishableKey) {
-                        stripe = Stripe(keyData.publishableKey);
-                    } else {
-                        throw new Error('Failed to get Stripe publishable key');
-                    }
-                } catch (error) {
-                    console.error('Error getting publishable key:', error);
-                    alert('Failed to initialize payment. Please try again.');
+            // Always use publishable key from config (hardcoded, safe to expose)
+            if (!stripe) {
+                if (!config.stripe.publishableKey) {
+                    alert('Failed to initialize payment. Stripe publishable key not configured.');
                     return;
                 }
+                stripe = Stripe(config.stripe.publishableKey);
             }
 
             currentPaymentIntentClientSecret = clientSecret;

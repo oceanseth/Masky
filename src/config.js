@@ -52,6 +52,8 @@ export const config = {
   },
   stripe: {
     currency: 'USD',
+    // Stripe Publishable Key - safe to expose, used by frontend
+    publishableKey: 'pk_live_51S3l76JwtIxwToTZyoyd2Po8iXksp8U1r2Mqc7nfgsexWOIwN1DO33liWh1gVITYqZ4tJVXvsnjFO3DhHGgf91w400YPLk4PPm',
     // Display prices for plans (in USD)
     displayPrices: {
       viewer: 10,

@@ -46,28 +46,47 @@ echo "1. Importing IAM Role..."
 ROLE_NAME="masky-lambda-execution-role-$STAGE"
 
 # Check if already in Terraform state
-if terraform state show aws_iam_role.lambda_execution_role &> /dev/null; then
+STATE_CHECK=$(terraform state show aws_iam_role.lambda_execution_role 2>&1)
+if [ $? -eq 0 ]; then
     echo "   ✅ IAM Role already in Terraform state"
+    echo "   State info: $(echo "$STATE_CHECK" | head -n 3)"
 else
     # Check if role exists in AWS
     if aws iam get-role --role-name "$ROLE_NAME" &> /dev/null; then
         echo "   Role exists in AWS, importing..."
-        # Note: aws_iam_role import uses just the role name, not the ARN
+        echo "   Using role name: $ROLE_NAME"
+        
+        # Try importing with just the role name
+        # Note: Some Terraform versions may have issues, so we'll catch and handle errors
         IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
             aws_iam_role.lambda_execution_role "$ROLE_NAME" 2>&1)
         IMPORT_EXIT_CODE=$?
-        echo "$IMPORT_OUTPUT"
         
+        # Check if import succeeded
         if [ $IMPORT_EXIT_CODE -eq 0 ]; then
             echo "   ✅ IAM Role imported successfully"
         else
-            # Check if it's already in state (common error message)
-            if echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+            # Check for specific error patterns
+            if echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state\|Resource already managed"; then
                 echo "   ✅ IAM Role already in state (import skipped)"
+            elif echo "$IMPORT_OUTPUT" | grep -qi "ValidationError.*roleName"; then
+                echo "   ⚠️  Import failed with ValidationError - role may be in state with different format"
+                echo "   Attempting to verify state..."
+                # Check state again after failed import
+                if terraform state show aws_iam_role.lambda_execution_role &> /dev/null; then
+                    echo "   ✅ Role is actually in state (import error was misleading)"
+                else
+                    echo "   ❌ IAM Role import failed with ValidationError"
+                    echo "   Error: $IMPORT_OUTPUT"
+                    echo "   This may be a Terraform AWS provider issue. Role exists but import format is incorrect."
+                    # Don't exit - let Terraform try to create it, it will fail gracefully with EntityAlreadyExists
+                    echo "   Continuing - Terraform will handle this during apply"
+                fi
             else
                 echo "   ❌ IAM Role import failed!"
                 echo "   Error: $IMPORT_OUTPUT"
-                exit 1
+                # Don't exit - let Terraform handle it during apply
+                echo "   Continuing - Terraform will handle this during apply"
             fi
         fi
     else

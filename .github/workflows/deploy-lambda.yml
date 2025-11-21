@@ -85,6 +85,12 @@ jobs:
           cd terraform
           terraform init
 
+      - name: Import Existing Resources
+        run: |
+          chmod +x scripts/import-existing-resources.sh
+          ./scripts/import-existing-resources.sh production ${{ env.AWS_REGION }}
+        continue-on-error: true
+
       - name: Terraform Plan
         run: |
           cd terraform
@@ -103,8 +109,11 @@ jobs:
 
       - name: Update CloudFront API Gateway Origin
         run: |
+          cd terraform
+          API_GATEWAY_ID=$(terraform output -raw api_gateway_id)
+          cd ..
           chmod +x scripts/update-cloudfront-api-gateway.sh
-          ./scripts/update-cloudfront-api-gateway.sh
+          API_GATEWAY_ID=$API_GATEWAY_ID ./scripts/update-cloudfront-api-gateway.sh
           
       - name: Invalidate CloudFront Cache
         run: |

@@ -210,13 +210,42 @@ else
     fi
 fi
 
+# Import Lambda Permission for API Gateway
+echo "6. Checking Lambda Permission for API Gateway..."
+LAMBDA_NAME="masky-api-$STAGE"
+STATEMENT_ID="AllowExecutionFromAPIGateway"
+
+# Check if already in Terraform state
+if terraform state show aws_lambda_permission.api_gateway &> /dev/null; then
+    echo "   ✅ Lambda Permission already in Terraform state"
+else
+    # Check if permission exists
+    if aws lambda get-policy --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null | grep -q "\"Sid\": \"$STATEMENT_ID\""; then
+        echo "   Lambda permission exists, importing..."
+        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_lambda_permission.api_gateway "${LAMBDA_NAME}/${STATEMENT_ID}" 2>&1)
+        IMPORT_EXIT_CODE=$?
+        echo "$IMPORT_OUTPUT"
+        
+        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ Lambda Permission imported successfully"
+        elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+            echo "   ✅ Lambda Permission already in state (import skipped)"
+        else
+            echo "   ⚠️  Lambda Permission import failed (will be created if needed)"
+        fi
+    else
+        echo "   ⚠️  Lambda Permission doesn't exist yet (will be created)"
+    fi
+fi
+
 echo ""
 echo "📋 Verifying imports..."
 echo ""
 
 # Check what's in Terraform state
 echo "Resources in Terraform state:"
-terraform state list 2>&1 | grep -E "(aws_iam_role.lambda_execution_role|aws_cloudwatch_log_group|aws_lambda_function.api|aws_apigatewayv2_api.api)" || echo "   (none found)"
+terraform state list 2>&1 | grep -E "(aws_iam_role.lambda_execution_role|aws_cloudwatch_log_group|aws_lambda_function.api|aws_apigatewayv2_api.api|aws_lambda_permission.api_gateway)" || echo "   (none found)"
 
 echo ""
 echo "✅ Import process complete!"

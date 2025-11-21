@@ -105,6 +105,42 @@ if ($LASTEXITCODE -eq 0 -and $apiGateways) {
     Write-Host "   API Gateway doesn't exist yet (will be created)" -ForegroundColor Gray
 }
 
+# Import Lambda Permission for API Gateway
+Write-Host "6. Checking Lambda Permission for API Gateway..." -ForegroundColor Yellow
+$lambdaName = "masky-api-$Stage"
+$statementId = "AllowExecutionFromAPIGateway"
+
+# Check if already in Terraform state
+$stateCheck = terraform state show aws_lambda_permission.api_gateway 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "   Lambda Permission already in Terraform state" -ForegroundColor Green
+} else {
+    # Check if permission exists
+    $policyJson = aws lambda get-policy --function-name $lambdaName --region $Region 2>&1 | ConvertFrom-Json -ErrorAction SilentlyContinue
+    
+    if ($policyJson -and $policyJson.Policy) {
+        $policy = $policyJson.Policy | ConvertFrom-Json -ErrorAction SilentlyContinue
+        
+        # Check for statement_id
+        $hasStatement = $policy.Statement | Where-Object { $_.Sid -eq $statementId }
+        if ($hasStatement) {
+            Write-Host "   Lambda permission exists, importing..." -ForegroundColor Yellow
+            terraform import -var="stage=$Stage" -var="aws_region=$Region" `
+                aws_lambda_permission.api_gateway "${lambdaName}/${statementId}" 2>&1 | Out-Null
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "   SUCCESS: Lambda Permission imported" -ForegroundColor Green
+            } else {
+                Write-Host "   WARNING: Lambda Permission import failed (may already be in state)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "   Lambda Permission doesn't exist yet (will be created)" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "   Lambda Permission doesn't exist yet (will be created)" -ForegroundColor Gray
+    }
+}
+
 Write-Host ""
 Write-Host "Import complete!" -ForegroundColor Green
 Write-Host ""

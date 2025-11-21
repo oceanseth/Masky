@@ -8,7 +8,7 @@ on:
       - 'api/**'
       - 'utils/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'layer-dependencies/package.json'
       - 'terraform/**'
       - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -55,7 +54,7 @@ jobs:
             .aws-sam
             lambda-package
             lambda-package.zip
-          key: sam-build-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'api/**', 'utils/**', 'local-env-loader.js') }}
+          key: sam-build-${{ runner.os }}-${{ hashFiles('package.json', 'api/**', 'utils/**', 'local-env-loader.js') }}
           restore-keys: |
             sam-build-${{ runner.os }}-
 

@@ -111,13 +111,18 @@ jobs:
         id: get-api-gateway-id
         run: |
           cd terraform
-          echo "api_gateway_id=$(terraform output -raw api_gateway_id)" >> $GITHUB_OUTPUT
+          API_GATEWAY_ID=$(terraform output -raw api_gateway_id)
+          echo "api_gateway_id=$API_GATEWAY_ID" >> $GITHUB_OUTPUT
+          echo "API Gateway ID: $API_GATEWAY_ID"
           cd ..
 
       - name: Update CloudFront API Gateway Origin
         run: |
+          echo "API_GATEWAY_ID from workflow: $API_GATEWAY_ID"
           chmod +x scripts/update-cloudfront-api-gateway.sh
-          API_GATEWAY_ID="${{ steps.get-api-gateway-id.outputs.api_gateway_id }}" ./scripts/update-cloudfront-api-gateway.sh
+          ./scripts/update-cloudfront-api-gateway.sh
+        env:
+          API_GATEWAY_ID: ${{ steps.get-api-gateway-id.outputs.api_gateway_id }}
           
       - name: Invalidate CloudFront Cache
         run: |

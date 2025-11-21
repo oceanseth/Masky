@@ -7,20 +7,25 @@ set -e
 DISTRIBUTION_ID="E33L46W61GEWHI"
 
 # Get API Gateway ID from environment variable or Terraform
-if [ -z "$API_GATEWAY_ID" ]; then
-    echo "[INFO] Getting API Gateway ID from Terraform..."
+if [ -z "$API_GATEWAY_ID" ] || [ "$API_GATEWAY_ID" = "" ]; then
+    echo "[INFO] API_GATEWAY_ID not set, trying to get from Terraform..."
     if command -v terraform &> /dev/null; then
         cd terraform
-        API_GATEWAY_ID=$(terraform output -raw api_gateway_id)
+        API_GATEWAY_ID=$(terraform output -raw api_gateway_id 2>/dev/null)
         cd ..
+        if [ -z "$API_GATEWAY_ID" ] || [ "$API_GATEWAY_ID" = "" ]; then
+            echo "[ERROR] Could not get API Gateway ID from Terraform output"
+            exit 1
+        fi
     else
-        echo "[ERROR] Terraform not found and API_GATEWAY_ID not provided"
+        echo "[ERROR] Terraform not found and API_GATEWAY_ID environment variable not provided"
+        echo "[ERROR] Please set API_GATEWAY_ID environment variable or ensure Terraform is available"
         exit 1
     fi
 fi
 
-if [ -z "$API_GATEWAY_ID" ]; then
-    echo "[ERROR] Could not get API Gateway ID"
+if [ -z "$API_GATEWAY_ID" ] || [ "$API_GATEWAY_ID" = "" ]; then
+    echo "[ERROR] API Gateway ID is empty"
     exit 1
 fi
 

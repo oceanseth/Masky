@@ -41,6 +41,12 @@ resource "aws_iam_role" "lambda_execution_role" {
       }
     ]
   })
+
+  # Prevent Terraform from trying to recreate if role already exists
+  # The import script will handle importing existing roles
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # IAM policy for Lambda

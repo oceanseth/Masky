@@ -20,3 +20,12 @@ data "archive_file" "lambda_zip" {
   ]
 }
 
+# Lambda Layer for dependencies
+resource "aws_lambda_layer_version" "dependencies" {
+  filename            = var.lambda_layer_path
+  layer_name          = "masky-dependencies-${var.stage}"
+  description         = "Common dependencies for Masky Lambda functions"
+  compatible_runtimes  = ["nodejs18.x"]
+  source_code_hash     = filebase64sha256(var.lambda_layer_path)
+}
+

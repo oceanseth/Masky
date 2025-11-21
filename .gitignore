@@ -52,8 +52,18 @@ dist/
 build/
 *.zip
 
+# SAM build artifacts
+.aws-sam/
+samconfig.toml.bak
+
 # Lambda package (generated)
 lambda-package
+lambda-package.zip
+lambda-package.backup
+lambda-layer
+lambda-layer.zip
+.lambda-cache
+.layer-hash
 
 # Testing
 coverage/

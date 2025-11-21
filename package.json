@@ -19,11 +19,14 @@
     "terraform:init": "cd terraform && terraform init",
     "terraform:import": "powershell -ExecutionPolicy Bypass -File scripts\\import-existing-resources.ps1",
     "terraform:plan": "cd terraform && terraform plan -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
-    "terraform:apply": "cd terraform && terraform apply -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
+    "terraform:apply": "cd terraform && terraform apply -auto-approve -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
     "terraform:destroy": "cd terraform && terraform destroy -var=\"stage=production\" -var=\"aws_region=us-east-1\"",
-    "lambda:package": "node scripts/package-lambda.js",
-    "deploy": "npm run lambda:package && npm run terraform:init && npm run terraform:apply",
-    "deploy:plan": "npm run lambda:package && npm run terraform:init && npm run terraform:plan"
+    "lambda:layer": "node scripts/build-layer.js",
+    "lambda:package:sam": "node scripts/build-lambda-sam.js",
+    "deploy": "npm run lambda:layer && npm run lambda:package:sam && npm run terraform:init && npm run terraform:apply && npm run cloudfront:update",
+    "deploy:plan": "npm run lambda:layer && npm run lambda:package:sam && npm run terraform:init && npm run terraform:plan",
+    "cloudfront:update": "powershell -ExecutionPolicy Bypass -File scripts\\update-cloudfront-api-gateway.ps1",
+    "cloudfront:update:bash": "bash scripts/update-cloudfront-api-gateway.sh"
   },
   "repository": {
     "type": "git",

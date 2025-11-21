@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Masky Lambda Dependencies Layer (Build only - deployed via Terraform)
+
+Resources:
+  MaskyDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: masky-dependencies-production
+      Description: Common dependencies for Masky Lambda functions
+      ContentUri: ./layer-dependencies/
+      CompatibleRuntimes:
+        - nodejs18.x
+      CompatibleArchitectures:
+        - x86_64
+      # Note: Layer is deployed via Terraform, this template is only for building
+      # SAM will automatically run npm install if package.json exists
+

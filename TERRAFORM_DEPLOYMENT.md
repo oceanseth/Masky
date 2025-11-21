@@ -301,7 +301,8 @@ After deployment:
 - `terraform/variables.tf` - Variable definitions
 - `terraform/data.tf` - Data sources (SSM, archive)
 - `terraform/outputs.tf` - Output values
-- `scripts/package-lambda.js` - Lambda packaging script
+- `scripts/build-lambda-sam.js` - Lambda function build script (SAM-based)
+- `scripts/build-layer.js` - Lambda Layer build script
 - `scripts/deploy-terraform.ps1` - Windows deployment script
 - `scripts/deploy-terraform.sh` - Linux/Mac deployment script
 

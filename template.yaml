@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Masky Lambda API Function (Build only - deployed via Terraform)
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs18.x
+
+Resources:
+  MaskyApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: api/api.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          STAGE: production
+      # Note: IAM policies and API Gateway are managed by Terraform
+      # This template is only used for building the Lambda package
+      # Using default build method (npm install) - no esbuild needed
+
+# Metadata moved to function level
+

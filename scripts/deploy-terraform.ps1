@@ -47,6 +47,18 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Verify lambda-package directory exists (Terraform needs it)
+if (-not (Test-Path "lambda-package")) {
+    Write-Host "⚠️  WARNING: lambda-package directory missing after packaging!" -ForegroundColor Yellow
+    Write-Host "   Re-running packaging to ensure directory exists..." -ForegroundColor Yellow
+    npm run lambda:package
+    if (-not (Test-Path "lambda-package")) {
+        Write-Host "❌ lambda-package directory still missing - Terraform will fail" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "   ✓ lambda-package directory verified" -ForegroundColor Green
+
 # Change to terraform directory
 Push-Location terraform
 

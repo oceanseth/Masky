@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Dependencies (will be installed in Docker)
+node_modules
+lambda-package
+lambda-package.zip
+lambda-package.backup
+
+# Build outputs
+dist
+.terraform
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.backup
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+
+# Scripts (not needed in Lambda)
+scripts
+.github
+
+# Frontend files (not needed in Lambda)
+src
+public
+*.html
+vite.config.js
+
+# Other
+*.log
+*.backup
+*.tmp
+

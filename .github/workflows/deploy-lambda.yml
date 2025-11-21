@@ -89,7 +89,6 @@ jobs:
         run: |
           chmod +x scripts/import-existing-resources.sh
           ./scripts/import-existing-resources.sh production ${{ env.AWS_REGION }}
-        continue-on-error: true
 
       - name: Terraform Plan
         run: |

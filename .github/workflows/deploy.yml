@@ -35,11 +35,6 @@ jobs:
         run: |
           aws s3 sync dist/ s3://masky.net --delete
           
-      - name: Update CloudFront API Gateway Origin
-        run: |
-          chmod +x scripts/update-cloudfront-api-gateway.sh
-          ./scripts/update-cloudfront-api-gateway.sh
-          
       - name: Invalidate CloudFront Cache
         run: |
           aws cloudfront create-invalidation --distribution-id E33L46W61GEWHI --paths "/*"

@@ -46,90 +46,149 @@ echo "1. Importing IAM Role..."
 ROLE_NAME="masky-lambda-execution-role-$STAGE"
 ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
-# Check if role exists in AWS
-if aws iam get-role --role-name "$ROLE_NAME" &> /dev/null; then
-    echo "   Role exists in AWS, importing..."
-    terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-        aws_iam_role.lambda_execution_role "$ROLE_ARN" 2>&1
-    if [ $? -eq 0 ]; then
-        echo "   ✅ IAM Role imported successfully"
-    else
-        echo "   ⚠️  IAM Role import failed (may already be in state)"
-    fi
+# Check if already in Terraform state
+if terraform state show aws_iam_role.lambda_execution_role &> /dev/null; then
+    echo "   ✅ IAM Role already in Terraform state"
 else
-    echo "   ⚠️  IAM Role doesn't exist in AWS (will be created)"
+    # Check if role exists in AWS
+    if aws iam get-role --role-name "$ROLE_NAME" &> /dev/null; then
+        echo "   Role exists in AWS, importing..."
+        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_iam_role.lambda_execution_role "$ROLE_ARN" 2>&1)
+        IMPORT_EXIT_CODE=$?
+        echo "$IMPORT_OUTPUT"
+        
+        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ IAM Role imported successfully"
+        else
+            # Check if it's already in state (common error message)
+            if echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+                echo "   ✅ IAM Role already in state (import skipped)"
+            else
+                echo "   ❌ IAM Role import failed!"
+                echo "   Error: $IMPORT_OUTPUT"
+                exit 1
+            fi
+        fi
+    else
+        echo "   ⚠️  IAM Role doesn't exist in AWS (will be created)"
+    fi
 fi
 
 # Import Lambda Log Group
 echo "2. Importing Lambda CloudWatch Log Group..."
 LOG_GROUP_NAME="/aws/lambda/masky-api-$STAGE"
-if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --query "logGroups[?logGroupName=='$LOG_GROUP_NAME']" --output text | grep -q "$LOG_GROUP_NAME"; then
-    echo "   Log group exists in AWS, importing..."
-    terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-        aws_cloudwatch_log_group.lambda_logs "$LOG_GROUP_NAME" 2>&1
-    if [ $? -eq 0 ]; then
-        echo "   ✅ Lambda Log Group imported successfully"
-    else
-        echo "   ⚠️  Lambda Log Group import failed (may already be in state)"
-    fi
+
+# Check if already in Terraform state
+if terraform state show aws_cloudwatch_log_group.lambda_logs &> /dev/null; then
+    echo "   ✅ Lambda Log Group already in Terraform state"
 else
-    echo "   ⚠️  Lambda Log Group doesn't exist in AWS (will be created)"
+    if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --query "logGroups[?logGroupName=='$LOG_GROUP_NAME']" --output text | grep -q "$LOG_GROUP_NAME"; then
+        echo "   Log group exists in AWS, importing..."
+        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_cloudwatch_log_group.lambda_logs "$LOG_GROUP_NAME" 2>&1)
+        IMPORT_EXIT_CODE=$?
+        echo "$IMPORT_OUTPUT"
+        
+        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ Lambda Log Group imported successfully"
+        elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+            echo "   ✅ Lambda Log Group already in state (import skipped)"
+        else
+            echo "   ⚠️  Lambda Log Group import failed (will be created if needed)"
+        fi
+    else
+        echo "   ⚠️  Lambda Log Group doesn't exist in AWS (will be created)"
+    fi
 fi
 
 # Import API Gateway Log Group
 echo "3. Importing API Gateway CloudWatch Log Group..."
 API_LOG_GROUP_NAME="/aws/apigateway/masky-api-$STAGE"
-if aws logs describe-log-groups --log-group-name-prefix "$API_LOG_GROUP_NAME" --query "logGroups[?logGroupName=='$API_LOG_GROUP_NAME']" --output text | grep -q "$API_LOG_GROUP_NAME"; then
-    echo "   Log group exists in AWS, importing..."
-    terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-        aws_cloudwatch_log_group.api_gateway_logs "$API_LOG_GROUP_NAME" 2>&1
-    if [ $? -eq 0 ]; then
-        echo "   ✅ API Gateway Log Group imported successfully"
-    else
-        echo "   ⚠️  API Gateway Log Group import failed (may already be in state)"
-    fi
+
+# Check if already in Terraform state
+if terraform state show aws_cloudwatch_log_group.api_gateway_logs &> /dev/null; then
+    echo "   ✅ API Gateway Log Group already in Terraform state"
 else
-    echo "   ⚠️  API Gateway Log Group doesn't exist in AWS (will be created)"
+    if aws logs describe-log-groups --log-group-name-prefix "$API_LOG_GROUP_NAME" --query "logGroups[?logGroupName=='$API_LOG_GROUP_NAME']" --output text | grep -q "$API_LOG_GROUP_NAME"; then
+        echo "   Log group exists in AWS, importing..."
+        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_cloudwatch_log_group.api_gateway_logs "$API_LOG_GROUP_NAME" 2>&1)
+        IMPORT_EXIT_CODE=$?
+        echo "$IMPORT_OUTPUT"
+        
+        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ API Gateway Log Group imported successfully"
+        elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+            echo "   ✅ API Gateway Log Group already in state (import skipped)"
+        else
+            echo "   ⚠️  API Gateway Log Group import failed (will be created if needed)"
+        fi
+    else
+        echo "   ⚠️  API Gateway Log Group doesn't exist in AWS (will be created)"
+    fi
 fi
 
 # Check if Lambda function exists and needs importing
 echo "4. Checking Lambda function..."
 LAMBDA_NAME="masky-api-$STAGE"
-if aws lambda get-function --function-name "$LAMBDA_NAME" --region "$REGION" &> /dev/null; then
-    echo "   Lambda function exists, importing..."
-    terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-        aws_lambda_function.api "$LAMBDA_NAME" 2>&1
-    if [ $? -eq 0 ]; then
-        echo "   ✅ Lambda function imported successfully"
-    else
-        echo "   ⚠️  Lambda function import failed (may already be in state)"
-    fi
+
+# Check if already in Terraform state
+if terraform state show aws_lambda_function.api &> /dev/null; then
+    echo "   ✅ Lambda function already in Terraform state"
 else
-    echo "   ⚠️  Lambda function doesn't exist yet (will be created)"
+    if aws lambda get-function --function-name "$LAMBDA_NAME" --region "$REGION" &> /dev/null; then
+        echo "   Lambda function exists, importing..."
+        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_lambda_function.api "$LAMBDA_NAME" 2>&1)
+        IMPORT_EXIT_CODE=$?
+        echo "$IMPORT_OUTPUT"
+        
+        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ Lambda function imported successfully"
+        elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+            echo "   ✅ Lambda function already in state (import skipped)"
+        else
+            echo "   ⚠️  Lambda function import failed (will be created if needed)"
+        fi
+    else
+        echo "   ⚠️  Lambda function doesn't exist yet (will be created)"
+    fi
 fi
 
 # Check if API Gateway exists and needs importing
 echo "5. Checking API Gateway..."
 API_NAME="masky-api-$STAGE"
-# Get API IDs, filter by name, take first result only
-API_ID=$(aws apigatewayv2 get-apis --region "$REGION" --query "Items[?Name=='$API_NAME'].ApiId" --output text 2>/dev/null | head -n1 | tr -d '[:space:]' || echo "")
 
-if [ -n "$API_ID" ] && [ "$API_ID" != "None" ] && [ "$API_ID" != "" ]; then
-    # Validate API ID format (should be alphanumeric, no spaces/tabs)
-    if echo "$API_ID" | grep -qE '^[a-zA-Z0-9]+$'; then
-        echo "   API Gateway exists (ID: $API_ID), importing..."
-        terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-            aws_apigatewayv2_api.api "$API_ID" 2>&1
-        if [ $? -eq 0 ]; then
-            echo "   ✅ API Gateway imported successfully"
+# Check if already in Terraform state
+if terraform state show aws_apigatewayv2_api.api &> /dev/null; then
+    echo "   ✅ API Gateway already in Terraform state"
+else
+    # Get API IDs, filter by name, take first result only
+    API_ID=$(aws apigatewayv2 get-apis --region "$REGION" --query "Items[?Name=='$API_NAME'].ApiId" --output text 2>/dev/null | head -n1 | tr -d '[:space:]' || echo "")
+    
+    if [ -n "$API_ID" ] && [ "$API_ID" != "None" ] && [ "$API_ID" != "" ]; then
+        # Validate API ID format (should be alphanumeric, no spaces/tabs)
+        if echo "$API_ID" | grep -qE '^[a-zA-Z0-9]+$'; then
+            echo "   API Gateway exists (ID: $API_ID), importing..."
+            IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+                aws_apigatewayv2_api.api "$API_ID" 2>&1)
+            IMPORT_EXIT_CODE=$?
+            echo "$IMPORT_OUTPUT"
+            
+            if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+                echo "   ✅ API Gateway imported successfully"
+            elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+                echo "   ✅ API Gateway already in state (import skipped)"
+            else
+                echo "   ⚠️  API Gateway import failed (will be created if needed)"
+            fi
         else
-            echo "   ⚠️  API Gateway import failed (may already be in state or ID incorrect)"
+            echo "   ⚠️  Invalid API Gateway ID format: '$API_ID' (skipping import)"
         fi
     else
-        echo "   ⚠️  Invalid API Gateway ID format: '$API_ID' (skipping import)"
+        echo "   ⚠️  API Gateway doesn't exist yet (will be created)"
     fi
-else
-    echo "   ⚠️  API Gateway doesn't exist yet (will be created)"
 fi
 
 echo ""

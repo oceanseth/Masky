@@ -110,15 +110,23 @@ fi
 
 # Check if API Gateway exists and needs importing
 echo "5. Checking API Gateway..."
-API_ID=$(aws apigatewayv2 get-apis --region "$REGION" --query "Items[?Name=='masky-api-$STAGE'].ApiId" --output text 2>/dev/null || echo "")
-if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
-    echo "   API Gateway exists (ID: $API_ID), importing..."
-    terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-        aws_apigatewayv2_api.api "$API_ID" 2>&1
-    if [ $? -eq 0 ]; then
-        echo "   ✅ API Gateway imported successfully"
+API_NAME="masky-api-$STAGE"
+# Get API IDs, filter by name, take first result only
+API_ID=$(aws apigatewayv2 get-apis --region "$REGION" --query "Items[?Name=='$API_NAME'].ApiId" --output text 2>/dev/null | head -n1 | tr -d '[:space:]' || echo "")
+
+if [ -n "$API_ID" ] && [ "$API_ID" != "None" ] && [ "$API_ID" != "" ]; then
+    # Validate API ID format (should be alphanumeric, no spaces/tabs)
+    if echo "$API_ID" | grep -qE '^[a-zA-Z0-9]+$'; then
+        echo "   API Gateway exists (ID: $API_ID), importing..."
+        terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+            aws_apigatewayv2_api.api "$API_ID" 2>&1
+        if [ $? -eq 0 ]; then
+            echo "   ✅ API Gateway imported successfully"
+        else
+            echo "   ⚠️  API Gateway import failed (may already be in state or ID incorrect)"
+        fi
     else
-        echo "   ⚠️  API Gateway import failed (may already be in state)"
+        echo "   ⚠️  Invalid API Gateway ID format: '$API_ID' (skipping import)"
     fi
 else
     echo "   ⚠️  API Gateway doesn't exist yet (will be created)"

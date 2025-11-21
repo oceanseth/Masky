@@ -1,0 +1,113 @@
+name: Deploy Lambda to AWS
+
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - 'api/**'
+      - 'utils/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'terraform/**'
+      - '.github/workflows/deploy-lambda.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '20'
+
+jobs:
+  build-and-deploy-lambda:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Cache Lambda Layer
+        uses: actions/cache@v4
+        with:
+          path: |
+            lambda-layer.zip
+            .layer-hash
+            layer-dependencies/node_modules
+          key: lambda-layer-${{ runner.os }}-${{ hashFiles('layer-dependencies/package.json') }}
+          restore-keys: |
+            lambda-layer-${{ runner.os }}-
+
+      - name: Cache SAM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .aws-sam
+            lambda-package
+            lambda-package.zip
+          key: sam-build-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'api/**', 'utils/**', 'local-env-loader.js') }}
+          restore-keys: |
+            sam-build-${{ runner.os }}-
+
+      - name: Build Lambda Layer
+        run: |
+          echo "📦 Building Lambda Layer..."
+          npm run lambda:layer
+
+      - name: Build Lambda package with SAM
+        run: |
+          echo "📦 Building Lambda package with SAM..."
+          npm run lambda:package:sam
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.6.0'
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}"
+        continue-on-error: true
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}"
+
+      - name: Output Lambda Function Info
+        run: |
+          cd terraform
+          terraform output
+
+      - name: Update CloudFront API Gateway Origin
+        run: |
+          chmod +x scripts/update-cloudfront-api-gateway.sh
+          ./scripts/update-cloudfront-api-gateway.sh
+          
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id E33L46W61GEWHI --paths "/api/*"
+

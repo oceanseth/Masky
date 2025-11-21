@@ -600,8 +600,13 @@ exports.handler = async (event, context) => {
     let path = event.path || event.rawPath || '';
     // Normalize path: ensure it starts with / and remove /api prefix if present
     // API Gateway proxy integration may include or exclude /api prefix
+    // CloudFront may add /production prefix when OriginPath is set
     if (path && !path.startsWith('/')) {
         path = '/' + path;
+    }
+    // Remove /production prefix if present (added by CloudFront OriginPath)
+    if (path.startsWith('/production/')) {
+        path = path.substring(11); // Remove '/production'
     }
     // Remove /api prefix if present for consistent matching
     if (path.startsWith('/api/')) {
@@ -1767,7 +1772,11 @@ exports.handler = async (event, context) => {
     }
 
     // Create donation payment intent (for Payment Element)
-    if (path.includes('/donations/create-payment-intent') && method === 'POST') {
+    // Check exact match first to avoid matching /donations/create
+    // Normalize path by removing trailing slashes and query params for matching
+    const normalizedPath = path.split('?')[0].replace(/\/$/, '');
+    if (normalizedPath === '/donations/create-payment-intent' && method === 'POST') {
+        console.log('Creating payment intent for path:', path, '(normalized:', normalizedPath, ')');
         const response = await createDonationPaymentIntent(event);
         return {
             ...response,
@@ -1779,7 +1788,7 @@ exports.handler = async (event, context) => {
     }
 
     // Get Stripe publishable key
-    if (path.includes('/donations/publishable-key') && method === 'GET') {
+    if ((path === '/donations/publishable-key' || path.includes('/donations/publishable-key')) && method === 'GET') {
         const response = await getStripePublishableKey(event);
         return {
             ...response,
@@ -1791,7 +1800,9 @@ exports.handler = async (event, context) => {
     }
 
     // Create donation checkout session (legacy - kept for backward compatibility)
-    if (path.includes('/donations/create') && method === 'POST') {
+    // Only match exact /donations/create, not /donations/create-payment-intent
+    if (path === '/donations/create' && method === 'POST') {
+        console.log('Creating checkout session for path:', path);
         const response = await createDonationCheckoutSession(event);
         return {
             ...response,
@@ -4240,7 +4251,24 @@ async function createDonationPaymentIntent(event) {
         }
 
         // Initialize Stripe
-        const { stripe } = await stripeInitializer.initialize();
+        let stripe;
+        try {
+            const stripeInitResult = await stripeInitializer.initialize();
+            stripe = stripeInitResult.stripe;
+            if (!stripe) {
+                throw new Error('Stripe initialization returned null');
+            }
+            console.log('Stripe initialized successfully for payment intent creation');
+        } catch (stripeError) {
+            console.error('Failed to initialize Stripe:', stripeError);
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ 
+                    error: 'Failed to initialize Stripe',
+                    message: stripeError.message 
+                })
+            };
+        }
 
         // Initialize Firebase
         await firebaseInitializer.initialize();
@@ -4272,26 +4300,49 @@ async function createDonationPaymentIntent(event) {
         // Create Payment Intent
         // Payment Element automatically supports Apple Pay and Google Pay
         // when enabled in Stripe Dashboard and domain is verified (for Apple Pay)
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: Math.round(amountToCharge * 100), // Convert to cents
-            currency: 'usd',
-            // Enable automatic payment methods (includes Apple Pay, Google Pay when available)
-            // Payment Element will automatically detect and show these payment methods
-            automatic_payment_methods: {
-                enabled: true
-            },
-            metadata: {
-                type: 'donation',
-                userId: userId,
-                viewerId: viewerId || '',
-                amount: amount.toString(), // Original donation amount (what the creator receives)
-                amountCharged: amountToCharge.toFixed(2), // Amount charged to donor (includes fees)
-                stripeFee: actualFee.toFixed(2), // Stripe processing fee
-                broadcasterName: broadcasterName,
-                createdAt: new Date().toISOString()
-            },
-            description: `Donation to ${broadcasterName}`
-        });
+        let paymentIntent;
+        try {
+            paymentIntent = await stripe.paymentIntents.create({
+                amount: Math.round(amountToCharge * 100), // Convert to cents
+                currency: 'usd',
+                // Enable automatic payment methods (includes Apple Pay, Google Pay when available)
+                // Payment Element will automatically detect and show these payment methods
+                automatic_payment_methods: {
+                    enabled: true
+                },
+                metadata: {
+                    type: 'donation',
+                    userId: userId,
+                    viewerId: viewerId || '',
+                    amount: amount.toString(), // Original donation amount (what the creator receives)
+                    amountCharged: amountToCharge.toFixed(2), // Amount charged to donor (includes fees)
+                    stripeFee: actualFee.toFixed(2), // Stripe processing fee
+                    broadcasterName: broadcasterName,
+                    createdAt: new Date().toISOString()
+                },
+                description: `Donation to ${broadcasterName}`
+            });
+
+            if (!paymentIntent || !paymentIntent.client_secret) {
+                throw new Error('Payment Intent created but client_secret is missing');
+            }
+
+            console.log('Payment Intent created successfully:', {
+                id: paymentIntent.id,
+                amount: paymentIntent.amount,
+                currency: paymentIntent.currency,
+                hasClientSecret: !!paymentIntent.client_secret
+            });
+        } catch (stripeCreateError) {
+            console.error('Failed to create Payment Intent:', stripeCreateError);
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ 
+                    error: 'Failed to create payment intent',
+                    message: stripeCreateError.message 
+                })
+            };
+        }
 
         // Get publishable key from stripeInitializer (hardcoded in stripeInit.js)
         const publishableKey = stripeInitializer.getPublishableKey();

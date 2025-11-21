@@ -17,3 +17,9 @@ variable "lambda_package_path" {
   default     = "../lambda-package.zip"
 }
 
+variable "lambda_layer_path" {
+  description = "Path to the Lambda layer zip file"
+  type        = string
+  default     = "../lambda-layer.zip"
+}
+

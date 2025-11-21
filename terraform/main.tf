@@ -87,6 +87,9 @@ resource "aws_lambda_function" "api" {
   timeout         = 30
   memory_size     = 512
 
+  # Use Lambda Layer for dependencies (reduces package size significantly)
+  layers = [aws_lambda_layer_version.dependencies.arn]
+
   # Lambda reads secrets from SSM Parameter Store at runtime
   # No environment variables needed - Lambda has IAM permissions to read SSM
   environment {

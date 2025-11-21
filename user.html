@@ -593,7 +593,10 @@
 
             try {
                 // Create Payment Intent
-                const response = await fetch(`${config.api.baseUrl}/api/donations/create-payment-intent`, {
+                const endpoint = `${config.api.baseUrl}/api/donations/create-payment-intent`;
+                console.log('Calling payment intent endpoint:', endpoint);
+                
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -606,9 +609,26 @@
                 });
 
                 const data = await response.json();
+                console.log('Payment intent API response:', { 
+                    ok: response.ok, 
+                    hasClientSecret: !!data.clientSecret,
+                    hasUrl: !!data.url,
+                    keys: Object.keys(data)
+                });
 
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to create payment intent');
+                }
+
+                // Validate response data - must have clientSecret, not url
+                if (data.url) {
+                    console.error('Received checkout URL instead of clientSecret. Wrong endpoint called?', data);
+                    throw new Error('Received checkout URL instead of payment intent. Please ensure you are using the Payment Element endpoint.');
+                }
+                
+                if (!data.clientSecret) {
+                    console.error('API response missing clientSecret:', data);
+                    throw new Error('Payment intent response missing clientSecret. Please try again.');
                 }
 
                 // Show payment modal with Stripe Payment Element
@@ -629,6 +649,13 @@
 
         // Show payment modal with Stripe Payment Element
         async function showPaymentModal(clientSecret, amountCharged, originalAmount) {
+            // Validate clientSecret
+            if (!clientSecret || typeof clientSecret !== 'string') {
+                console.error('Invalid clientSecret:', clientSecret);
+                alert('Failed to initialize payment. Invalid payment intent. Please try again.');
+                return;
+            }
+
             // Initialize Stripe if not already initialized
             // Always use publishable key from config (hardcoded, safe to expose)
             if (!stripe) {
@@ -1575,6 +1602,11 @@
                 
                 const avatarsGrid = document.getElementById('avatarsGrid');
                 const avatarSection = document.getElementById('avatarSelectionSection');
+                
+                if (!avatarsGrid || !avatarSection) {
+                    console.warn('Avatar display elements not found in DOM');
+                    return;
+                }
                 
                 if (avatarsSnapshot.empty) {
                     avatarSection.style.display = 'none';

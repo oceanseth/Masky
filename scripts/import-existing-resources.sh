@@ -44,7 +44,6 @@ echo ""
 # Import IAM Role
 echo "1. Importing IAM Role..."
 ROLE_NAME="masky-lambda-execution-role-$STAGE"
-ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
 # Check if already in Terraform state
 if terraform state show aws_iam_role.lambda_execution_role &> /dev/null; then
@@ -53,8 +52,9 @@ else
     # Check if role exists in AWS
     if aws iam get-role --role-name "$ROLE_NAME" &> /dev/null; then
         echo "   Role exists in AWS, importing..."
+        # Note: aws_iam_role import uses just the role name, not the ARN
         IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-            aws_iam_role.lambda_execution_role "$ROLE_ARN" 2>&1)
+            aws_iam_role.lambda_execution_role "$ROLE_NAME" 2>&1)
         IMPORT_EXIT_CODE=$?
         echo "$IMPORT_OUTPUT"
         

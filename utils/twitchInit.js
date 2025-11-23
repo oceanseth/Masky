@@ -867,6 +867,14 @@ class TwitchInitializer {
         const eventData = notification.event;
         const subscription = notification.subscription;
 
+        console.log(`[TwitchWebhook] Processing notification event:`, {
+          subscriptionType: subscription.type,
+          subscriptionId: subscription.id,
+          eventDataKeys: Object.keys(eventData || {}),
+          broadcasterId: eventData.broadcaster_user_id || subscription.condition.broadcaster_user_id,
+          fullEventData: JSON.stringify(eventData, null, 2).substring(0, 500)
+        });
+
         const firebaseInitializer = require('./firebaseInit');
         await firebaseInitializer.initialize();
         const admin = require('firebase-admin');
@@ -877,7 +885,10 @@ class TwitchInitializer {
         const broadcasterId = eventData.broadcaster_user_id || subscription.condition.broadcaster_user_id;
         
         if (!broadcasterId) {
-          console.error('No broadcaster ID found in event data');
+          console.error('[TwitchWebhook] No broadcaster ID found in event data:', {
+            eventDataKeys: Object.keys(eventData || {}),
+            subscriptionCondition: subscription.condition
+          });
           return {
             statusCode: 400,
             body: JSON.stringify({ error: 'Missing broadcaster ID' })
@@ -890,11 +901,19 @@ class TwitchInitializer {
         
         // Check if subscription exists for this user
         const subscriptionKey = `twitch_${subscription.type}`;
+        console.log(`[TwitchWebhook] Looking up subscription: ${userId}/subscriptions/${subscriptionKey}`);
         const subscriptionDoc = await db.collection('users').doc(userId).collection('subscriptions').doc(subscriptionKey).get();
         
         let subscriptionData = null;
         if (subscriptionDoc.exists) {
           subscriptionData = subscriptionDoc.data();
+          console.log(`[TwitchWebhook] Subscription found:`, {
+            isActive: subscriptionData.isActive,
+            eventType: subscriptionData.eventType,
+            provider: subscriptionData.provider
+          });
+        } else {
+          console.warn(`[TwitchWebhook] Subscription document not found: ${userId}/subscriptions/${subscriptionKey}`);
         }
 
         if (subscriptionData) {
@@ -1070,42 +1089,47 @@ class TwitchInitializer {
                   }
                 }
               }
-              
-              // Continue with normal event processing (for projects/alerts)
-              const projectsSnapshot = await db.collection('projects')
-                .where('userId', '==', userId)
-                .where('platform', '==', 'twitch')
-                .where('eventType', '==', subscription.type)
-                .where('isActive', '==', true)
-                .get();
+            }
+            
+            // Continue with normal event processing (for projects/alerts)
+            // This runs for all event types except channel.chat.message (which returns early)
+            console.log(`[TwitchWebhook] Looking for active projects for event type: ${subscription.type}`);
+            const projectsSnapshot = await db.collection('projects')
+              .where('userId', '==', userId)
+              .where('platform', '==', 'twitch')
+              .where('eventType', '==', subscription.type)
+              .where('isActive', '==', true)
+              .get();
 
-              if (!projectsSnapshot.empty) {
-                // Select a random active project for reference
-                const activeProjects = projectsSnapshot.docs;
-                const randomIndex = Math.floor(Math.random() * activeProjects.length);
-                const selectedProject = activeProjects[randomIndex];
-                const projectId = selectedProject.id;
+            console.log(`[TwitchWebhook] Found ${projectsSnapshot.size} active projects for event type ${subscription.type}`);
 
-                // Save event to user's events collection (provider + eventType specific)
-                const eventKey = `twitch_${subscription.type}`;
-                const alertData = {
-                  eventType: subscription.type,
-                  provider: 'twitch',
-                  eventData: eventData,
-                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                  userName: eventData.user_name || eventData.from_broadcaster_user_name || 'Anonymous',
-                  userId: eventData.user_id || eventData.from_broadcaster_user_id || null,
-                  selectedProjectId: projectId, // For reference, but not the primary storage
-                  messageId: messageId // For deduplication
-                };
+            if (!projectsSnapshot.empty) {
+              // Select a random active project for reference
+              const activeProjects = projectsSnapshot.docs;
+              const randomIndex = Math.floor(Math.random() * activeProjects.length);
+              const selectedProject = activeProjects[randomIndex];
+              const projectId = selectedProject.id;
 
-                // Store in user's events collection
-                await db.collection('users').doc(userId).collection('events').doc(eventKey).collection('alerts').add(alertData);
+              // Save event to user's events collection (provider + eventType specific)
+              const eventKey = `twitch_${subscription.type}`;
+              const alertData = {
+                eventType: subscription.type,
+                provider: 'twitch',
+                eventData: eventData,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                userName: eventData.user_name || eventData.from_broadcaster_user_name || 'Anonymous',
+                userId: eventData.user_id || eventData.from_broadcaster_user_id || null,
+                selectedProjectId: projectId, // For reference, but not the primary storage
+                messageId: messageId // For deduplication
+              };
 
-                console.log(`Event saved to user events: ${userId}/events/${eventKey} (selected project: ${projectId} from ${activeProjects.length} active projects), Event: ${subscription.type}`);
-              } else {
-                console.log(`No active projects found for user ${userId} and event type ${subscription.type}`);
-              }
+              // Store in user's events collection
+              await db.collection('users').doc(userId).collection('events').doc(eventKey).collection('alerts').add(alertData);
+
+              console.log(`[TwitchWebhook] ✅ Event saved to user events: ${userId}/events/${eventKey} (selected project: ${projectId} from ${activeProjects.length} active projects), Event: ${subscription.type}`);
+            } else {
+              console.warn(`[TwitchWebhook] ⚠️ No active projects found for user ${userId} and event type ${subscription.type}. Event will not be saved to Firestore.`);
+              console.log(`[TwitchWebhook] To debug: Check if user has projects with eventType="${subscription.type}" and isActive=true`);
             }
           } else {
             console.log(`Subscription ${subscription.id} is inactive, skipping alert processing`);

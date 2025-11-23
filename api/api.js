@@ -2359,7 +2359,22 @@ exports.handler = async (event, context) => {
 
     // Twitch webhook endpoint
     if (path.includes('/twitch-webhook') && method === 'POST') {
+        console.log('[TwitchWebhook] Webhook request received:', {
+            path: event.path || event.rawPath,
+            method: method,
+            domainName: event.requestContext?.domainName,
+            stage: event.requestContext?.stage || event.requestContext?.http?.stage,
+            headers: {
+                'twitch-eventsub-message-type': event.headers['twitch-eventsub-message-type'] || event.headers['Twitch-Eventsub-Message-Type'],
+                'twitch-eventsub-message-id': event.headers['twitch-eventsub-message-id'] || event.headers['Twitch-Eventsub-Message-Id'],
+                'host': event.headers.host || event.headers.Host
+            }
+        });
         const response = await twitchInitializer.handleWebhook(event);
+        console.log('[TwitchWebhook] Webhook response:', {
+            statusCode: response.statusCode,
+            bodyLength: response.body?.length || 0
+        });
         return {
             ...response,
             headers: {

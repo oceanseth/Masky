@@ -287,6 +287,74 @@ class TwitchInitializer {
     };
   }
 
+  /**
+   * Send a message to Twitch chat
+   * Uses Twitch Helix API to send chat messages
+   * @param {string} broadcasterId - The Twitch broadcaster user ID
+   * @param {string} accessToken - The broadcaster's Twitch access token (must have chat:edit scope)
+   * @param {string} message - The message to send
+   * @returns {Promise<Object>} Response from Twitch API
+   */
+  async sendChatMessage(broadcasterId, accessToken, message) {
+    try {
+      await this.initialize();
+      const { clientId } = this.getCredentials();
+      
+      // Twitch Helix API endpoint for sending chat messages
+      // Note: This endpoint requires the broadcaster to have chat:edit scope
+      // and the broadcaster_id must match the user associated with the access token
+      const response = await fetch('https://api.twitch.tv/helix/chat/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Client-Id': clientId,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          broadcaster_id: broadcasterId,
+          sender_id: broadcasterId, // Moderator ID (same as broadcaster for self-messaging)
+          message: message
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { raw: errorText };
+        }
+        
+        // Log detailed error for debugging
+        console.error('Failed to send Twitch chat message:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          broadcasterId: broadcasterId,
+          messageLength: message.length
+        });
+        
+        // If endpoint doesn't exist (404) or unauthorized (401/403), log but don't throw
+        // This allows processing to continue even if chat message fails
+        if (response.status === 404) {
+          console.warn('Twitch chat message endpoint not found. This might require using IRC or a different API.');
+        } else if (response.status === 401 || response.status === 403) {
+          console.warn('Twitch access token missing chat:edit scope or is invalid.');
+        }
+        
+        throw new Error(`Twitch API error: ${response.status} - ${errorData.message || errorData.error || errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Successfully sent Twitch chat message:', data);
+      return data;
+    } catch (error) {
+      console.error('Error sending Twitch chat message:', error);
+      throw error;
+    }
+  }
+
   // Create Twitch EventSub subscription
   async createEventSub(event) {
     try {
@@ -1086,6 +1154,37 @@ class TwitchInitializer {
                     
                     await db.collection('donations').add(donationData);
                     console.log(`Bits redemption credited: ${userWhoCheeredName} (${viewerId}) received ${creditsAmount} credits for ${bitsAmount} bits`);
+                    
+                    // Send chat message notification
+                    try {
+                      // Get broadcaster's Twitch access token from custom claims
+                      const userRecord = await admin.auth().getUser(userId);
+                      const claims = userRecord.customClaims || {};
+                      const twitchAccessToken = claims.twitchAccessToken;
+                      const twitchId = claims.twitchId;
+                      
+                      if (twitchAccessToken && twitchId) {
+                        // Get broadcaster's Twitch username for the URL
+                        const broadcasterTwitchUsername = userData.twitchUsername || null;
+                        
+                        // Build the message
+                        let chatMessage = `Thank you for the donation of ${bitsAmount} bits, we have given you ${creditsAmount} credits`;
+                        if (broadcasterTwitchUsername) {
+                          chatMessage += ` on masky.ai/${broadcasterTwitchUsername} to use on redemptions.`;
+                        } else {
+                          chatMessage += ` on masky.ai to use on redemptions.`;
+                        }
+                        
+                        // Send message to Twitch chat
+                        await this.sendChatMessage(twitchId, twitchAccessToken, chatMessage);
+                        console.log('Sent bits donation notification to Twitch chat:', chatMessage);
+                      } else {
+                        console.warn('Cannot send Twitch chat message: broadcaster Twitch token not found');
+                      }
+                    } catch (chatError) {
+                      // Don't fail the bits processing if chat message fails
+                      console.error('Error sending Twitch chat message for bits donation:', chatError);
+                    }
                   }
                 }
               }

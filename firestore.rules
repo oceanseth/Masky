@@ -118,6 +118,12 @@ service cloud.firestore {
       }
     }
     
+    // Bot tokens - only server can access (via Admin SDK, which bypasses rules)
+    // Explicitly deny all client access for security
+    match /system/bot_tokens {
+      allow read, write: if false; // Only Admin SDK can access (bypasses rules)
+    }
+    
     // System deployment events - allow public read for overlay auto-reload
     match /_system/deployments {
       allow read: if true; // Public read for deployment notifications

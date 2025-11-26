@@ -381,6 +381,75 @@
             flex-shrink: 0;
         }
 
+        .perk-with-tooltip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            width: 100%;
+        }
+
+        .perk-tooltip-trigger {
+            color: rgba(255, 255, 255, 0.6);
+            cursor: help;
+            font-size: 0.9rem;
+            font-weight: normal;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        .perk-tooltip {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: #fff;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            white-space: normal;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            z-index: 1000;
+            width: 250px;
+            border: 1px solid rgba(192, 132, 252, 0.3);
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            pointer-events: none;
+            line-height: 1.4;
+        }
+
+        .perk-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.95);
+        }
+
+        .perk-tooltip.show {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .perk-tooltip {
+                width: 200px;
+                font-size: 0.8rem;
+                max-width: calc(100vw - 2rem);
+            }
+            
+            .perk-tooltip-trigger {
+                font-size: 0.85rem;
+            }
+        }
+        }
+
         .current-plan {
             background: rgba(192, 132, 252, 0.2);
             color: #c084fc;
@@ -752,16 +821,37 @@
                         <div class="tier-description">Maximum creative freedom</div>
                     </div>
                     <ul class="features-list">
-                        <li>Unlimited AI Avatars</li>
-                        <li>Unlimited Voice Options</li>
-                        <li>All Alert Types</li>
-                        <li>Advanced Custom Scripts</li>
+                        <li>Everything in Creator</li>
                         <li>24/7 Priority Support</li>
                         <li>Advanced Analytics</li>
-                        <li>No Watermark</li>
-                        <li>Custom Branding</li>
-                        <li>API Access</li>
-                        <li>White-label Options</li>
+                        <li>
+                            <span class="perk-with-tooltip">
+                                Masky mentor working for you, helping you grow
+                                <span class="perk-tooltip-trigger">?</span>
+                                <span class="perk-tooltip">Get personalized guidance from a Masky mentor dedicated to helping you grow your content creation business and maximize your success.</span>
+                            </span>
+                        </li>
+                        <li>
+                            <span class="perk-with-tooltip">
+                                Weekly strategy/progress discord call
+                                <span class="perk-tooltip-trigger">?</span>
+                                <span class="perk-tooltip">Join weekly Discord calls with the Masky team to discuss your strategy, review progress, and get expert advice on growing your channel.</span>
+                            </span>
+                        </li>
+                        <li>
+                            <span class="perk-with-tooltip">
+                                Voicecert membership - ©/™ filings
+                                <span class="perk-tooltip-trigger">?</span>
+                                <span class="perk-tooltip">Includes Voicecert membership with copyright (©) and trademark (™) filing services to protect your intellectual property.</span>
+                            </span>
+                        </li>
+                        <li>
+                            <span class="perk-with-tooltip">
+                                VC automated takedown service
+                                <span class="perk-tooltip-trigger">?</span>
+                                <span class="perk-tooltip">Automated service to help protect your content by identifying and filing takedown requests for unauthorized use of your voice or content.</span>
+                            </span>
+                        </li>
                     </ul>
                     <button class="btn btn-primary" onclick="subscribeToPlan('proCreator')">
                         Upgrade to Pro Creator

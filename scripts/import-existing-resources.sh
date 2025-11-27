@@ -219,23 +219,33 @@ STATEMENT_ID="AllowExecutionFromAPIGateway"
 if terraform state show aws_lambda_permission.api_gateway &> /dev/null; then
     echo "   ✅ Lambda Permission already in Terraform state"
 else
-    # Check if permission exists
-    if aws lambda get-policy --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null | grep -q "\"Sid\": \"$STATEMENT_ID\""; then
-        echo "   Lambda permission exists, importing..."
-        IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
-            aws_lambda_permission.api_gateway "${LAMBDA_NAME}/${STATEMENT_ID}" 2>&1)
-        IMPORT_EXIT_CODE=$?
-        echo "$IMPORT_OUTPUT"
-        
-        if [ $IMPORT_EXIT_CODE -eq 0 ]; then
-            echo "   ✅ Lambda Permission imported successfully"
-        elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
-            echo "   ✅ Lambda Permission already in state (import skipped)"
+    # Get Lambda policy to check for existing permissions
+    POLICY_JSON=$(aws lambda get-policy --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null || echo "")
+    
+    if [ -n "$POLICY_JSON" ]; then
+        # Check if permission exists with the expected statement ID
+        if echo "$POLICY_JSON" | grep -q "\"Sid\": \"$STATEMENT_ID\""; then
+            echo "   Lambda permission exists, importing..."
+            IMPORT_OUTPUT=$(terraform import -var="stage=$STAGE" -var="aws_region=$REGION" \
+                aws_lambda_permission.api_gateway "${LAMBDA_NAME}/${STATEMENT_ID}" 2>&1)
+            IMPORT_EXIT_CODE=$?
+            echo "$IMPORT_OUTPUT"
+            
+            if [ $IMPORT_EXIT_CODE -eq 0 ]; then
+                echo "   ✅ Lambda Permission imported successfully"
+            elif echo "$IMPORT_OUTPUT" | grep -qi "already managed by Terraform\|already in state"; then
+                echo "   ✅ Lambda Permission already in state (import skipped)"
+            else
+                echo "   ⚠️  Lambda Permission import failed"
+                echo "   Error details: $IMPORT_OUTPUT"
+                echo "   ⚠️  This may cause 'ResourceConflictException' during apply"
+                echo "   ⚠️  If apply fails, the permission already exists and needs to be imported manually"
+            fi
         else
-            echo "   ⚠️  Lambda Permission import failed (will be created if needed)"
+            echo "   ⚠️  Lambda Permission doesn't exist yet (will be created)"
         fi
     else
-        echo "   ⚠️  Lambda Permission doesn't exist yet (will be created)"
+        echo "   ⚠️  Could not retrieve Lambda policy (function may not exist yet)"
     fi
 fi
 

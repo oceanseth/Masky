@@ -96,21 +96,59 @@ jobs:
           terraform plan -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}"
         continue-on-error: true
 
+      - name: Verify Lambda Permission Import
+        run: |
+          cd terraform
+          if ! terraform state show aws_lambda_permission.api_gateway &> /dev/null; then
+            echo "⚠️  Lambda Permission not in state, attempting to import..."
+            LAMBDA_NAME="masky-api-production"
+            STATEMENT_ID="AllowExecutionFromAPIGateway"
+            terraform import -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}" \
+              aws_lambda_permission.api_gateway "${LAMBDA_NAME}/${STATEMENT_ID}" || {
+              echo "⚠️  Import failed. Permission may already exist. Will handle during apply."
+            }
+          else
+            echo "✅ Lambda Permission is in Terraform state"
+          fi
+
       - name: Terraform Apply
         run: |
           cd terraform
-          terraform apply -auto-approve -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}" || {
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 1 ]; then
-              echo "Terraform apply failed. Checking for EntityAlreadyExists errors..."
-              # If it's just EntityAlreadyExists errors, try to import and retry
-              if terraform apply -auto-approve -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}" 2>&1 | grep -q "EntityAlreadyExists"; then
-                echo "EntityAlreadyExists errors detected. Resources may need manual import."
-                exit 1
-              fi
+          APPLY_OUTPUT=$(terraform apply -auto-approve -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}" 2>&1)
+          APPLY_EXIT_CODE=$?
+          
+          if [ $APPLY_EXIT_CODE -ne 0 ]; then
+            if echo "$APPLY_OUTPUT" | grep -q "ResourceConflictException.*statement id.*already exists"; then
+              echo "⚠️  Lambda Permission already exists. Attempting to remove and retry..."
+              LAMBDA_NAME="masky-api-production"
+              STATEMENT_ID="AllowExecutionFromAPIGateway"
+              
+              # Remove the existing permission
+              aws lambda remove-permission \
+                --function-name "$LAMBDA_NAME" \
+                --statement-id "$STATEMENT_ID" \
+                --region ${{ env.AWS_REGION }} 2>&1 || {
+                echo "⚠️  Failed to remove permission (may not exist or already removed)"
+              }
+              
+              # Wait a moment for AWS to propagate
+              sleep 2
+              
+              # Retry apply
+              echo "🔄 Retrying Terraform apply..."
+              terraform apply -auto-approve -var="stage=production" -var="aws_region=${{ env.AWS_REGION }}"
+            elif echo "$APPLY_OUTPUT" | grep -q "EntityAlreadyExists"; then
+              echo "⚠️  EntityAlreadyExists errors detected. Resources may need manual import."
+              echo "$APPLY_OUTPUT"
+              exit 1
+            else
+              echo "❌ Terraform apply failed with error:"
+              echo "$APPLY_OUTPUT"
+              exit $APPLY_EXIT_CODE
             fi
-            exit $EXIT_CODE
-          }
+          else
+            echo "$APPLY_OUTPUT"
+          fi
 
       - name: Output Lambda Function Info
         run: |

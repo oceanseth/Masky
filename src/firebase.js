@@ -17,6 +17,7 @@ import {
   where, 
   getDocs, 
   orderBy,
+  limit,
   onSnapshot,
   doc,
   updateDoc,
@@ -304,7 +305,8 @@ export function getCurrentUser() {
 }
 
 export { auth, db, storage };
-export { 
+export {
+  limit, 
   getFirestore, 
   collection, 
   query, 

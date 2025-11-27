@@ -2412,6 +2412,15 @@ class ProjectWizard {
                     body: JSON.stringify({})
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    console.error('[connectToTwitch] twitch-chatbot-ensure failed:', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        error: errorData
+                    });
+                }
+
                 if (response.ok) {
                     const result = await response.json();
                     // Hide any previous error messages

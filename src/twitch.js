@@ -181,6 +181,7 @@ export async function getRedemptionTitles() {
 /**
  * Get the current broadcaster's info from Twitch API
  * Returns the broadcaster's login name (username) and display name
+ * Uses server-side API endpoint with Firestore caching
  */
 export async function getBroadcasterInfo() {
     const user = getCurrentUser();
@@ -188,37 +189,86 @@ export async function getBroadcasterInfo() {
         throw new Error('User must be logged in with Twitch to use this feature.');
     }
 
-    const broadcasterId = extractTwitchBroadcasterId(user);
-    if (!broadcasterId) {
-        throw new Error('Unable to determine Twitch broadcaster ID for the current user.');
-    }
-
-    const response = await callTwitchUserApi(
-        'users',
-        {
-            query: { id: broadcasterId }
+    // First, try to get from Firestore cache
+    try {
+        const { db, doc, getDoc } = await import('./firebase.js');
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const cachedInfo = userData.twitchUserInfo;
+            const cacheTimestamp = userData.twitchUserInfoUpdatedAt;
+            
+            // Check if cache is less than 24 hours old
+            if (cachedInfo && cacheTimestamp) {
+                const cacheAge = Date.now() - cacheTimestamp.toMillis();
+                const cacheMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+                
+                if (cacheAge < cacheMaxAge) {
+                    return {
+                        id: cachedInfo.id,
+                        login: cachedInfo.login,
+                        displayName: cachedInfo.displayName,
+                        profileImageUrl: cachedInfo.profileImageUrl
+                    };
+                }
+            }
         }
-    );
-
-    if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`Failed to load broadcaster info (${response.status}): ${errorText}`);
+    } catch (error) {
+        console.warn('[getBroadcasterInfo] Error checking Firestore cache:', error);
     }
 
-    const json = await response.json().catch(() => ({ data: [] }));
-    const users = Array.isArray(json?.data) ? json.data : [];
-    
-    if (users.length === 0) {
-        throw new Error('No broadcaster info found');
-    }
+    // If cache miss or error, fetch from our API endpoint
+    try {
+        const idToken = await user.getIdToken();
+        const { config } = await import('./config.js');
+        
+        const response = await fetch(`${config.api.baseUrl}/api/twitch/user-info`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
 
-    const broadcaster = users[0];
-    return {
-        id: broadcaster.id,
-        login: broadcaster.login, // This is the broadcaster username (lowercase)
-        displayName: broadcaster.display_name,
-        profileImageUrl: broadcaster.profile_image_url
-    };
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            throw new Error(`Failed to load broadcaster info (${response.status}): ${errorText}`);
+        }
+
+        const broadcasterInfo = await response.json();
+        
+        // Update local Firestore cache immediately
+        try {
+            const { db, doc, setDoc } = await import('./firebase.js');
+            const userDocRef = doc(db, 'users', user.uid);
+            await setDoc(userDocRef, {
+                twitchUserInfo: {
+                    id: broadcasterInfo.id,
+                    login: broadcasterInfo.login,
+                    displayName: broadcasterInfo.displayName,
+                    profileImageUrl: broadcasterInfo.profileImageUrl
+                },
+                twitchUserInfoUpdatedAt: new Date(),
+                displayName: broadcasterInfo.displayName,
+                photoURL: broadcasterInfo.profileImageUrl,
+                twitchUsername: broadcasterInfo.login
+            }, { merge: true });
+        } catch (cacheError) {
+            console.warn('[getBroadcasterInfo] Error updating cache:', cacheError);
+        }
+
+        return {
+            id: broadcasterInfo.id,
+            login: broadcasterInfo.login,
+            displayName: broadcasterInfo.displayName,
+            profileImageUrl: broadcasterInfo.profileImageUrl
+        };
+    } catch (error) {
+        console.error('[getBroadcasterInfo] Error fetching from API:', error);
+        throw error;
+    }
 }
 
 export const twitchHelpers = {

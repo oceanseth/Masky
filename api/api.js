@@ -648,6 +648,18 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // Twitch user info endpoint (server-side, cached)
+    if (path.includes('/twitch/user-info') && method === 'GET') {
+        const response = await twitchInitializer.handleTwitchUserInfo(event);
+        return {
+            ...response,
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            }
+        };
+    }
+
     // Heygen proxy: video_status.get
     if (path.includes('/heygen/video_status.get') && method === 'GET') {
         try {
@@ -1914,9 +1926,11 @@ exports.handler = async (event, context) => {
     // Ensure Twitch chatbot (chat:read/edit) for the current user
     if (path.includes('/twitch-chatbot-ensure') && method === 'POST') {
         try {
+            console.log('[twitch-chatbot-ensure] Request received');
             // Verify Firebase token
             const authHeader = event.headers.Authorization || event.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                console.log('[twitch-chatbot-ensure] Error: No authorization header');
                 return {
                     statusCode: 401,
                     headers,
@@ -1929,6 +1943,7 @@ exports.handler = async (event, context) => {
             const admin = require('firebase-admin');
             const decoded = await admin.auth().verifyIdToken(idToken);
             const userId = decoded.uid;
+            console.log('[twitch-chatbot-ensure] User authenticated:', userId);
 
             // Ensure the user's Twitch access token exists and has chat scopes
             const userRecord = await admin.auth().getUser(userId);
@@ -1936,7 +1951,14 @@ exports.handler = async (event, context) => {
             const accessToken = claims.twitchAccessToken;
             const twitchId = claims.twitchId;
 
+            console.log('[twitch-chatbot-ensure] Twitch token check:', {
+                hasAccessToken: !!accessToken,
+                hasTwitchId: !!twitchId,
+                twitchId: twitchId
+            });
+
             if (!accessToken || !twitchId) {
+                console.log('[twitch-chatbot-ensure] Error: Twitch not connected');
                 return {
                     statusCode: 400,
                     headers,
@@ -1947,8 +1969,15 @@ exports.handler = async (event, context) => {
             // Validate token scopes
             let validation;
             try {
+                console.log('[twitch-chatbot-ensure] Validating Twitch token...');
                 validation = await twitchInitializer.validateToken(accessToken);
+                console.log('[twitch-chatbot-ensure] Token validation result:', {
+                    client_id: validation.client_id,
+                    scopes: validation.scopes,
+                    userId: validation.user_id
+                });
             } catch (e) {
+                console.error('[twitch-chatbot-ensure] Token validation failed:', e.message);
                 // Map invalid/expired token to actionable error for client
                 return {
                     statusCode: 400,
@@ -1964,7 +1993,15 @@ exports.handler = async (event, context) => {
             const hasChatEdit = scopes.includes('chat:edit');
             const hasChannelBot = scopes.includes('channel:bot'); // Required for Cloud Chatbots to allow bot to subscribe
 
+            console.log('[twitch-chatbot-ensure] Scope check:', {
+                scopes: scopes,
+                hasChatRead,
+                hasChatEdit,
+                hasChannelBot
+            });
+
             if (!hasChatRead || !hasChatEdit) {
+                console.log('[twitch-chatbot-ensure] Error: Missing chat scopes');
                 return {
                     statusCode: 400,
                     headers,
@@ -1976,6 +2013,7 @@ exports.handler = async (event, context) => {
             }
 
             if (!hasChannelBot) {
+                console.log('[twitch-chatbot-ensure] Error: Missing channel:bot scope');
                 return {
                     statusCode: 400,
                     headers,
@@ -4874,7 +4912,8 @@ async function redeemPoints(event) {
 
         const { userId, viewerId, redemptionId, redemptionName, creditCost, customString, videoUrl, message, avatarId } = body;
 
-        if (!userId || !viewerId || !redemptionId || !creditCost) {
+        // Check for required fields - creditCost can be 0, so check for undefined/null explicitly
+        if (!userId || !viewerId || !redemptionId || creditCost === undefined || creditCost === null) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({ error: 'Missing required fields' })
@@ -5020,34 +5059,55 @@ async function redeemPoints(event) {
 
         console.log('Redemption created:', { redemptionId: redemptionRef.id, userId, viewerId, creditCost });
 
-        // Send chat message notification for custom redemptions
+        // Send chat message notification using maskyai bot account
         // Only send if this is a custom redemption (has redemptionConfig)
         if (redemptionConfig) {
             try {
-                // Get broadcaster's Twitch access token from custom claims
+                // Get broadcaster's Twitch ID and username
                 const userRecord = await admin.auth().getUser(userId);
                 const claims = userRecord.customClaims || {};
-                const twitchAccessToken = claims.twitchAccessToken;
-                const twitchId = claims.twitchId;
+                const broadcasterTwitchId = claims.twitchId;
+                // userData is already defined above (line 5038)
+                const broadcasterTwitchUsername = userData.twitchUsername || null;
                 
-                if (twitchAccessToken && twitchId) {
-                    // Get viewer's Twitch username
-                    const viewerTwitchUsername = viewerData.twitchUsername || 
-                                                viewerData.displayName || 
-                                                viewerData.viewerTwitchUsername ||
-                                                'Anonymous';
-                    
-                    // Format username (remove spaces, ensure it starts with @)
-                    const username = viewerTwitchUsername.replace(/\s+/g, '').replace(/^@?/, '');
-                    
-                    // Create chat message: "@username redeemed [redemption name]"
-                    const chatMessage = `@${username} redeemed ${redemptionName}`;
-                    
-                    // Send message to Twitch chat
-                    await sendTwitchChatMessage(twitchId, twitchAccessToken, chatMessage);
-                    console.log('Sent redemption notification to Twitch chat:', chatMessage);
+                if (!broadcasterTwitchId) {
+                    console.warn('Cannot send Twitch chat message: broadcaster Twitch ID not found');
                 } else {
-                    console.warn('Cannot send Twitch chat message: broadcaster Twitch token not found');
+                    // Get bot account tokens from Firestore
+                    const botTokensRef = db.collection('system').doc('bot_tokens');
+                    const botTokensDoc = await botTokensRef.get();
+                    
+                    if (!botTokensDoc.exists || !botTokensDoc.data().accessToken) {
+                        console.warn('Cannot send Twitch chat message: bot account tokens not found');
+                    } else {
+                        const botTokens = botTokensDoc.data();
+                        const botAccessToken = botTokens.accessToken;
+                        const botUserId = '1386063343'; // maskyai chatbot account user ID
+                        
+                        // Get viewer's Twitch username
+                        const viewerTwitchUsername = viewerData.twitchUsername || 
+                                                    viewerData.displayName || 
+                                                    viewerData.viewerTwitchUsername ||
+                                                    'Anonymous';
+                        
+                        // Format viewer username (remove spaces, ensure it starts with @)
+                        const viewerUsername = viewerTwitchUsername.replace(/\s+/g, '').replace(/^@?/, '');
+                        
+                        // Get broadcaster username for URL (fallback to displayName if twitchUsername not available)
+                        const broadcasterUsername = broadcasterTwitchUsername || 
+                                                   userData.displayName || 
+                                                   'streamer';
+                        
+                        // Format broadcaster username for URL (lowercase, no spaces)
+                        const broadcasterUrlName = broadcasterUsername.toLowerCase().replace(/\s+/g, '');
+                        
+                        // Create chat message: "@{viewer_name} just redeemed {redemption_name} at https://masky.ai/{broadcaster_name}"
+                        const chatMessage = `@${viewerUsername} just redeemed ${redemptionName} at https://masky.ai/${broadcasterUrlName}`;
+                        
+                        // Send message to Twitch chat using bot account
+                        await sendTwitchChatMessage(broadcasterTwitchId, botAccessToken, chatMessage, botUserId);
+                        console.log('Sent redemption notification to Twitch chat via bot account:', chatMessage);
+                    }
                 }
             } catch (chatError) {
                 // Don't fail the redemption processing if chat message fails
@@ -5181,18 +5241,22 @@ async function refundRedemption(event) {
  * Send a message to Twitch chat
  * Uses Twitch Helix API to send chat messages
  * @param {string} broadcasterId - The Twitch broadcaster user ID
- * @param {string} accessToken - The broadcaster's Twitch access token (must have chat:edit scope)
+ * @param {string} accessToken - The access token (bot account or broadcaster's token, must have chat:edit scope)
  * @param {string} message - The message to send
+ * @param {string} senderId - Optional sender ID (bot user ID). If not provided, uses broadcasterId
  * @returns {Promise<Object>} Response from Twitch API
  */
-async function sendTwitchChatMessage(broadcasterId, accessToken, message) {
+async function sendTwitchChatMessage(broadcasterId, accessToken, message, senderId = null) {
     try {
         await twitchInitializer.initialize();
         const { clientId } = twitchInitializer.getCredentials();
         
+        // Use senderId if provided (for bot account), otherwise use broadcasterId
+        const actualSenderId = senderId || broadcasterId;
+        
         // Twitch Helix API endpoint for sending chat messages
-        // Note: This endpoint requires the broadcaster to have chat:edit scope
-        // and the broadcaster_id must match the user associated with the access token
+        // Note: This endpoint requires chat:edit scope
+        // When using bot account, sender_id should be the bot user ID
         const response = await fetch('https://api.twitch.tv/helix/chat/messages', {
             method: 'POST',
             headers: {
@@ -5202,7 +5266,7 @@ async function sendTwitchChatMessage(broadcasterId, accessToken, message) {
             },
             body: JSON.stringify({
                 broadcaster_id: broadcasterId,
-                sender_id: broadcasterId, // Moderator ID (same as broadcaster for self-messaging)
+                sender_id: actualSenderId, // Bot user ID when using bot account, broadcaster ID otherwise
                 message: message
             })
         });

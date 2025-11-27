@@ -7,8 +7,10 @@ import { getCurrentUser } from './firebase.js';
  * @param {Object} redemption - Redemption data object
  * @param {Function} onUpdate - Callback when redemption is updated
  * @param {Function} onDelete - Callback when redemption is deleted (null if not deletable)
+ * @param {Function} onSave - Callback when redemption should be saved (null if already saved)
+ * @param {boolean} isUnsaved - Whether this redemption hasn't been saved yet
  */
-export function renderRedemptionCard(container, redemption, onUpdate, onDelete) {
+export function renderRedemptionCard(container, redemption, onUpdate, onDelete, onSave, isUnsaved = false) {
     const card = document.createElement('div');
     card.className = 'redemption-card';
     card.dataset.redemptionId = redemption.id;
@@ -16,10 +18,19 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
     
     const isCustomVideo = redemption.id === 'custom-video';
     
+    // Store original redemption state for comparison
+    const originalRedemption = { ...redemption };
+    
+    // Show Save button initially only for unsaved redemptions
+    let hasUnsavedChanges = isUnsaved;
+    
     card.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
             <h5 style="color: #c084fc; margin: 0; font-size: 1.1rem;">${redemption.name || 'Unnamed Redemption'}</h5>
-            ${onDelete ? `<button class="delete-redemption-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Delete</button>` : ''}
+            <div class="redemption-actions" style="display: flex; gap: 0.5rem;">
+                ${(onSave && hasUnsavedChanges) ? `<button class="save-redemption-btn" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem; font-weight: 600;">Save</button>` : ''}
+                ${(onDelete && !hasUnsavedChanges) ? `<button class="delete-redemption-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Delete</button>` : ''}
+            </div>
         </div>
         
         <div class="config-item" style="margin-bottom: 1rem;">
@@ -34,7 +45,7 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
         
         <div class="config-item" style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8);">Credit Cost</label>
-            <input type="number" class="redemption-credit-cost" min="1" step="0.01" value="${redemption.creditCost || 5}" ${isCustomVideo ? '' : ''} style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
+            <input type="number" class="redemption-credit-cost" min="0" step="0.01" value="${redemption.creditCost !== undefined && redemption.creditCost !== null ? redemption.creditCost : 5}" ${isCustomVideo ? '' : ''} style="width: 150px; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); border-radius: 6px; color: #fff;">
         </div>
         
         <div class="config-item" style="margin-bottom: 1rem;">
@@ -60,8 +71,6 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
                 <span>Show in queue${isCustomVideo ? ' (always enabled for Custom Video)' : ''}</span>
             </label>
         </div>
-        
-        
     `;
     
     // Add tooltip hover functionality
@@ -74,6 +83,37 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
         trigger.addEventListener('mouseleave', () => {
             tooltipTrigger.style.visibility = 'hidden';
         });
+    }
+    
+    // Wire up save button
+    if (onSave) {
+        const saveBtn = card.querySelector('.save-redemption-btn');
+        if (saveBtn) {
+            saveBtn.onclick = async () => {
+                // Get current values from the form
+                const updatedRedemption = {
+                    ...redemption,
+                    name: card.querySelector('.redemption-name')?.value || redemption.name,
+                    description: card.querySelector('.redemption-description')?.value || redemption.description,
+                    creditCost: parseFloat(card.querySelector('.redemption-credit-cost')?.value) || redemption.creditCost,
+                    allowCustomUserString: card.querySelector('.redemption-allow-custom-string')?.checked || false,
+                    customStringDescription: card.querySelector('.redemption-custom-string-description')?.value || '',
+                    showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false),
+                };
+                
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                
+                try {
+                    await onSave(updatedRedemption);
+                } catch (error) {
+                    console.error('Error saving redemption:', error);
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                    alert('Failed to save redemption: ' + (error.message || 'Unknown error'));
+                }
+            };
+        }
     }
     
     // Wire up delete button
@@ -97,25 +137,142 @@ export function renderRedemptionCard(container, redemption, onUpdate, onDelete) 
         });
     }
     
+    // Helper function to check if redemption has changed
+    const checkForChanges = () => {
+        const creditCostInput = card.querySelector('.redemption-credit-cost')?.value;
+        const currentCreditCost = creditCostInput !== undefined && creditCostInput !== null && creditCostInput !== '' 
+            ? parseFloat(creditCostInput) 
+            : (originalRedemption.creditCost !== undefined && originalRedemption.creditCost !== null ? originalRedemption.creditCost : 0);
+        
+        const currentValues = {
+            name: card.querySelector('.redemption-name')?.value || '',
+            description: card.querySelector('.redemption-description')?.value || '',
+            creditCost: isNaN(currentCreditCost) ? 0 : currentCreditCost,
+            allowCustomUserString: card.querySelector('.redemption-allow-custom-string')?.checked || false,
+            customStringDescription: card.querySelector('.redemption-custom-string-description')?.value || '',
+            showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false),
+        };
+        
+        const originalValues = {
+            name: originalRedemption.name || '',
+            description: originalRedemption.description || '',
+            creditCost: originalRedemption.creditCost !== undefined && originalRedemption.creditCost !== null ? originalRedemption.creditCost : 0,
+            allowCustomUserString: originalRedemption.allowCustomUserString || false,
+            customStringDescription: originalRedemption.customStringDescription || '',
+            showInQueue: isCustomVideo ? true : (originalRedemption.showInQueue !== false),
+        };
+        
+        // Compare values
+        const changed = 
+            currentValues.name !== originalValues.name ||
+            currentValues.description !== originalValues.description ||
+            currentValues.creditCost !== originalValues.creditCost ||
+            currentValues.allowCustomUserString !== originalValues.allowCustomUserString ||
+            currentValues.customStringDescription !== originalValues.customStringDescription ||
+            currentValues.showInQueue !== originalValues.showInQueue;
+        
+        return changed;
+    };
+    
+    // Helper function to update button visibility
+    const updateButtonVisibility = () => {
+        const actionsContainer = card.querySelector('.redemption-actions');
+        if (!actionsContainer || isCustomVideo) return;
+        
+        hasUnsavedChanges = checkForChanges();
+        
+        // Clear existing buttons
+        actionsContainer.innerHTML = '';
+        
+        // Show Save button if there are unsaved changes
+        if (onSave && hasUnsavedChanges) {
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'save-redemption-btn';
+            saveBtn.textContent = 'Save';
+            saveBtn.style.cssText = 'background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #10b981; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem; font-weight: 600;';
+            saveBtn.onclick = async () => {
+                // Get current values from the form
+                const creditCostInput = card.querySelector('.redemption-credit-cost')?.value;
+                const creditCostValue = creditCostInput !== undefined && creditCostInput !== null && creditCostInput !== '' 
+                    ? parseFloat(creditCostInput) 
+                    : redemption.creditCost;
+                
+                const updatedRedemption = {
+                    ...redemption,
+                    name: card.querySelector('.redemption-name')?.value || redemption.name,
+                    description: card.querySelector('.redemption-description')?.value || redemption.description,
+                    creditCost: isNaN(creditCostValue) ? redemption.creditCost : creditCostValue,
+                    allowCustomUserString: card.querySelector('.redemption-allow-custom-string')?.checked || false,
+                    customStringDescription: card.querySelector('.redemption-custom-string-description')?.value || '',
+                    showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false),
+                };
+                
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                
+                try {
+                    await onSave(updatedRedemption);
+                    // Update original redemption state after successful save
+                    Object.assign(originalRedemption, updatedRedemption);
+                    // Update button visibility (will hide Save, show Delete)
+                    updateButtonVisibility();
+                } catch (error) {
+                    console.error('Error saving redemption:', error);
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                    alert('Failed to save redemption: ' + (error.message || 'Unknown error'));
+                }
+            };
+            actionsContainer.appendChild(saveBtn);
+        }
+        
+        // Show Delete button if there are no unsaved changes
+        if (onDelete && !hasUnsavedChanges) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-redemption-btn';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.style.cssText = 'background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #ef4444; padding: 0.25rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;';
+            deleteBtn.onclick = () => {
+                if (confirm(`Are you sure you want to delete "${redemption.name}"?`)) {
+                    onDelete(redemption.id);
+                }
+            };
+            actionsContainer.appendChild(deleteBtn);
+        }
+    };
+    
     // Wire up input change handlers
     const inputs = card.querySelectorAll('input, textarea');
     inputs.forEach(input => {
         input.addEventListener('change', () => {
+            const creditCostInput = card.querySelector('.redemption-credit-cost')?.value;
+            const creditCostValue = creditCostInput !== undefined && creditCostInput !== null && creditCostInput !== '' 
+                ? parseFloat(creditCostInput) 
+                : redemption.creditCost;
+            
             const updatedRedemption = {
                 ...redemption,
                 name: card.querySelector('.redemption-name')?.value || redemption.name,
                 description: card.querySelector('.redemption-description')?.value || redemption.description,
-                creditCost: parseFloat(card.querySelector('.redemption-credit-cost')?.value) || redemption.creditCost,
+                creditCost: isNaN(creditCostValue) ? redemption.creditCost : creditCostValue,
                 allowCustomUserString: card.querySelector('.redemption-allow-custom-string')?.checked || false,
                 customStringDescription: card.querySelector('.redemption-custom-string-description')?.value || '',
                 showInQueue: isCustomVideo ? true : (card.querySelector('.redemption-show-in-queue')?.checked !== false), // Always true for custom video
             };
             
-            
-            
             if (onUpdate) {
                 onUpdate(updatedRedemption);
             }
+            
+            // Update button visibility when any field changes
+            updateButtonVisibility();
+        });
+    });
+    
+    // Also listen to input events for real-time updates (not just on blur)
+    inputs.forEach(input => {
+        input.addEventListener('input', () => {
+            updateButtonVisibility();
         });
     });
     

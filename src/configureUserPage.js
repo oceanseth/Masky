@@ -1,7 +1,7 @@
 import { getCurrentUser, onAuthChange } from './firebase.js';
 import { db, collection, doc, getDoc, setDoc, query, where, getDocs } from './firebase.js';
 import { config as appConfig } from './config.js';
-import { renderRedemptionCard, renderRedemptionQueue } from './customRedemptionCard.js';
+import { renderRedemptionCard } from './customRedemptionCard.js';
 
 /**
  * Render user page configuration UI
@@ -20,12 +20,15 @@ export async function renderUserPageConfig(container) {
         root.id = 'userPageConfig';
         containerElement.appendChild(root);
     }
+    
+    // Store reference to root element for renderRedemptions
+    configRootElement = root;
 
     root.innerHTML = `
         <div class="user-page-config" style="margin: 20px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 1rem;">
-                    <button id="closeUserPageConfig" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">← Back</button>
+                    <button id="closeUserPageConfig" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3); display: none;">← Back</button>
                     <h3 class="section-title" style="margin: 0;">User Page Configuration</h3>
                 </div>
                 <button class="btn btn-secondary" id="saveUserPageConfig" style="padding: 0.5rem 1rem;">Save Settings</button>
@@ -47,22 +50,14 @@ export async function renderUserPageConfig(container) {
             </div>
 
             <div class="config-section" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                    <div>
-                        <h4 style="color: #c084fc; margin-bottom: 0.5rem; font-size: 1.1rem;">Redemptions</h4>
-                        <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-bottom: 1.5rem;">As users donate, they get points to use on redemptions.</p>
-                        
-                        <div id="redemptionsList" style="margin-bottom: 1rem;">
-                            <!-- Redemption cards will be rendered here -->
-                        </div>
-                        
-                        <button id="addNewRedemptionBtn" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(192,132,252,0.2); border: 1px solid rgba(192,132,252,0.5); color: #c084fc;">Add New Redemption</button>
-                    </div>
-                    
-                    <div id="redemptionQueueContainer" style="border-left: 1px solid rgba(192,132,252,0.3); padding-left: 2rem;">
-                        <!-- Redemption queue will be rendered here -->
-                    </div>
+                <h4 style="color: #c084fc; margin-bottom: 0.5rem; font-size: 1.1rem;">Redemptions</h4>
+                <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-bottom: 1.5rem;">As users donate, they get points to use on redemptions. Manage your redemption queue in the Streamer tab.</p>
+                
+                <div id="redemptionsList" style="margin-bottom: 1rem;">
+                    <!-- Redemption cards will be rendered here -->
                 </div>
+                
+                <button id="addNewRedemptionBtn" class="btn btn-secondary" style="padding: 0.5rem 1rem; background: rgba(192,132,252,0.2); border: 1px solid rgba(192,132,252,0.5); color: #c084fc;">Add New Redemption</button>
             </div>
 
             <div class="config-section" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
@@ -100,8 +95,23 @@ export async function renderUserPageConfig(container) {
         </div>
     `;
 
-    // Load existing config
+    // Load existing config (this will also render redemptions)
     await loadUserPageConfig();
+    
+    // Ensure redemptions are rendered even if loadUserPageConfig didn't find any
+    if (currentRedemptions.length === 0) {
+        // Initialize with default Custom Video redemption
+        const customVideoRedemption = {
+            id: 'custom-video',
+            name: 'Custom Video',
+            description: 'Create a custom video that will play on stream',
+            creditCost: 5,
+            allowCustomUserString: true,
+            showInQueue: true
+        };
+        currentRedemptions = [customVideoRedemption];
+        renderRedemptions();
+    }
 
     // Wire up tooltip for bits to points amount
     const bitsTooltipTrigger = root.querySelector('.bits-to-points-tooltip');
@@ -146,21 +156,24 @@ export async function renderUserPageConfig(container) {
     // Wire up add new redemption button
     const addRedemptionBtn = root.querySelector('#addNewRedemptionBtn');
     if (addRedemptionBtn) {
-        addRedemptionBtn.onclick = () => addNewRedemption();
+        addRedemptionBtn.onclick = () => {
+            addNewRedemption();
+            // Scroll to the new redemption card
+            setTimeout(() => {
+                const redemptionCards = root.querySelectorAll('.redemption-card');
+                if (redemptionCards.length > 0) {
+                    redemptionCards[redemptionCards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }, 100);
+        };
     }
     
-    // Load redemption queue
-    const user = getCurrentUser();
-    if (user) {
-        const queueContainer = root.querySelector('#redemptionQueueContainer');
-        if (queueContainer) {
-            await renderRedemptionQueue(queueContainer, user.uid);
-        }
-    }
+    // Redemption queue is now in the Streamer tab, not here
 }
 
 // Store redemptions in memory
 let currentRedemptions = [];
+let configRootElement = null; // Store reference to the root element
 
 /**
  * Load user page configuration from Firestore
@@ -240,17 +253,28 @@ async function loadUserPageConfig() {
  * Render all redemption cards
  */
 function renderRedemptions() {
-    const container = document.getElementById('redemptionsList');
-    if (!container) return;
+    // Try to find container in the config root first, then fallback to document
+    const container = configRootElement 
+        ? configRootElement.querySelector('#redemptionsList')
+        : document.getElementById('redemptionsList');
+    if (!container) {
+        console.warn('redemptionsList container not found');
+        return;
+    }
     
     container.innerHTML = '';
     
     currentRedemptions.forEach((redemption, index) => {
         const isCustomVideo = redemption.id === 'custom-video';
+        // Only allow delete for saved redemptions (not temporary IDs)
+        // Temporary IDs start with "redemption-" followed by a timestamp
+        const isUnsaved = redemption.id.startsWith('redemption-') && redemption.id !== 'custom-video';
         const onDelete = isCustomVideo ? null : (id) => deleteRedemption(id);
+        // Provide onSave for all redemptions (card will show it when needed)
+        const onSave = isCustomVideo ? null : (updatedRedemption) => saveSingleRedemption(updatedRedemption, redemption.id);
         const onUpdate = (updatedRedemption) => updateRedemption(updatedRedemption);
         
-        renderRedemptionCard(container, redemption, onUpdate, onDelete);
+        renderRedemptionCard(container, redemption, onUpdate, onDelete, onSave, isUnsaved);
         
         // Add separator between redemptions (except after the last one)
         if (index < currentRedemptions.length - 1) {
@@ -294,6 +318,88 @@ function updateRedemption(updatedRedemption) {
 function deleteRedemption(redemptionId) {
     currentRedemptions = currentRedemptions.filter(r => r.id !== redemptionId);
     renderRedemptions();
+}
+
+/**
+ * Save a single redemption to Firestore
+ */
+async function saveSingleRedemption(redemption, oldId) {
+    try {
+        const user = getCurrentUser();
+        if (!user) {
+            throw new Error('Please sign in to save redemption');
+        }
+
+        // Only generate a new ID if this is an unsaved redemption (temporary ID)
+        const isTemporaryId = oldId.startsWith('redemption-');
+        let finalId = oldId;
+        
+        if (isTemporaryId) {
+            // Generate a permanent ID based on name
+            const nameSlug = (redemption.name || 'redemption').toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 30);
+            const timestamp = Date.now();
+            finalId = `${nameSlug}-${timestamp}`;
+        }
+        
+        // Update the redemption in currentRedemptions array
+        const index = currentRedemptions.findIndex(r => r.id === oldId);
+        if (index !== -1) {
+            currentRedemptions[index] = { ...redemption, id: finalId };
+        }
+        
+        // Save to Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (!userDoc.exists()) {
+            throw new Error('User document not found');
+        }
+        
+        const userData = userDoc.data();
+        const config = userData.userPageConfig || {};
+        const redemptions = config.redemptions || [];
+        
+        // Remove old redemption if it exists (only if ID changed), add/update redemption
+        const updatedRedemptions = redemptions.filter(r => r.id !== oldId);
+        updatedRedemptions.push({ ...redemption, id: finalId });
+        
+        // Ensure Custom Video redemption exists
+        const customVideoRedemption = updatedRedemptions.find(r => r.id === 'custom-video');
+        if (!customVideoRedemption) {
+            updatedRedemptions.unshift({
+                id: 'custom-video',
+                name: 'Custom Video',
+                description: 'Create a custom video that will play on stream',
+                creditCost: config.customVideoPrice || 5,
+                allowCustomUserString: true,
+                showInQueue: true
+            });
+        }
+        
+        // Update config
+        const updatedConfig = {
+            ...config,
+            redemptions: updatedRedemptions
+        };
+        
+        await setDoc(userDocRef, {
+            userPageConfig: updatedConfig
+        }, { merge: true });
+        
+        // Re-render to update UI (remove save button, show delete button)
+        renderRedemptions();
+        
+        // Show success message
+        const successMsg = document.createElement('div');
+        successMsg.textContent = 'Redemption saved successfully!';
+        successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem; border-radius: 8px; z-index: 10000;';
+        document.body.appendChild(successMsg);
+        setTimeout(() => successMsg.remove(), 3000);
+        
+    } catch (error) {
+        console.error('Error saving single redemption:', error);
+        throw error;
+    }
 }
 
 /**
@@ -346,6 +452,35 @@ async function saveUserPageConfig() {
         await setDoc(userDocRef, {
             userPageConfig: config
         }, { merge: true });
+
+        // After saving, regenerate IDs for newly saved redemptions to mark them as saved
+        // Replace temporary IDs (redemption-*) with more permanent IDs based on name
+        currentRedemptions = currentRedemptions.map(r => {
+            if (r.id.startsWith('redemption-') && r.id !== 'custom-video') {
+                // Generate a more permanent ID based on name
+                const nameSlug = (r.name || 'redemption').toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 30);
+                const timestamp = Date.now();
+                return { ...r, id: `${nameSlug}-${timestamp}` };
+            }
+            return r;
+        });
+        
+        // Update the saved config with new IDs
+        const updatedConfig = {
+            ...config,
+            redemptions: currentRedemptions.map(r => {
+                if (r.id === 'custom-video') {
+                    return { ...r, showInQueue: true };
+                }
+                return r;
+            })
+        };
+        await setDoc(userDocRef, {
+            userPageConfig: updatedConfig
+        }, { merge: true });
+        
+        // Re-render to update the UI (remove unsaved indicators, show delete buttons)
+        renderRedemptions();
 
         // If bitsToPointsAmount > 0, ensure EventSub subscription for channel.cheer exists
         if (bitsToPointsAmount > 0) {

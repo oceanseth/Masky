@@ -997,6 +997,31 @@ class TwitchInitializer {
               
               console.log(`Processing chat message from ${chatterName}: "${messageText}"`);
               
+              // Store ALL chat messages to chatMessages collection for streamer view
+              // This allows streamers to see recent chat activity
+              try {
+                const chatMessageData = {
+                  username: chatterName,
+                  userName: chatterName,
+                  chatter_user_name: chatterName,
+                  message: {
+                    text: messageText
+                  },
+                  messageText: messageText,
+                  text: messageText,
+                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                  chatterId: chatterId,
+                  userId: chatterId
+                };
+                
+                // Store in users/{userId}/chatMessages collection
+                await db.collection('users').doc(userId).collection('chatMessages').add(chatMessageData);
+                console.log(`Chat message stored: ${userId}/chatMessages`);
+              } catch (chatStoreError) {
+                console.error('Error storing chat message:', chatStoreError);
+                // Continue processing even if storage fails
+              }
+              
               // Parse command format: !maskyai <trigger> or just <trigger> if bot is mentioned
               // Check if message starts with !maskyai or contains the bot name
               const botMentionPattern = /^!maskyai\s+(.+)$/i;
@@ -1515,6 +1540,148 @@ class TwitchInitializer {
           message: error.message,
           details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
           errorCode: error.code || error.statusCode || error.status
+        })
+      };
+    }
+  }
+
+  // Handle fetching Twitch user info (server-side, cached in Firestore)
+  async handleTwitchUserInfo(event) {
+    try {
+      const authHeader = event.headers?.Authorization || event.headers?.authorization;
+      if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ error: 'Unauthorized: missing bearer token' })
+        };
+      }
+
+      const idToken = authHeader.split(' ')[1];
+
+      const firebaseInitializer = require('./firebaseInit');
+      await firebaseInitializer.initialize();
+      const admin = require('firebase-admin');
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      const userId = decoded.uid;
+
+      const db = admin.firestore();
+      const userDocRef = db.collection('users').doc(userId);
+      const userDoc = await userDocRef.get();
+
+      if (!userDoc.exists) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'User not found' })
+        };
+      }
+
+      const userData = userDoc.data();
+      const twitchId = userData.twitchId;
+
+      if (!twitchId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'User does not have a Twitch ID' })
+        };
+      }
+
+      // Check if we have cached data that's less than 24 hours old
+      const cachedData = userData.twitchUserInfo;
+      const cacheTimestamp = userData.twitchUserInfoUpdatedAt;
+      const now = Date.now();
+      let cacheAge = Infinity;
+      if (cacheTimestamp) {
+        // Handle Firestore Timestamp or regular Date
+        const timestampMs = cacheTimestamp.toMillis ? cacheTimestamp.toMillis() : (cacheTimestamp.getTime ? cacheTimestamp.getTime() : cacheTimestamp);
+        cacheAge = now - timestampMs;
+      }
+      const cacheMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+      if (cachedData && cacheAge < cacheMaxAge) {
+        // Return cached data
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            id: cachedData.id,
+            login: cachedData.login,
+            displayName: cachedData.displayName,
+            profileImageUrl: cachedData.profileImageUrl,
+            cached: true
+          })
+        };
+      }
+
+      // Fetch fresh data from Twitch API using app access token
+      // We can use app access token (client credentials) to fetch user info by ID
+      // This is better than requiring user tokens
+      const appAccessToken = await this.getAppAccessToken();
+      const { clientId } = await this.initialize();
+      
+      // Fetch user info from Twitch API using GET /helix/users?id={user_id}
+      const usersUrl = `https://api.twitch.tv/helix/users?id=${twitchId}`;
+      const usersResponse = await fetch(usersUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${appAccessToken}`,
+          'Client-Id': clientId
+        }
+      });
+
+      if (!usersResponse.ok) {
+        const errorText = await usersResponse.text().catch(() => 'Unknown error');
+        console.error(`Failed to fetch Twitch user info: ${usersResponse.status} - ${errorText}`);
+        return {
+          statusCode: usersResponse.status,
+          body: JSON.stringify({ 
+            error: 'Failed to fetch user info from Twitch API',
+            details: errorText 
+          })
+        };
+      }
+
+      const usersData = await usersResponse.json();
+      if (!usersData.data || usersData.data.length === 0) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'User not found in Twitch API' })
+        };
+      }
+
+      const twitchUser = usersData.data[0];
+      
+      const userInfo = {
+        id: twitchUser.id,
+        login: twitchUser.login,
+        displayName: twitchUser.display_name,
+        profileImageUrl: twitchUser.profile_image_url
+      };
+
+      // Cache in Firestore
+      await userDocRef.set({
+        twitchUserInfo: userInfo,
+        twitchUserInfoUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // Also update main fields if they're missing or different
+        displayName: userInfo.displayName || userData.displayName,
+        photoURL: userInfo.profileImageUrl || userData.photoURL,
+        twitchUsername: userInfo.login || userData.twitchUsername,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          ...userInfo,
+          cached: false
+        })
+      };
+
+    } catch (error) {
+      console.error('Error fetching Twitch user info:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ 
+          error: 'Internal server error',
+          message: error.message 
         })
       };
     }

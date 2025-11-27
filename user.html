@@ -44,6 +44,10 @@
             border-radius: 16px;
         }
 
+        .user-header.streamer-header {
+            flex-direction: column;
+        }
+
         .user-header-left {
             display: flex;
             flex-direction: column;
@@ -160,6 +164,117 @@
             cursor: not-allowed;
         }
 
+        /* Tab Styles */
+        .user-page-tabs {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 2px solid rgba(192,132,252,0.3);
+            margin-bottom: 0;
+        }
+
+        .user-page-tab {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            transition: all 0.2s;
+            margin-bottom: -2px;
+        }
+
+        .user-page-tab:hover {
+            color: rgba(255,255,255,0.9);
+        }
+
+        .user-page-tab.active {
+            color: #c084fc;
+            border-bottom-color: #c084fc;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Chat Styles */
+        .chat-message-item {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .chat-message-username {
+            font-weight: 600;
+            color: #c084fc;
+            margin-right: 0.5rem;
+        }
+
+        .chat-message-text {
+            color: rgba(255,255,255,0.9);
+        }
+
+        .chat-message-time {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+
+        .important-message {
+            background: rgba(251, 191, 36, 0.15);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+
+        .important-message-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #fbbf24;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            cursor: help;
+        }
+
+        .important-message-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: #fbbf24;
+        }
+
+        .important-message-tooltip {
+            visibility: hidden;
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background: rgba(0,0,0,0.9);
+            color: #fff;
+            padding: 0.5rem;
+            border-radius: 6px;
+            white-space: normal;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            z-index: 1000;
+            width: 250px;
+        }
+
+        .important-message-icon:hover .important-message-tooltip {
+            visibility: visible;
+        }
+
+        .important-message-icon.tooltip-visible .important-message-tooltip {
+            visibility: visible;
+        }
 
         .loading-state {
             text-align: center;
@@ -330,54 +445,61 @@
         <div id="userPageConfigContainer" style="display: none;"></div>
 
         <div id="userContent" style="display: none;">
-            <div class="user-header">
-                <div class="user-header-left">
-                    <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
-                    <h1 id="userName" class="user-name"></h1>
-                    <div id="ownerControls" style="display: none; margin-top: 1rem;">
-                        <button class="donate-btn" id="configureUserPageBtn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(192,132,252,0.3);">Configure User Page</button>
-                    </div>
-                </div>
-                <div class="user-header-right">
-                    <!-- Credits Display -->
-                    <div id="pointsSection" class="donate-section" style="display: none; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
-                        <h2 class="donate-title" style="color: #3b82f6;">Your Credits</h2>
-                        <div style="text-align: center; margin: 0.5rem 0;">
-                            <div style="font-size: 2.5rem; font-weight: bold; color: #3b82f6;" id="pointsCount">0</div>
-                            <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem; font-size: 0.9rem;">Credits available for redemptions</p>
-                        </div>
-                    </div>
-
-                    <!-- Donation Section -->
-                    <div class="donate-section">
-                        <h2 class="donate-title">Buy Credits</h2>
-                        <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem; font-size: 0.95rem;">
-                            Support this creator and earn credits! You'll receive 1 credit for every dollar donated. Credits can be used for redemptions in their channel. VoiceCert Inc. (our parent company) will handle the payment processing.
-                        </p>
-                        <div class="donate-amounts">
-                            <button class="donate-amount-btn" data-amount="5">$5</button>
-                            <button class="donate-amount-btn" data-amount="10">$10</button>
-                            <button class="donate-amount-btn" data-amount="25">$25</button>
-                            <button class="donate-amount-btn" data-amount="50">$50</button>
-                            <button class="donate-amount-btn" data-amount="100">$100</button>
-                        </div>
-                        <div style="margin-top: 1rem;">
-                            <input 
-                                type="number" 
-                                id="customAmount" 
-                                class="donate-custom-input" 
-                                placeholder="Custom amount"
-                                min="1"
-                                step="0.01"
-                            >
-                        </div>
-                        <button id="donateBtn" class="donate-btn">Buy Credits</button>
-                    </div>
+            <!-- Tabs for Streamer View (above header) -->
+            <div id="ownerControls" style="display: none; margin-bottom: 2rem;">
+                <div class="user-page-tabs">
+                    <button class="user-page-tab active" data-tab="viewer">Viewer</button>
+                    <button class="user-page-tab" data-tab="streamer">Streamer</button>
+                    <button class="user-page-tab" data-tab="settings">Settings</button>
                 </div>
             </div>
 
-            <!-- Three Column Section: Tribe, Avatar Carousel, Top Donors -->
-            <div id="userStatsSection" style="display: none;">
+            <!-- Viewer Tab Content (default - shows header sections) -->
+            <div id="viewerTabContent" class="tab-content active">
+                <div class="user-header">
+                    <div class="user-header-left">
+                        <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
+                        <h1 id="userName" class="user-name"></h1>
+                    </div>
+                    <div class="user-header-right">
+                        <!-- Credits Display -->
+                        <div id="pointsSection" class="donate-section" style="display: none; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
+                            <h2 class="donate-title" style="color: #3b82f6;">Your Credits</h2>
+                            <div style="text-align: center; margin: 0.5rem 0;">
+                                <div style="font-size: 2.5rem; font-weight: bold; color: #3b82f6;" id="pointsCount">0</div>
+                                <p style="color: rgba(255, 255, 255, 0.8); margin-top: 0.5rem; font-size: 0.9rem;">Credits available for redemptions</p>
+                            </div>
+                        </div>
+
+                        <!-- Donation Section -->
+                        <div class="donate-section">
+                            <h2 class="donate-title">Buy Credits</h2>
+                            <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 1rem; font-size: 0.95rem;">
+                                Support this creator and earn credits! You'll receive 1 credit for every dollar donated. Credits can be used for redemptions in their channel. VoiceCert Inc. (our parent company) will handle the payment processing.
+                            </p>
+                            <div class="donate-amounts">
+                                <button class="donate-amount-btn" data-amount="5">$5</button>
+                                <button class="donate-amount-btn" data-amount="10">$10</button>
+                                <button class="donate-amount-btn" data-amount="25">$25</button>
+                                <button class="donate-amount-btn" data-amount="50">$50</button>
+                                <button class="donate-amount-btn" data-amount="100">$100</button>
+                            </div>
+                            <div style="margin-top: 1rem;">
+                                <input 
+                                    type="number" 
+                                    id="customAmount" 
+                                    class="donate-custom-input" 
+                                    placeholder="Custom amount"
+                                    min="1"
+                                    step="0.01"
+                                >
+                            </div>
+                            <button id="donateBtn" class="donate-btn">Buy Credits</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Three Column Section: Tribe, Avatar Carousel, Top Donors -->
+                <div id="userStatsSection" style="display: none;">
                 <!-- Tribe Section -->
                 <div class="stats-box" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 16px; padding: 1.5rem; min-height: 300px;">
                     <h3 class="stats-title" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; font-weight: 700; color: #c084fc; margin-bottom: 1rem; text-align: center;" id="tribeNameTitle">Tribe</h3>
@@ -422,6 +544,54 @@
                     <!-- Redemptions will be loaded here -->
                 </div>
             </div>
+            </div>
+            <!-- End Viewer Tab -->
+
+            <!-- Streamer Tab Content (replaces header sections) -->
+            <div id="streamerTabContent" class="tab-content">
+                <div class="user-header">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; width: 100%;">
+                        <!-- Redemptions Queue -->
+                        <div class="donate-section">
+                            <h2 class="donate-title">Redemption Queue</h2>
+                            <div id="streamerRedemptionQueue" style="max-height: 600px; overflow-y: auto;">
+                                <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">Loading redemption queue...</div>
+                            </div>
+                        </div>
+
+                        <!-- Chat Section -->
+                        <div class="donate-section">
+                            <h2 class="donate-title">Chat</h2>
+                            
+                            <!-- Important Message Area -->
+                            <div class="important-message" id="importantMessageContainer" style="display: none;">
+                                <div class="important-message-icon" id="importantMessageIcon" style="position: relative;">
+                                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                    <span>Most Important Message</span>
+                                    <div class="important-message-tooltip">
+                                        This is the single most important chat message as determined by AI. For now, it shows the most recent message. In the future, an on-device LLM will analyze messages to determine importance.
+                                    </div>
+                                </div>
+                                <div id="importantMessageContent" style="color: rgba(255,255,255,0.9);"></div>
+                            </div>
+
+                            <!-- Chat Messages List -->
+                            <div id="chatMessagesContainer" style="max-height: 500px; overflow-y: auto;">
+                                <div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">No chat messages yet</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- End Streamer Tab -->
+
+            <!-- Settings Tab -->
+            <div id="settingsTabContent" class="tab-content" style="margin-top: 2rem;">
+                <div id="settingsConfigContainer"></div>
+            </div>
+            <!-- End Settings Tab -->
         </div>
     </div>
 
@@ -2060,40 +2230,263 @@
                         ownerControls.style.display = 'block';
                     }
                     
-                    // Set up configure button
-                    const configureBtn = document.getElementById('configureUserPageBtn');
-                    if (configureBtn) {
-                        configureBtn.onclick = () => {
-                            showUserPageConfig();
-                        };
-                    }
+                    // Set up tabs
+                    setupTabs();
+                    
+                    // Load streamer tab content
+                    await loadStreamerTabContent();
+                    
+                    // Set up chat listener
+                    setupChatListener();
                 }
             } catch (error) {
                 console.error('Error checking if owner:', error);
             }
         }
 
-        // Show user page config
-        async function showUserPageConfig() {
-            const userContent = document.getElementById('userContent');
-            const configContainer = document.getElementById('userPageConfigContainer');
-            const aboutSection = document.getElementById('aboutSection');
+        // Set up tab switching
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.user-page-tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabName = tab.dataset.tab;
+                    switchTab(tabName);
+                });
+            });
+        }
+
+        // Switch between tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.user-page-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
+            if (activeTab) {
+                activeTab.classList.add('active');
+            }
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
             
-            if (aboutSection) aboutSection.style.display = 'none';
-            if (userContent) userContent.style.display = 'none';
-            
-            if (!configContainer) {
-                console.error('Config container not found');
+            const targetContent = document.getElementById(`${tabName}TabContent`);
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+
+            // Update header class for streamer tab
+            const viewerHeader = document.querySelector('#viewerTabContent .user-header');
+            const streamerHeader = document.querySelector('#streamerTabContent .user-header');
+            if (viewerHeader) {
+                viewerHeader.classList.remove('streamer-header');
+            }
+            if (streamerHeader) {
+                if (tabName === 'streamer') {
+                    streamerHeader.classList.add('streamer-header');
+                } else {
+                    streamerHeader.classList.remove('streamer-header');
+                }
+            }
+
+            // Load content if needed
+            if (tabName === 'settings') {
+                loadSettingsTab();
+            } else if (tabName === 'streamer') {
+                loadStreamerTabContent();
+            }
+        }
+
+        // Load streamer tab content
+        async function loadStreamerTabContent() {
+            if (!currentUserId) return;
+
+            try {
+                // Load redemption queue
+                const { renderRedemptionQueue } = await import('/src/customRedemptionCard.js');
+                const queueContainer = document.getElementById('streamerRedemptionQueue');
+                if (queueContainer) {
+                    await renderRedemptionQueue(queueContainer, currentUserId);
+                }
+
+                // Load chat messages
+                await loadChatMessages();
+            } catch (error) {
+                console.error('Error loading streamer tab content:', error);
+            }
+        }
+
+        // Load settings tab
+        async function loadSettingsTab() {
+            const settingsContainer = document.getElementById('settingsConfigContainer');
+            if (!settingsContainer) return;
+
+            try {
+                const { renderUserPageConfig } = await import('/src/configureUserPage.js');
+                await renderUserPageConfig('#settingsConfigContainer');
+            } catch (error) {
+                console.error('Error loading settings tab:', error);
+                settingsContainer.innerHTML = '<div style="color: rgba(255,255,255,0.6); padding: 2rem; text-align: center;">Error loading settings</div>';
+            }
+        }
+
+        // Chat message listener
+        let chatListenerUnsubscribe = null;
+
+        async function setupChatListener() {
+            if (!currentUserId) return;
+
+            try {
+                const { db, collection, query, where, orderBy, limit, onSnapshot } = await import('/src/firebase.js');
+                
+                // Listen to chat messages collection
+                // We'll store chat messages in users/{userId}/chatMessages
+                const chatMessagesRef = collection(db, 'users', currentUserId, 'chatMessages');
+                const q = query(
+                    chatMessagesRef,
+                    orderBy('timestamp', 'desc'),
+                    limit(5)
+                );
+
+                // Set up real-time listener
+                chatListenerUnsubscribe = onSnapshot(q, (snapshot) => {
+                    const messages = [];
+                    snapshot.forEach(doc => {
+                        messages.push({
+                            id: doc.id,
+                            ...doc.data()
+                        });
+                    });
+                    
+                    // Reverse to show oldest first
+                    messages.reverse();
+                    
+                    renderChatMessages(messages);
+                    
+                    // Update important message (most recent for now)
+                    if (messages.length > 0) {
+                        updateImportantMessage(messages[messages.length - 1]);
+                    }
+                }, (error) => {
+                    console.error('Error listening to chat messages:', error);
+                });
+            } catch (error) {
+                console.error('Error setting up chat listener:', error);
+            }
+        }
+
+        // Load initial chat messages
+        async function loadChatMessages() {
+            if (!currentUserId) return;
+
+            try {
+                const { db, collection, query, orderBy, limit, getDocs } = await import('/src/firebase.js');
+                const chatMessagesRef = collection(db, 'users', currentUserId, 'chatMessages');
+                const q = query(
+                    chatMessagesRef,
+                    orderBy('timestamp', 'desc'),
+                    limit(5)
+                );
+
+                const snapshot = await getDocs(q);
+                const messages = [];
+                snapshot.forEach(doc => {
+                    messages.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
+                
+                // Reverse to show oldest first
+                messages.reverse();
+                
+                renderChatMessages(messages);
+                
+                // Update important message (most recent for now)
+                if (messages.length > 0) {
+                    updateImportantMessage(messages[messages.length - 1]);
+                }
+            } catch (error) {
+                console.error('Error loading chat messages:', error);
+            }
+        }
+
+        // Render chat messages
+        function renderChatMessages(messages) {
+            const container = document.getElementById('chatMessagesContainer');
+            if (!container) return;
+
+            if (messages.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 2rem; color: rgba(255,255,255,0.6);">No chat messages yet</div>';
                 return;
             }
+
+            container.innerHTML = messages.map(msg => {
+                const timestamp = msg.timestamp?.toDate ? msg.timestamp.toDate() : (msg.timestamp ? new Date(msg.timestamp) : new Date());
+                const timeStr = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const username = msg.username || msg.userName || msg.chatter_user_name || 'Anonymous';
+                const messageText = msg.message?.text || msg.messageText || msg.text || '';
+
+                return `
+                    <div class="chat-message-item">
+                        <div>
+                            <span class="chat-message-username">${escapeHtml(username)}:</span>
+                            <span class="chat-message-text">${escapeHtml(messageText)}</span>
+                        </div>
+                        <div class="chat-message-time">${timeStr}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update important message
+        function updateImportantMessage(message) {
+            const container = document.getElementById('importantMessageContainer');
+            const content = document.getElementById('importantMessageContent');
             
-            configContainer.style.display = 'block';
+            if (!container || !content) return;
+
+            const username = message.username || message.userName || message.chatter_user_name || 'Anonymous';
+            const messageText = message.message?.text || message.messageText || message.text || '';
+
+            container.style.display = 'block';
+            content.innerHTML = `
+                <div>
+                    <span style="font-weight: 600; color: #fbbf24;">${escapeHtml(username)}:</span>
+                    <span style="color: rgba(255,255,255,0.9);">${escapeHtml(messageText)}</span>
+                </div>
+            `;
+        }
+
+        // Initialize important message tooltip handler
+        function initializeImportantMessageTooltip() {
+            const iconElement = document.getElementById('importantMessageIcon');
+            if (!iconElement) return;
+
+            // Add touch event listener for mobile
+            iconElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                iconElement.classList.toggle('tooltip-visible');
+            });
             
-            // Import and render config UI
-            const { renderUserPageConfig } = await import('/src/configureUserPage.js');
-            renderUserPageConfig('#userPageConfigContainer');
-            
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            // Hide tooltip when clicking outside (for mobile)
+            document.addEventListener('touchstart', (e) => {
+                if (!iconElement.contains(e.target)) {
+                    iconElement.classList.remove('tooltip-visible');
+                }
+            }, true);
+        }
+
+        // Show user page config (now redirects to settings tab)
+        async function showUserPageConfig() {
+            // Switch to settings tab if owner controls are visible
+            const ownerControls = document.getElementById('ownerControls');
+            if (ownerControls && ownerControls.style.display !== 'none') {
+                switchTab('settings');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         }
 
         // Update header logo to navigate back to user page when on about or config page

@@ -123,6 +123,61 @@ export async function renderAvatars(container) {
                 <div style="margin-top:12px; display:flex; gap:8px;">
                     <button class="btn btn-primary" data-role="upload-to-group">Upload</button>
                 </div>
+                <div style="margin-top:12px;">
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+                        <label for="personality-prompt-${g.id}" style="color:rgba(255,255,255,0.9); font-size:0.9rem; font-weight:500; margin:0;">Personality Prompt</label>
+                        <div style="position:relative; display:inline-block;">
+                            <button type="button" class="tooltip-trigger" data-tooltip-id="tooltip-${g.id}" style="width:18px; height:18px; border-radius:50%; border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; padding:0; line-height:1; transition:all 0.2s;" onmouseenter="showTooltip('tooltip-${g.id}')" onmouseleave="hideTooltip('tooltip-${g.id}')" ontouchstart="toggleTooltip('tooltip-${g.id}')" onclick="toggleTooltip('tooltip-${g.id}')">?</button>
+                            <div id="tooltip-${g.id}" class="tooltip-content" style="position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.95); color:rgba(255,255,255,0.9); padding:12px; border-radius:6px; font-size:0.85rem; line-height:1.5; width:280px; max-width:90vw; z-index:1000; display:none; box-shadow:0 4px 12px rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1); pointer-events:none;">
+                                <div style="position:absolute; bottom:-6px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid rgba(0,0,0,0.95);"></div>
+                                This prompt will control the way ai will respond when generating text to respond to viewer comments, if it should simply read them or read then and reply to them, in various ways throughout the site. You can configure the kind of response/reaction in other places, but this prompt determines the personality and type of text that will be generated.
+                            </div>
+                        </div>
+                    </div>
+                    <textarea id="personality-prompt-${g.id}" class="form-input" data-group-id="${g.id}" onchange="handlePersonalityPromptChange('${g.id}')" oninput="handlePersonalityPromptChange('${g.id}')" placeholder="You are Triumph the Insult Comic Dog.
+
+You are a cigar-chomping, foul-mouthed, wisecracking hand puppet voiced by Robert Smigel. Your entire personality revolves around roasting, mocking, and insulting whoever you're talking to. You deliver insults with playful cruelty, exaggerated bravado, and over-the-top sarcasm. You often build a joke with a setup, twist it with a mean-spirited punchline, and then cap it off with your signature phrase: &quot;for me to poop on!&quot;
+
+Your Style &amp; Rules
+
+Speak like Triumph: gruff voice, showman energy, smug and sleazy charm.
+
+Every response should include at least one roast or cutting insult.
+
+You may improvise absurd comparisons, exaggerated metaphors, and mocking observations.
+
+You should frequently—but not necessarily always—end a joke or a full message with &quot;for me to poop on!&quot;
+
+You can be crude, but stay within allowed boundaries (no slurs or real-world harm).
+
+Your comedic tone is mean-but-funny, never genuinely hateful.
+
+You are self-aware, breaking the fourth wall and mocking the format of the conversation itself.
+
+You may reference being a puppet, your cigar, your cheap production value, or your creator Robert Smigel.
+
+Famous Lines You May Reference
+
+&quot;You got a great show… for me to poop on!&quot;
+
+&quot;That's like poop telling vomit it stinks!&quot;
+
+&quot;I think Eminem should relax a little. I mean, my mom's a bitch too, but I don't sing songs about it.&quot;
+
+Q: question → A: &quot;Oh, no, I'm sorry, the answer is: who gives a shit?&quot;
+
+Behavioral Examples
+
+If someone makes a statement, mock its seriousness or stupidity.
+
+If someone asks a question, answer with a roast before the real answer.
+
+When complimented, respond with a smug insult.
+
+When challenged, double down with absurd bravado.
+
+Constantly remind the audience that you are a cigar-smoking puppet dog who is morally and emotionally bankrupt—comedically." style="width:100%; min-height:200px; padding:12px; border:1px solid rgba(255,255,255,0.1); border-radius:6px; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.9); font-family:inherit; font-size:0.9rem; resize:vertical;"></textarea>
+                </div>
             </div>
         `).join('');
 
@@ -132,8 +187,13 @@ export async function renderAvatars(container) {
             if (!card) return;
             const deleteBtn = card.querySelector('[data-role="delete-group"]');
             const addBtn = card.querySelector('[data-role="upload-to-group"]');
+            const textarea = card.querySelector(`#personality-prompt-${g.id}`);
             deleteBtn.onclick = () => deleteGroup(g.id, g.displayName || 'Untitled Avatar');
             addBtn.onclick = () => openUploadForGroup(g.id);
+            // Set textarea value if it exists
+            if (textarea && g.personalityPrompt) {
+                textarea.value = g.personalityPrompt;
+            }
             // Load assets directly from Firestore to avoid unnecessary sync round-trips
             loadAssets(g.id);
         });
@@ -468,5 +528,90 @@ async function deleteAsset(groupId, assetId, imageUrl) {
 
 // Make deleteAsset globally available for onclick handlers
 window.deleteAsset = deleteAsset;
+
+// Tooltip functions
+function showTooltip(tooltipId) {
+    const tooltip = document.getElementById(tooltipId);
+    if (tooltip) {
+        tooltip.style.display = 'block';
+    }
+}
+
+function hideTooltip(tooltipId) {
+    const tooltip = document.getElementById(tooltipId);
+    if (tooltip) {
+        tooltip.style.display = 'none';
+    }
+}
+
+function toggleTooltip(tooltipId) {
+    const tooltip = document.getElementById(tooltipId);
+    if (tooltip) {
+        const isVisible = tooltip.style.display === 'block';
+        tooltip.style.display = isVisible ? 'none' : 'block';
+    }
+}
+
+// Make tooltip functions globally available
+window.showTooltip = showTooltip;
+window.hideTooltip = hideTooltip;
+window.toggleTooltip = toggleTooltip;
+
+// Close tooltips when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.tooltip-trigger') && !e.target.closest('.tooltip-content')) {
+        document.querySelectorAll('.tooltip-content').forEach(tooltip => {
+            tooltip.style.display = 'none';
+        });
+    }
+});
+
+// Debounce timers for personality prompt saves
+const personalityPromptTimers = new Map();
+
+// Handle personality prompt changes with debounce
+async function handlePersonalityPromptChange(groupId) {
+    const textarea = document.getElementById(`personality-prompt-${groupId}`);
+    if (!textarea) return;
+
+    // Clear existing timer for this group
+    if (personalityPromptTimers.has(groupId)) {
+        clearTimeout(personalityPromptTimers.get(groupId));
+    }
+
+    // Set new timer to save after 2 seconds of inactivity
+    const timer = setTimeout(async () => {
+        await savePersonalityPrompt(groupId, textarea.value);
+        personalityPromptTimers.delete(groupId);
+    }, 2000);
+
+    personalityPromptTimers.set(groupId, timer);
+}
+
+// Save personality prompt directly to Firestore
+async function savePersonalityPrompt(groupId, promptText) {
+    try {
+        const user = getCurrentUser();
+        if (!user) {
+            console.warn('Cannot save personality prompt: user not authenticated');
+            return;
+        }
+
+        const { db, doc, updateDoc } = await getFirestore();
+        await updateDoc(doc(db, 'users', user.uid, 'heygenAvatarGroups', groupId), {
+            personalityPrompt: promptText,
+            updatedAt: new Date()
+        });
+
+        console.log('Personality prompt saved successfully for group:', groupId);
+    } catch (err) {
+        console.error('Failed to save personality prompt:', err);
+        // Optionally show a user-friendly error message
+        // alert(`Failed to save personality prompt: ${err.message || err}`);
+    }
+}
+
+// Make functions globally available
+window.handlePersonalityPromptChange = handlePersonalityPromptChange;
 
 

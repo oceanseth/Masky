@@ -106,6 +106,12 @@ service cloud.firestore {
           allow create: if isOwner(userId) && request.resource.data.userId == userId;
         }
       }
+
+      // Chat messages subcollection - streamers can read their own chat messages
+      match /chatMessages/{messageId} {
+        allow read: if isOwner(userId);
+        allow write: if false; // Only server can write chat messages (via webhook)
+      }
     }
 
     match /system/adminData {

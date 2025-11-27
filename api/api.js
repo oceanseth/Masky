@@ -2359,7 +2359,22 @@ exports.handler = async (event, context) => {
 
     // Twitch webhook endpoint
     if (path.includes('/twitch-webhook') && method === 'POST') {
+        console.log('[TwitchWebhook] Webhook request received:', {
+            path: event.path || event.rawPath,
+            method: method,
+            domainName: event.requestContext?.domainName,
+            stage: event.requestContext?.stage || event.requestContext?.http?.stage,
+            headers: {
+                'twitch-eventsub-message-type': event.headers['twitch-eventsub-message-type'] || event.headers['Twitch-Eventsub-Message-Type'],
+                'twitch-eventsub-message-id': event.headers['twitch-eventsub-message-id'] || event.headers['Twitch-Eventsub-Message-Id'],
+                'host': event.headers.host || event.headers.Host
+            }
+        });
         const response = await twitchInitializer.handleWebhook(event);
+        console.log('[TwitchWebhook] Webhook response:', {
+            statusCode: response.statusCode,
+            bodyLength: response.body?.length || 0
+        });
         return {
             ...response,
             headers: {
@@ -5004,6 +5019,41 @@ async function redeemPoints(event) {
         }
 
         console.log('Redemption created:', { redemptionId: redemptionRef.id, userId, viewerId, creditCost });
+
+        // Send chat message notification for custom redemptions
+        // Only send if this is a custom redemption (has redemptionConfig)
+        if (redemptionConfig) {
+            try {
+                // Get broadcaster's Twitch access token from custom claims
+                const userRecord = await admin.auth().getUser(userId);
+                const claims = userRecord.customClaims || {};
+                const twitchAccessToken = claims.twitchAccessToken;
+                const twitchId = claims.twitchId;
+                
+                if (twitchAccessToken && twitchId) {
+                    // Get viewer's Twitch username
+                    const viewerTwitchUsername = viewerData.twitchUsername || 
+                                                viewerData.displayName || 
+                                                viewerData.viewerTwitchUsername ||
+                                                'Anonymous';
+                    
+                    // Format username (remove spaces, ensure it starts with @)
+                    const username = viewerTwitchUsername.replace(/\s+/g, '').replace(/^@?/, '');
+                    
+                    // Create chat message: "@username redeemed [redemption name]"
+                    const chatMessage = `@${username} redeemed ${redemptionName}`;
+                    
+                    // Send message to Twitch chat
+                    await sendTwitchChatMessage(twitchId, twitchAccessToken, chatMessage);
+                    console.log('Sent redemption notification to Twitch chat:', chatMessage);
+                } else {
+                    console.warn('Cannot send Twitch chat message: broadcaster Twitch token not found');
+                }
+            } catch (chatError) {
+                // Don't fail the redemption processing if chat message fails
+                console.error('Error sending Twitch chat message for redemption:', chatError);
+            }
+        }
 
         return {
             statusCode: 200,

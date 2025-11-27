@@ -524,7 +524,7 @@
         // Render header
         renderHeader('#header-container', { showMembershipLink: false });
 
-        // Get username from path
+        // Get username from path, supporting provider_username format
         function getUsernameFromPath() {
             const path = window.location.pathname;
             // Remove leading slash and any trailing slashes
@@ -533,7 +533,29 @@
             if (!username || username.includes('/')) {
                 return null;
             }
-            return username.toLowerCase();
+            
+            const lowerUsername = username.toLowerCase();
+            
+            // Check if username contains underscore (provider_username format)
+            if (lowerUsername.includes('_')) {
+                const parts = lowerUsername.split('_');
+                if (parts.length >= 2) {
+                    const provider = parts[0];
+                    const actualUsername = parts.slice(1).join('_'); // Join remaining parts in case username itself contains underscores
+                    return {
+                        provider: provider,
+                        username: actualUsername,
+                        fullPath: lowerUsername
+                    };
+                }
+            }
+            
+            // Default to Twitch when no underscore is present
+            return {
+                provider: 'twitch',
+                username: lowerUsername,
+                fullPath: lowerUsername
+            };
         }
 
         let selectedAmount = null;
@@ -888,9 +910,9 @@
 
         // Load user data
         async function loadUserData() {
-            const username = getUsernameFromPath();
+            const usernameInfo = getUsernameFromPath();
             
-            if (!username) {
+            if (!usernameInfo) {
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('errorState').style.display = 'block';
                 return;
@@ -900,9 +922,17 @@
                 // Import Firebase
                 const { db, collection, query, where, getDocs } = await import('/src/firebase.js');
 
-                // Query user by twitchUsername
+                // Query user by provider-specific username field
                 const usersRef = collection(db, 'users');
-                const q = query(usersRef, where('twitchUsername', '==', username.toLowerCase()));
+                
+                // Map provider to Firestore field name
+                const providerFieldMap = {
+                    'twitch': 'twitchUsername',
+                    'youtube': 'youtubeUsername'
+                };
+                
+                const fieldName = providerFieldMap[usernameInfo.provider] || 'twitchUsername';
+                const q = query(usersRef, where(fieldName, '==', usernameInfo.username));
                 const userSnapshot = await getDocs(q);
 
                 if (userSnapshot.empty) {
@@ -914,7 +944,7 @@
                 currentUserId = userDoc.id;
 
                 // Update UI
-                document.getElementById('userName').textContent = userData.displayName || username;
+                document.getElementById('userName').textContent = userData.displayName || usernameInfo.username;
                 if (userData.photoURL) {
                     document.getElementById('userAvatar').src = userData.photoURL;
                 } else {

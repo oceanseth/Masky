@@ -30,6 +30,9 @@ export async function initializeMembership() {
         }
     }
     
+    // Initialize tooltips for perks
+    initializePerkTooltips();
+    
     membershipInitialized = true;
 }
 
@@ -565,6 +568,58 @@ window.applyCoupon = function() {
         couponMessage.className = 'coupon-message';
     }, 3000);
 };
+
+/**
+ * Initialize tooltips for perk question marks
+ */
+function initializePerkTooltips() {
+    const tooltipTriggers = document.querySelectorAll('.perk-tooltip-trigger');
+    
+    tooltipTriggers.forEach(trigger => {
+        const tooltip = trigger.nextElementSibling;
+        if (!tooltip || !tooltip.classList.contains('perk-tooltip')) {
+            return;
+        }
+        
+        // Desktop: hover events
+        trigger.addEventListener('mouseenter', () => {
+            tooltip.classList.add('show');
+        });
+        
+        trigger.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('show');
+        });
+        
+        // Mobile: touch events
+        trigger.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+            // Toggle tooltip on mobile tap
+            const isVisible = tooltip.classList.contains('show');
+            if (isVisible) {
+                tooltip.classList.remove('show');
+            } else {
+                // Hide other tooltips first
+                document.querySelectorAll('.perk-tooltip.show').forEach(t => {
+                    if (t !== tooltip) {
+                        t.classList.remove('show');
+                    }
+                });
+                tooltip.classList.add('show');
+            }
+        });
+        
+        // Close tooltip when clicking/tapping outside on mobile
+        const closeTooltipOnOutsideClick = (e) => {
+            if (!trigger.contains(e.target) && !tooltip.contains(e.target)) {
+                tooltip.classList.remove('show');
+            }
+        };
+        
+        // Use both touchstart and click for better mobile/desktop compatibility
+        document.addEventListener('touchstart', closeTooltipOnOutsideClick, { passive: true });
+        document.addEventListener('click', closeTooltipOnOutsideClick);
+    });
+}
 
 /**
  * Check for URL parameters (success/cancel from Stripe)
